@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# 가상환경
+venv/
+env/
+.env/
+.venv/
+
+# 패키지 빌드 메타데이터
+*.egg-info/
+dist/
+build/
+*.egg
+MANIFEST
+
+# 테스트/분석 캐시
+.hypothesis/
+.lia.cache
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 임시 파일
+tmp/
+*.tmp
+port-map-*
+
+# 대용량 데이터 / 모델 가중치 (로컬에서만 관리)
+raw-data/
+models/
+data/
+
+# 실험 결과 (필요 시 별도 관리)
+results/
+
+# CoqStoq 서브모듈 (별도 repo)
+CoqStoq/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
