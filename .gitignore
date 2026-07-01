@@ -37,6 +37,7 @@ data/
 
 # 실험 결과 (필요 시 별도 관리)
 results/
+all_results/
 
 # CoqStoq 서브모듈 (별도 repo)
 CoqStoq/

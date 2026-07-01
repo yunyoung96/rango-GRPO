@@ -459,7 +459,11 @@ def rerank_dataset_conf_to_client_conf(
 def start_servers(commands: list[StartModelCommand]) -> list[subprocess.Popen[bytes]]:
     procs: list[subprocess.Popen[bytes]] = []
     for command in commands:
-        p = subprocess.Popen(command.to_list())
+        p = subprocess.Popen(
+            command.to_list(),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
         procs.append(p)
     return procs
 
