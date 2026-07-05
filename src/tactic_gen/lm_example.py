@@ -151,6 +151,7 @@ class GeneralFormatterConf:
     proof_retriever_conf: Optional[ProofRetrieverConf]
     num_premises: Optional[int]
     num_proofs: Optional[int]
+    align_hint: bool = False  # M3(C1): retrieval된 sibling의 aligned 다음 tactic을 프롬프트에 주입
 
     def __hash__(self) -> int:
         return hash(str(self))
@@ -178,6 +179,7 @@ class GeneralFormatterConf:
             proof_ret_conf,
             num_premises,
             num_proofs,
+            yaml_data.get("align_hint", False),
         )
 
 
@@ -188,11 +190,13 @@ class GeneralFormatter:
         proof_retriever: Optional[ProofRetriever],
         num_premises: Optional[int],
         num_proofs: Optional[int],
+        align_hint: bool = False,
     ):
         self.premise_client = premise_client
         self.proof_retriever = proof_retriever
         self.num_premises = num_premises
         self.num_proofs = num_proofs
+        self.align_hint = align_hint
 
     def example_from_step(
         self,
@@ -279,6 +283,27 @@ class GeneralFormatter:
                 print_retrieved(j + 1, p.proof_text_to_string(), proof_query_set)
             simliar_proofs = all_similar_proofs[: self.num_proofs]
             similar_proof_strs = [p.proof_text_to_string() for p in simliar_proofs]
+
+            # M3(C1): 매칭된 sibling 중간상태의 '다음 tactic'을 복원해 프롬프트에 힌트로 주입
+            if self.align_hint and hasattr(self.proof_retriever, "get_similar_proof_steps"):
+                try:
+                    steps = self.proof_retriever.get_similar_proof_steps(
+                        step_idx, proof, dp_obj, training
+                    )
+                    if steps:
+                        ref_proof, step_id = steps[0]
+                        aligned = ref_proof.steps[step_id.step_idx].step.text.strip()
+                        # 자명한 tactic(Proof./불릿/빈값)은 힌트로 무의미 → 건너뜀
+                        trivial = (not aligned) or aligned == "Proof." or all(
+                            c in "*-+{} " for c in aligned
+                        )
+                        if not trivial:
+                            # 주석(* *) 대신 실제 tactic을 그대로 최상단에 주입 —
+                            # 모델이 따라 해도 유효 Coq이라 안전. 유사증명 스니펫처럼 취급됨.
+                            similar_proof_strs = [aligned] + similar_proof_strs
+                            print(f"  [Align hint] {aligned}")
+                except Exception as _e:
+                    print(f"  [Align hint] skipped ({_e})")
         else:
             similar_proof_strs = None
 
@@ -351,6 +376,7 @@ class GeneralFormatter:
             proof_retriever,
             conf.num_premises,
             conf.num_proofs,
+            getattr(conf, "align_hint", False),
         )
 
 

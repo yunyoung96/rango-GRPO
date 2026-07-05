@@ -32,7 +32,12 @@
 - 해석: best-first(max_branch=4, beam)이 **너무 좁게** 탐색 → straight-line의 "다양한 재시작이 우연히 찾던" 케이스(idx 2 = baseline '늦은 성공: 우연에 가까운 발견')를 놓침. 신규 해결이 0이라 backtracking의 prefix 보존 이점이 좁은 분기에 가려짐.
 - 결정: **merge 안 함**. 교훈 → 분기 폭 확대 필요(lit A1 GPT-f는 e≈32). M2는 memory + **max_branch 4→8**로 넓혀 재도전.
 
-### [진행중] Iter 2 — M2 search-memory (분기확대)
+### [완료] Iter 2 — M2 search-memory (memory+분기8) → ❌ 하락 (8/20, 순증감 -3)
+- `rango-mem` **8/20** vs baseline 11/20. 신규 해결 **[27]**(baseline+rango.json 둘 다 실패한 것!), 회귀 [2,10,11,12]. (report: all_results/20260705-082853/analysis.md)
+- 해석: classical 계열은 memory·분기확대로도 straight-line 미달. 단 **idx 27처럼 straight-line이 못 찾는 걸 찾음** → 두 방식이 상보적(portfolio 가능성). 하지만 전면 대체로는 하락.
+- 결정: merge 안 함. **결론: 이후 retrieval 개선은 강한 baseline(straight-line) 위에 얹는다.** classical 단독 탐색 노선 중단.
+
+### [진행중] Iter 3 — M3 rango-align (straight-line + aligned next-tactic 힌트)
 - 가설: SEARCH_THRASH(47%)는 straight-line 재시작 낭비 → best-first backtracking(`rango-best-beam`)이 유효 prefix 보존해 성공률↑.
 - 실행: `setsid`로 detach, `all_log/run_method.sh rango-best-beam 600`. 로그 all_log/m1_run.log. 07:22 UTC 시작.
 - 완료 후 M0@600(11/20)과 성공 개수 비교→기록. ≥이면 master merge 검토, 그리고 M2(rango-mem) 동일조건 실행.

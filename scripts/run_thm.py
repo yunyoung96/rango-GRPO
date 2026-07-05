@@ -214,6 +214,20 @@ def get_tactic_confs(model_alias: str, split: Split) -> list[TacticGenConf]:
             )
             return [DecoderTacticGenConf(Path(checkpoint), [formatter])]
 
+        case "rango-align":
+            # M3(C1): straight-line + retrieval sibling의 aligned 다음 tactic을 프롬프트 힌트로
+            checkpoint = (
+                "models/deepseek-bm25-proof-tfidf-proj-thm-prem-final/checkpoint-54500"
+            )
+            formatter = GeneralFormatterConf(
+                premise_client_conf=tfidf_premise_conf,
+                proof_retriever_conf=bm25_proof_conf,
+                num_premises=50,
+                num_proofs=20,
+                align_hint=True,
+            )
+            return [DecoderTacticGenConf(Path(checkpoint), [formatter])]
+
         case "rango-inter-file":
             checkpoint = (
                 "models/deepseek-bm25-proof-tfidf-proj-thm-prem-random/checkpoint-54000"
