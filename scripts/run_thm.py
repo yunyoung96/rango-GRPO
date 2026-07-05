@@ -133,10 +133,22 @@ def get_searcher_conf(model_alias: str) -> SearcherConf:
                 initial_proof=None,
             )
 
-        case "rango-apply":
-            # M4': classical+memo (강제 apply 후보를 시도하려면 다중 후보 탐색 필요)
+        case "rango-apply" | "rango-alignapply":
+            # M4'/조합: classical+memo (강제 apply 후보를 시도하려면 다중 후보 탐색 필요)
             return ClassicalSearchConf(
                 max_branch=8,
+                max_search_steps=1000000,
+                depth_limit=30,
+                timeout=600,
+                beam_decode=True,
+                initial_proof=None,
+                use_memo=True,
+            )
+
+        case "rango-mem-wide":
+            # M2 변형: classical+memo, 분기 16으로 확대
+            return ClassicalSearchConf(
+                max_branch=16,
                 max_search_steps=1000000,
                 depth_limit=30,
                 timeout=600,
@@ -214,7 +226,7 @@ def get_tactic_confs(model_alias: str, split: Split) -> list[TacticGenConf]:
     )
 
     match model_alias:
-        case "rango" | "rango-best-beam" | "rango-best-rand" | "rango-mem":
+        case "rango" | "rango-best-beam" | "rango-best-rand" | "rango-mem" | "rango-mem-wide":
             checkpoint = (
                 "models/deepseek-bm25-proof-tfidf-proj-thm-prem-final/checkpoint-54500"
             )
@@ -223,6 +235,21 @@ def get_tactic_confs(model_alias: str, split: Split) -> list[TacticGenConf]:
                 proof_retriever_conf=bm25_proof_conf,
                 num_premises=50,
                 num_proofs=20,
+            )
+            return [DecoderTacticGenConf(Path(checkpoint), [formatter])]
+
+        case "rango-alignapply":
+            # 조합: align 힌트 + apply 강제 (classical+memo)
+            checkpoint = (
+                "models/deepseek-bm25-proof-tfidf-proj-thm-prem-final/checkpoint-54500"
+            )
+            formatter = GeneralFormatterConf(
+                premise_client_conf=tfidf_premise_conf,
+                proof_retriever_conf=bm25_proof_conf,
+                num_premises=50,
+                num_proofs=20,
+                align_hint=True,
+                apply_hint=True,
             )
             return [DecoderTacticGenConf(Path(checkpoint), [formatter])]
 

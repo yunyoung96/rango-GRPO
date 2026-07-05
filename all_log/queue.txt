@@ -1,0 +1,7 @@
+rango|300|baseline @300 (fair reference for 300s screening)
+rango-apply|300|M4' top premise면 exploit/eapply/apply 강제 (classical+memo)
+rango-alignapply|300|조합: align 힌트 + apply 강제
+rango-mem|300|M2 memory(transposition+cycle guard) @300
+rango-mem-wide|300|M2 변형 max_branch 16
+rango-best-beam|300|M1 backtracking @300
+rango-align|300|M3 aligned next-tactic 힌트 @300
