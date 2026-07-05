@@ -106,6 +106,11 @@ def main():
 
     n = len(idxs)
     nsucc = sum(1 for i in idxs if res[i]["success"])
+    # rango.json(published Rango) 기준 원래 성공
+    has_orig = any(res[i].get("original_success") is not None for i in idxs)
+    orig_succ = [i for i in idxs if res[i].get("original_success")]
+    vs_orig_new = [i for i in idxs if res[i]["success"] and res[i].get("original_success") is False]
+    vs_orig_reg = [i for i in idxs if (not res[i]["success"]) and res[i].get("original_success") is True]
     # baseline 대비 (겹치는 idx만)
     common = [i for i in idxs if i in base]
     base_succ = [i for i in common if base[i]]
@@ -152,6 +157,10 @@ def main():
         L.append(f"| **회귀** (baseline 성공→실패) | **{len(regressed)}**개: {regressed} |")
         net = len(newly_solved) - len(regressed)
         L.append(f"| **순증감** | **{'+' if net>=0 else ''}{net}** |")
+    if has_orig:
+        L.append(f"| rango.json(published) 성공 | {len(orig_succ)}/{n} |")
+        L.append(f"| rango.json 대비 신규 해결 | {len(vs_orig_new)}개: {vs_orig_new} |")
+        L.append(f"| rango.json 대비 회귀 | {len(vs_orig_reg)}개: {vs_orig_reg} |")
     L.append("")
     verdict = "미정"
     if common:
@@ -184,12 +193,14 @@ def main():
 
     L.append("## 4. 케이스별")
     L.append("")
-    L.append("| idx | 파일 | 결과 | 시간(s) | baseline | 비고 |")
-    L.append("|-----|------|------|--------|----------|------|")
+    L.append("| idx | 파일 | 결과 | 시간(s) | baseline | rango.json | 비고 |")
+    L.append("|-----|------|------|--------|----------|-----------|------|")
     for i in idxs:
         r = res[i]
         ok = "✅" if r["success"] else "❌"
         b = ("✅" if base.get(i) else "❌") if i in base else "—"
+        o = r.get("original_success")
+        ostr = "✅" if o is True else ("❌" if o is False else "—")
         note = ""
         if i in newly_solved:
             note = "🎉 신규해결"
@@ -197,7 +208,7 @@ def main():
             note = "⚠️ 회귀"
         elif not r["success"]:
             note = categorize(fail_feat[i]).split("(")[0]
-        L.append(f"| {i} | {sub_of[i]} | {ok} | {r.get('elapsed_sec','?')} | {b} | {note} |")
+        L.append(f"| {i} | {sub_of[i]} | {ok} | {r.get('elapsed_sec','?')} | {b} | {ostr} | {note} |")
     L.append("")
 
     out = run_dir / "analysis.md"
