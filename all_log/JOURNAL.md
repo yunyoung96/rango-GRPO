@@ -64,3 +64,12 @@
 - 초기 큐 7개: rango(baseline@300), rango-apply, rango-alignapply, rango-mem, rango-mem-wide(branch16), rango-best-beam, rango-align.
 - 300s 스크리닝으로 처리량↑. 유망하면 600s/확대 확인. 완료마다 analysis.md.
 - 매 wakeup: 진행/결과 보고 + 큐에 새 방법 append(변형·조합·신규구현) + 드라이버 죽으면 재시작.
+
+### [오버나이트 중간] 300s 스크리닝 결과 (baseline@600=11/20, baseline@300=10/20)
+| 방법 | 성공@300 | vs baseline@600 |
+|------|---------|----------------|
+| rango(baseline@300) | 10/20 | -1 (idx10 timeout) |
+| rango-apply | 8/20 | -3 (신규[27], 회귀[2,10,11,12]) |
+- 패턴 확정: **classical 계열 ~8/20 < straight-line ~10-11/20.** memo/apply-forcing로도 못 넘음.
+- rango-apply의 premise-apply는 idx840류(premise Top1 강함+model 미적용)를 겨냥하나 first-20엔 그런 케이스 부재 → 이점 안 드러남. (idx840 별도 검증 필요.)
+- **돌파 방향**: (a) 좋은 아이디어(apply/align)를 straight-line에 얹기, (b) RL value-guided로 classical 순서 교정, (c) portfolio(straight∪classical union=12). 큐 소진 후 공유파일 자유로울 때 구현.
