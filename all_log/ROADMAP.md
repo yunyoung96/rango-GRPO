@@ -46,3 +46,12 @@ STRATEGY_DIVERGE 36.2% · SEARCH_THRASH 47.0% · NO_RETRIEVAL 5.6% · LLM_INVALI
 - Coq 에러: `proof_manager.py:220-222` diagnostic.message(severity 1)로 존재하나 ProofCheckResult에 미저장.
 - 간이형(우선): straight-line에서 실패한 tactic 텍스트를 다음 프롬프트에 '피해야 할 것'으로 주입(COPRA-lite, 에러문 없이도 재제안 회피). formatter align_hint처럼 flag+주입.
 - 정식형: ProofCheckResult에 error_msg 캡처→searcher→formatter 전달→프롬프트 주입.
+
+## [범위 변경 2026-07-05] 강화학습(RL) 트랙 추가 — 사용자 요청
+- 기존 "RL 미사용" 제약 해제. **RL 옵션 추가 실험**(QEDCartographer 포함). hammer는 여전히 미사용.
+- 기존 루프 원칙 유지: 새 alias + --description, 순차 실행, 완료마다 analysis.md, 한 번에 GPU 하나.
+- RL 후보 (조사 서브에이전트 결과 대기 중 → LITERATURE에 반영 예정):
+  - **MR1 value-guided search**: 축적된 로그(state, 최종 solved?)로 경량 value head V(state)→P(provable) 학습 → best-first(ClassicalSearcher) heuristic으로. GPT-f/HTPS critic, QEDCartographer의 value-guidance 이식형. **우리 로그 재사용 = 저비용 첫 RL.**
+  - **MR2 expert iteration**: 모델이 찾은 성공 증명으로 재학습(reward-free self-training).
+  - **QEDCartographer 직접 실행 가능성**: 별도 repo(Proverbot9001 기반)라 통합 난이도 조사 필요 → 서브에이전트 판단 반영.
+- 주의: RL은 학습(fine-tune) 필요 → GPU 학습 job은 M3~M5 inference 실험과 순차로(동시 금지).
