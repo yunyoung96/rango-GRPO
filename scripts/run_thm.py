@@ -521,10 +521,18 @@ if __name__ == "__main__":
     run_parser.add_argument("alias")
     run_parser.add_argument("split")
     run_parser.add_argument("idx", type=int)
+    run_parser.add_argument(
+        "--timeout", type=int, default=600,
+        help="search 제한 시간(초). 미지정 시 기본값 600.",
+    )
 
     eval_parser = subparsers.add_parser("eval")
     eval_parser.add_argument("alias")
     eval_parser.add_argument("split")
+    eval_parser.add_argument(
+        "--timeout", type=int, default=600,
+        help="search 제한 시간(초). 미지정 시 기본값 600.",
+    )
 
     args = parser.parse_args()
     if args.command == "info":
@@ -550,6 +558,10 @@ if __name__ == "__main__":
     else:
         assert args.command == "eval"
         conf = get_test_proof(args.alias, coqstoq_split, 0)
+
+    # search 제한 시간 덮어쓰기 (미지정 시 default 600)
+    conf.search_conf.timeout = args.timeout
+    print(f"[search timeout] {conf.search_conf.timeout}s")
 
     # Example: 37
     print("\n\n Loading model...")
