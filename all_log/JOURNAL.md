@@ -73,3 +73,17 @@
 - 패턴 확정: **classical 계열 ~8/20 < straight-line ~10-11/20.** memo/apply-forcing로도 못 넘음.
 - rango-apply의 premise-apply는 idx840류(premise Top1 강함+model 미적용)를 겨냥하나 first-20엔 그런 케이스 부재 → 이점 안 드러남. (idx840 별도 검증 필요.)
 - **돌파 방향**: (a) 좋은 아이디어(apply/align)를 straight-line에 얹기, (b) RL value-guided로 classical 순서 교정, (c) portfolio(straight∪classical union=12). 큐 소진 후 공유파일 자유로울 때 구현.
+
+### [오버나이트] 300s 스크리닝 전체 결과 (baseline@300=10, @600=11)
+| 방법 | 성공@300 | 신규 |
+|------|---------|------|
+| rango (baseline) | 10 | - |
+| rango-apply (classical+force) | 8 | [27] |
+| rango-alignapply | 9 | [27] |
+| rango-mem | 8 | [27] |
+| rango-mem-wide(br16) | 8 | - |
+| rango-best-beam | 8 | - |
+| rango-align | 8 | - |
+| rango-apply-sl (straight+force) | 9 | [27] |
+- **핵심 발견**: 어떤 inference tweak도 baseline(straight-line) 못 넘음. 공통적으로 **idx27만 신규**(classical/forcing이 찾는 것)이고 straight-line 성공 2-3개 회귀. straight-line의 다양한 재시작이 이 20-set에서 매우 강함.
+- 남은 희망: **portfolio**(straight∪classical=union). 실패 시 RL value-guided이 마지막 카드.
