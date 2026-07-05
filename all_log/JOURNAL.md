@@ -27,7 +27,12 @@
 - 참고: idx 10은 600s 성공/300s 실패 → timeout이 결과에 영향(그래서 300s 스크리닝 폐기, 600s로 통일).
 - (M0@300 재실행 20260705-062926은 중단·폐기; 부분결과만 참고용 잔존.)
 
-### [진행중] Iter 1 — M1 backtracking @600s/20
+### [완료] Iter 1 — M1 backtracking @600s/20 → ❌ 하락 (8/20, 순증감 -3)
+- 결과: `rango-best-beam` **8/20** vs baseline **11/20**. 신규 해결 0, 회귀 3 [2,5,11]. (report: all_results/20260705-072250/analysis.md)
+- 해석: best-first(max_branch=4, beam)이 **너무 좁게** 탐색 → straight-line의 "다양한 재시작이 우연히 찾던" 케이스(idx 2 = baseline '늦은 성공: 우연에 가까운 발견')를 놓침. 신규 해결이 0이라 backtracking의 prefix 보존 이점이 좁은 분기에 가려짐.
+- 결정: **merge 안 함**. 교훈 → 분기 폭 확대 필요(lit A1 GPT-f는 e≈32). M2는 memory + **max_branch 4→8**로 넓혀 재도전.
+
+### [진행중] Iter 2 — M2 search-memory (분기확대)
 - 가설: SEARCH_THRASH(47%)는 straight-line 재시작 낭비 → best-first backtracking(`rango-best-beam`)이 유효 prefix 보존해 성공률↑.
 - 실행: `setsid`로 detach, `all_log/run_method.sh rango-best-beam 600`. 로그 all_log/m1_run.log. 07:22 UTC 시작.
 - 완료 후 M0@600(11/20)과 성공 개수 비교→기록. ≥이면 master merge 검토, 그리고 M2(rango-mem) 동일조건 실행.

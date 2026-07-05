@@ -134,9 +134,10 @@ def get_searcher_conf(model_alias: str) -> SearcherConf:
             )
 
         case "rango-mem":
-            # M2: best-first + transposition table/failed-tactic memo/cycle guard
+            # M2: best-first + transposition table/failed-tactic memo/cycle guard.
+            # M1(branch=4)이 baseline보다 좁아 하락 → memo가 dedup으로 감당하므로 branch 확대(8).
             return ClassicalSearchConf(
-                max_branch=4,
+                max_branch=8,
                 max_search_steps=1000000,
                 depth_limit=30,
                 timeout=600,
