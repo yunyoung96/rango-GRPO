@@ -9,7 +9,7 @@ STRATEGY_DIVERGE 36.2% · SEARCH_THRASH 47.0% · NO_RETRIEVAL 5.6% · LLM_INVALI
 |------|-------|--------------|------|------|------|
 | **M0 baseline** | `rango` | StraightLine, 재시작만 | (기준) | — | 존재 |
 | **M1 backtracking** | `rango-best-beam` | best-first + `seen_goals` 중복제거 → 유효 prefix 보존 | SEARCH_THRASH(47%) | A1 GPT-f | **실행 중** |
-| **M2 search-memory** | `rango-mem`(신규) | transposition table(정규화 goal 해시) + 실패-tactic 메모(check 전 차감) + dead-node 전파 + cycle guard | SEARCH_THRASH, AUTO_LOOP | A2 HTPS/DT-Solver | 다음 |
+| **M2 search-memory** | `rango-mem`(신규) | transposition table(goal repr 해시, O(1) dedup) + 실패-tactic 메모(check 전 차감) + cycle guard(무진전 tactic 제거) | SEARCH_THRASH, AUTO_LOOP | A2 HTPS/DT-Solver | **구현완료**(commit 9feeebd), GPU 비면 테스트 |
 | **M3 aligned-tactic** | `rango-align`(신규) | 매칭된 sibling 중간상태의 **다음 tactic 복원** → 프롬프트 힌트 + 강제 decode 후보 | STRATEGY_DIVERGE(36%) | C1 Rango/Graph2Tac | 예정 |
 | **M4 error-repair** | `rango-repair`(신규) | 거부된 tactic+Coq 에러를 다음 확장 프롬프트에 주입 | LLM_INVALID | A4 Baldur / A5 COPRA | 예정 |
 | **M5 unfold-gate** | `rango-unfold`(신규) | retrieval-miss 시 head 심볼 δ-unfold 후 재검색 (idx444 매칭 0→6) | NO_RETRIEVAL | B2 Graph2Tac / C2 FLARE | 예정 |
