@@ -21,12 +21,16 @@
 
 ## 진행 상황 (최신이 위)
 
-### [진행중] Iter 1 — backtracking(M1) vs baseline(M0), 20개 @ 300s
-- 가설: SEARCH_THRASH(47%)는 straight-line 재시작 낭비 때문 → best-first backtracking(`rango-best-beam`)이 유효 prefix를 보존해 성공률↑.
-- 실험: `rango`@300/20 (baseline, dir=20260705-062926) → `rango-best-beam`@300/20 (M1), 순차.
-- **중단·재개 이력**: baseline 7/20(성공4)에서 세션 종료로 백그라운드 job 사망 → run_all에 `--out` resume 추가 후 `setsid`로 **detach 재실행**(남은 13개부터). 이후 중단돼도 resume로 저렴하게 이어감.
-- 상태: **실행 중(detach)**. 완료 후 성공 개수 비교·기록.
-- baseline 부분결과(7/20): 성공 idx 2,5,6,9 / 실패 0,4,8.
+### baseline 확정 (사용자 지정)
+- **baseline = `all_results/20260701-061839` (M0@600s, 대실행)**. 앞-20개 기준 **M0 성공 11/20**: [2,5,6,9,10,11,12,19,26,28,29].
+- 모든 방법(M1~)은 **동일 조건 600s/20개**로 이 baseline과 직접 비교.
+- 참고: idx 10은 600s 성공/300s 실패 → timeout이 결과에 영향(그래서 300s 스크리닝 폐기, 600s로 통일).
+- (M0@300 재실행 20260705-062926은 중단·폐기; 부분결과만 참고용 잔존.)
+
+### [진행중] Iter 1 — M1 backtracking @600s/20
+- 가설: SEARCH_THRASH(47%)는 straight-line 재시작 낭비 → best-first backtracking(`rango-best-beam`)이 유효 prefix 보존해 성공률↑.
+- 실행: `setsid`로 detach, `all_log/run_method.sh rango-best-beam 600`. 로그 all_log/m1_run.log. 07:22 UTC 시작.
+- 완료 후 M0@600(11/20)과 성공 개수 비교→기록. ≥이면 master merge 검토, 그리고 M2(rango-mem) 동일조건 실행.
 
 ### [완료] Iter 0 — 파이프라인 스모크 테스트
 - rango(StraightLine): idx 6 SUCCESS 6.6s. rango-best-beam(ClassicalSearch/backtracking): idx 6 SUCCESS. `--timeout` 오버라이드 정상.
