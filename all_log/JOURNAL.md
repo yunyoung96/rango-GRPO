@@ -21,7 +21,13 @@
 
 ## 진행 상황 (최신이 위)
 
-### [진행중] Iter 0 — 파이프라인 스모크 테스트 & 베이스라인 준비
-- 목적: 실행 파이프라인(모델 서버 기동 → 증명 탐색 → 성공 판정)이 도는지 1개 정리로 확인.
-- 상태: 스모크 테스트 실행 중.
-- 다음: 확인되면 baseline `rango`(20개, 300s) 측정 → Iter 1에서 `rango-best-beam`(backtracking)과 비교.
+### [진행중] Iter 1 — backtracking(M1) vs baseline(M0), 20개 @ 300s
+- 가설: SEARCH_THRASH(47%)는 straight-line 재시작 낭비 때문 → best-first backtracking(`rango-best-beam`)이 유효 prefix를 보존해 성공률↑.
+- 실험: `rango`@300/20 (baseline, dir=20260705-062926) → `rango-best-beam`@300/20 (M1), 순차.
+- **중단·재개 이력**: baseline 7/20(성공4)에서 세션 종료로 백그라운드 job 사망 → run_all에 `--out` resume 추가 후 `setsid`로 **detach 재실행**(남은 13개부터). 이후 중단돼도 resume로 저렴하게 이어감.
+- 상태: **실행 중(detach)**. 완료 후 성공 개수 비교·기록.
+- baseline 부분결과(7/20): 성공 idx 2,5,6,9 / 실패 0,4,8.
+
+### [완료] Iter 0 — 파이프라인 스모크 테스트
+- rango(StraightLine): idx 6 SUCCESS 6.6s. rango-best-beam(ClassicalSearch/backtracking): idx 6 SUCCESS. `--timeout` 오버라이드 정상.
+- 결론: 두 실행 경로 모두 정상 → Iter 1 진행.
