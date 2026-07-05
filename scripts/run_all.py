@@ -66,6 +66,8 @@ def main():
                         help="search 제한 시간(초) (기본값: 600)")
     parser.add_argument("--description", type=str, default="", metavar="TEXT",
                         help="이 아키텍처가 어떤 아이디어로 개선한 것인지 짧은 설명 (summary.json에 기록)")
+    parser.add_argument("--out", type=str, default=None, metavar="DIR",
+                        help="기존 결과 디렉토리 재사용(resume). 이미 완료된 idx는 건너뜀.")
     args = parser.parse_args()
 
     # compcert 인덱스 결정
@@ -73,18 +75,35 @@ def main():
     if args.num is not None:
         indices = indices[: args.num]
 
-    # 출력 디렉토리
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    out_dir = Path("all_results") / timestamp
+    # 출력 디렉토리 (--out 이면 resume)
+    if args.out is not None:
+        out_dir = Path(args.out)
+        timestamp = out_dir.name
+    else:
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        out_dir = Path("all_results") / timestamp
     log_dir = out_dir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
-
     summary_path = out_dir / "summary.json"
-    print(f"총 {len(indices)}개  arch={args.alias}  timeout={args.timeout}s  workers={args.workers}  →  {out_dir}")
 
+    # resume: 기존 summary.json에서 완료분 로드 → 남은 idx만 실행
     results = []
     n_success = 0
-    done = 0
+    if summary_path.exists():
+        prev = json.loads(summary_path.read_text())
+        results = prev.get("results", [])
+        n_success = sum(1 for r in results if r.get("success"))
+        done_idx = {r["idx"] for r in results}
+        remaining = [i for i in indices if i not in done_idx]
+        print(f"[resume] {len(done_idx)}개 완료됨 → 남은 {len(remaining)}개 실행")
+        indices_to_run = remaining
+    else:
+        indices_to_run = indices
+
+    total = len(indices)
+    done = len(results)
+    print(f"총 {total}개  arch={args.alias}  timeout={args.timeout}s  workers={args.workers}  →  {out_dir}")
+
     lock = threading.Lock()
 
     def save_summary():
@@ -93,7 +112,7 @@ def main():
             "architecture": args.alias,
             "description": args.description,
             "timeout_sec": args.timeout,
-            "total": len(indices),
+            "total": total,
             "done": done,
             "success": n_success,
             "fail": done - n_success,
@@ -101,10 +120,11 @@ def main():
         }
         summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False))
 
+    save_summary()  # resume 시에도 총계 즉시 반영
     with ThreadPoolExecutor(max_workers=args.workers) as executor:
         futures = {
             executor.submit(run_one, idx, log_dir / f"{idx}.txt", args.alias, args.timeout): idx
-            for idx in indices
+            for idx in indices_to_run
         }
         for future in as_completed(futures):
             r = future.result()
@@ -113,10 +133,10 @@ def main():
                 n_success += r["success"]
                 results.append(r)
                 status = "✓" if r["success"] else "✗"
-                print(f"  [{done}/{len(indices)}] idx={r['idx']}  {status}  {r['elapsed_sec']:.1f}s")
+                print(f"  [{done}/{total}] idx={r['idx']}  {status}  {r['elapsed_sec']:.1f}s")
                 save_summary()
 
-    print(f"\n완료: {n_success}/{len(indices)} 성공  →  {summary_path}")
+    print(f"\n완료: {n_success}/{total} 성공  →  {summary_path}")
 
 
 if __name__ == "__main__":
