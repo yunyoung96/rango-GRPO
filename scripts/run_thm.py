@@ -170,6 +170,16 @@ def get_searcher_conf(model_alias: str) -> SearcherConf:
                 use_memo=True,
             )
 
+        case "rango-apply-sl":
+            # straight-line(강한 base) + 각 step 다중후보 시도(forced apply premise 포함)
+            return StraightLineSearcherConf(
+                timeout=timeout,
+                print_proofs=True,
+                initial_proof=None,
+                token_mask=None,
+                try_candidates=6,
+            )
+
         case _:
             return straight_line_conf
 
@@ -267,8 +277,8 @@ def get_tactic_confs(model_alias: str, split: Split) -> list[TacticGenConf]:
             )
             return [DecoderTacticGenConf(Path(checkpoint), [formatter])]
 
-        case "rango-apply":
-            # M4': classical+memo + 좋은 premise면 apply/eapply/exploit 강제 후보
+        case "rango-apply" | "rango-apply-sl":
+            # M4'/변형: 좋은 premise면 apply/eapply/exploit 강제 후보 (classical 또는 straight-line multi-cand)
             checkpoint = (
                 "models/deepseek-bm25-proof-tfidf-proj-thm-prem-final/checkpoint-54500"
             )

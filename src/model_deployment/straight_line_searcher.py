@@ -37,6 +37,7 @@ class StraightLineSearcherConf:
     print_proofs: bool
     initial_proof: Optional[str]
     token_mask: Optional[str]
+    try_candidates: int = 1  # >1이면 각 step에서 후보를 순서대로 시도(첫 VALID/COMPLETE 채택)
     ALIAS = "straight_line"
 
     @classmethod
@@ -46,6 +47,7 @@ class StraightLineSearcherConf:
             yaml_data["print_proofs"],
             yaml_data.get("initial_proof", None),
             yaml_data.get("token_mask", None),
+            yaml_data.get("try_candidates", 1),
         )
 
 
@@ -58,6 +60,7 @@ class StraightLineSearcher:
         print_proofs: bool,
         initial_proof: Optional[str],
         token_mask: Optional[str],
+        try_candidates: int = 1,
     ):
         self.tactic_clients = tactic_clients
         self.proof_manager = proof_manager
@@ -65,6 +68,7 @@ class StraightLineSearcher:
         self.print_proofs = print_proofs
         self.initial_proof = initial_proof
         self.token_mask = token_mask
+        self.try_candidates = max(1, try_candidates)
 
         initial_dset_file = proof_manager.get_initial_context()
         if initial_dset_file is None:
@@ -99,6 +103,7 @@ class StraightLineSearcher:
             conf.print_proofs,
             conf.initial_proof,
             conf.token_mask,
+            getattr(conf, "try_candidates", 1),
         )
 
     def search(self, **kwargs) -> StraightLineSuccess | StraightLineFailure:
@@ -153,22 +158,31 @@ class StraightLineSearcher:
                 len(last_proof.steps) - 1,
                 last_proof,
                 cur_dset_file,
-                1,
+                self.try_candidates,
                 token_mask=self.token_mask,
                 file_prefix=self.proof_manager.file_prefix,
             )
             end_model_time = time.time()
-            assert len(result.next_tactic_list) == 1
-            next_tactic = result.next_tactic_list[0]
             self.total_model_time += end_model_time - start_model_time
-            print(f"  → 선택된 tactic: {repr(next_tactic.strip())}")
-            proof_check_result = self.proof_manager.check_proof(
-                cur_proof_script + next_tactic,
-                cur_proof_result.new_proof.theorem,
-            )
-            print(f"  → 결과: {proof_check_result.tactic_result}")
-            last_proof_script = cur_proof_script + next_tactic
-            cur_proof_result = proof_check_result
+            assert cur_proof_result.new_proof is not None
+            theorem = cur_proof_result.new_proof.theorem
+            # 후보를 순서대로(모델 best 우선, 이어서 get_recs가 append한 forced apply) 시도.
+            # 첫 VALID/COMPLETE 채택. 모두 INVALID면 첫 후보 결과로 종료.
+            chosen = None
+            chosen_script = last_proof_script
+            for cand in result.next_tactic_list:
+                print(f"  → 후보 tactic: {repr(cand.strip())}")
+                cand_check = self.proof_manager.check_proof(cur_proof_script + cand, theorem)
+                if chosen is None:
+                    chosen, chosen_script = cand_check, cur_proof_script + cand
+                if cand_check.tactic_result in (TacticResult.VALID, TacticResult.COMPLETE):
+                    chosen, chosen_script = cand_check, cur_proof_script + cand
+                    break
+                if self.timeout <= time.time() - start_time:
+                    break
+            print(f"  → 결과: {chosen.tactic_result}")
+            last_proof_script = chosen_script
+            cur_proof_result = chosen
             cur_time = time.time() - start_time
 
         match cur_proof_result.tactic_result:
