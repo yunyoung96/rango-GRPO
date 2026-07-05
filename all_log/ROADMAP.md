@@ -17,6 +17,12 @@ STRATEGY_DIVERGE 36.2% · SEARCH_THRASH 47.0% · NO_RETRIEVAL 5.6% · LLM_INVALI
 
 > **범위 확정**: hammer 미설치·미사용. RL 미사용. inference-time만.
 
+## M3 상세 설계 (aligned next-tactic, C1) — 구현 대기
+- **교훈 반영**: M1에서 classical(best-first)이 straight-line보다 하락(-3). 따라서 M3는 **straight-line 기반**으로 붙인다(강한 baseline에 retrieval 개선을 얹음). searcher 무관한 프롬프트-포매터 변경이 핵심.
+- 재료: `proof_retriever.py::get_similar_proof_steps`가 이미 매칭된 `ref_step_idx` 계산·반환 → 그 sibling 증명의 다음 tactic = `ref_proof.steps[ref_step_idx].step.text`.
+- 구현: (1) retriever/formatter가 top-1 sibling의 aligned 다음 tactic을 추출, (2) `lm_example.example_from_step` 프롬프트에 `(* 유사 goal에서 다음 tactic: X *)` 힌트 라인 주입. (선택) classical이면 강제 decode 후보로도.
+- alias `rango-align` = straight-line + 힌트. 스모크→600/20.
+
 ## M2 상세 설계 (retrieval-aware search) — 구현 대기
 - 위치: `classical_searcher.py`의 `search_step` — 후보 생성 루프(recs.next_tactic_list) 지점. 새 candidate를 frontier에 push할 때 점수를 조정.
 - 신호: 각 candidate의 결과 goal에 대한 proof-retrieval top1 매칭 overlap 비율 `r ∈ [0,1]` (지금도 lm_example에서 top5·매칭수를 계산하므로 재사용).
