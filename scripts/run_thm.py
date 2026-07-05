@@ -448,7 +448,11 @@ def get_result(model_alias: str, thm: EvalTheorem) -> Result:
 
 def get_orig_result(model_alias: str, split: Split, idx: int) -> Result:
     thm = get_theorem(split, idx, COQSTOQ_LOC)
-    return get_result(model_alias, thm)
+    try:
+        return get_result(model_alias, thm)
+    except ValueError:
+        # 새로 만든 alias(rango-mem 등)는 결과 json이 없으므로 rango 기준으로 대체
+        return get_result("rango", thm)
 
 
 def print_info():
