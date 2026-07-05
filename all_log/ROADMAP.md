@@ -10,7 +10,16 @@ STRATEGY_DIVERGE 36.2% · SEARCH_THRASH 47.0% · NO_RETRIEVAL 5.6% · LLM_INVALI
 | **M2 retrieval-aware search** | `rango-raware`(신규) | 노드 점수에 retrieval 신뢰도(top-k 매칭 overlap) 가산 → 신뢰도 높은 상태를 우선 확장(exploit) | STRATEGY_DIVERGE(36%) | 개발 예정 |
 | **M3 normalize-to-retrievable** | `rango-norm`(신규) | 신뢰도 낮으면 `intros/unfold head/simpl`로 goal 노출 후 재검색 | NO_RETRIEVAL(5.6%) | 개발 예정 |
 | **M4 selective-RAG candidates** | `rango-selrag`(신규) | 여러 candidate 생성 → 각 결과 상태의 retrieval 신뢰도 평가 → 의미 있는 것만 RAG 확장 | NO_RETRIEVAL+DIVERGE | 개발 예정 |
-| **M5 hammer fallback** | `rango-hammer`(신규) | 저신뢰·원자 goal leaf에서 CoqHammer 폴백 | NO_RETRIEVAL + 산술/결정가능 | **CoqHammer 설치 선행 필요** |
+| ~~M5 hammer fallback~~ | ~~`rango-hammer`~~ | ~~CoqHammer 폴백~~ | — | **제외**(사용자 요청: hammer 미설치·미사용) |
+
+> **범위 확정**: hammer는 설치/사용하지 않는다. **M1~M4**(search·backtracking·retrieval-aware·selective-RAG)만 진행.
+
+## M2 상세 설계 (retrieval-aware search) — 구현 대기
+- 위치: `classical_searcher.py`의 `search_step` — 후보 생성 루프(recs.next_tactic_list) 지점. 새 candidate를 frontier에 push할 때 점수를 조정.
+- 신호: 각 candidate의 결과 goal에 대한 proof-retrieval top1 매칭 overlap 비율 `r ∈ [0,1]` (지금도 lm_example에서 top5·매칭수를 계산하므로 재사용).
+- 점수: `score' = tactic_score + α·r` (α는 alias 파라미터, 초기 α=0.5). r 높은 상태를 우선 확장 → STRATEGY_DIVERGE 겨냥.
+- 주의: retrieval 호출 비용. 매 candidate마다 재검색은 비싸므로, 이미 formatter가 뽑아둔 retrieval 결과를 노드에 캐싱해 재사용.
+- alias: `rango-raware`. get_searcher_conf/get_tactic_confs에 분기 추가.
 
 ## 실험 프로토콜
 1. **1차(스크리닝)**: timeout 300s(5분), 데이터 20개. baseline `rango`와 성공 개수 비교.
