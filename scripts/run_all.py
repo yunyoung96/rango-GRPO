@@ -64,6 +64,8 @@ def main():
                         help="실행 아키텍처(run_thm.py alias) (기본값: rango)")
     parser.add_argument("--timeout", type=int, default=600, metavar="SEC",
                         help="search 제한 시간(초) (기본값: 600)")
+    parser.add_argument("--description", type=str, default="", metavar="TEXT",
+                        help="이 아키텍처가 어떤 아이디어로 개선한 것인지 짧은 설명 (summary.json에 기록)")
     args = parser.parse_args()
 
     # compcert 인덱스 결정
@@ -89,6 +91,7 @@ def main():
         summary = {
             "timestamp": timestamp,
             "architecture": args.alias,
+            "description": args.description,
             "timeout_sec": args.timeout,
             "total": len(indices),
             "done": done,

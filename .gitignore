@@ -51,3 +51,4 @@ CoqStoq/
 # OS
 .DS_Store
 Thumbs.db
+all_log/*.log
