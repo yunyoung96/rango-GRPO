@@ -7,3 +7,5 @@ rango-best-beam|300|M1 backtracking @300
 rango-align|300|M3 aligned next-tactic 힌트 @300
 rango-apply-sl|300|straight-line 다중후보(모델 실패시 forced apply premise 시도)
 rango-portfolio|300|straight-line 0.7 → 실패시 classical-mem 0.3 (union 노림)
+rango-portfolio|600|600s에선 각 phase 충분(straight420+classical180)—union 재시도
+rango-apply-sl|600|straight+apply 풀예산 재확인(idx10 등 timeout 케이스 회복)
