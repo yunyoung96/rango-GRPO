@@ -55,3 +55,15 @@ STRATEGY_DIVERGE 36.2% · SEARCH_THRASH 47.0% · NO_RETRIEVAL 5.6% · LLM_INVALI
   - **MR2 expert iteration**: 모델이 찾은 성공 증명으로 재학습(reward-free self-training).
   - **QEDCartographer 직접 실행 가능성**: 별도 repo(Proverbot9001 기반)라 통합 난이도 조사 필요 → 서브에이전트 판단 반영.
 - 주의: RL은 학습(fine-tune) 필요 → GPU 학습 job은 M3~M5 inference 실험과 순차로(동시 금지).
+
+## RL 트랙 구체화 (조사 반영, RL_LITERATURE.md)
+- **QEDCartographer 직접 실행 배제** → **MR1 value-guided best-first**(QED-영감)로 대체.
+- **MR1 (value-guided search)** — alias `rango-value`. 단계:
+  1. ClassicalSearcher에 노드-상태 로깅(JSONL) + 탐색후 성공경로/dead 라벨링 훅.
+  2. 로깅 켠 채 classical 탐색 데이터 수집 run(GPU).
+  3. value head(MLP on 동결 DeepSeek 임베딩 or 수제특징) BCE/MSE 학습(수 분).
+  4. `ClassicalSearchConf(value_guided, value_weight, value_ckpt)` — frontier 우선순위=cum_logprob+value_weight·log V. value_weight=0이면 baseline classical(A/B).
+  5. 600/20 실험 → analysis.md.
+- **MR2 (expert iteration)** — 자기 성공증명으로 LoRA 재학습(train_decoder.py 재사용). policy 개선. MR1 다음.
+- 주의: classical 계열은 M1/M2에서 straight-line 미달이었음 → value-guiding으로 순서 개선이 그 격차를 메우는지가 관건. 안 되면 value 신호를 straight-line 후보 재랭킹에 쓰는 변형 고려.
+- GPU 학습 job은 inference 실험과 순차(동시 금지).
