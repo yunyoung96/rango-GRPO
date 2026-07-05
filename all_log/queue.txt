@@ -5,3 +5,4 @@ rango-mem|300|M2 memory(transposition+cycle guard) @300
 rango-mem-wide|300|M2 변형 max_branch 16
 rango-best-beam|300|M1 backtracking @300
 rango-align|300|M3 aligned next-tactic 힌트 @300
+rango-apply-sl|300|straight-line 다중후보(모델 실패시 forced apply premise 시도)
