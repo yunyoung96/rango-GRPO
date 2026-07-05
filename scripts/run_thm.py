@@ -567,6 +567,12 @@ if __name__ == "__main__":
         print(orig_result.proof)
         print("Original Time:")
         print(orig_result.time)
+        # rango.json(published Rango) 기준 성공 여부 — 실행 alias와 무관하게 항상 rango
+        try:
+            _rango_ref = get_result("rango", conf.thm)
+            print(f"RANGO_JSON_SUCCESS: {_rango_ref.proof is not None}")
+        except Exception as _e:
+            print(f"RANGO_JSON_SUCCESS: unknown ({_e})")
     else:
         assert args.command == "eval"
         conf = get_test_proof(args.alias, coqstoq_split, 0)

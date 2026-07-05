@@ -10,6 +10,7 @@ CompCert test 인덱스에 대해 run_thm.py를 실행하고 로그/요약을 �
 
 import argparse
 import json
+import re
 import subprocess
 import threading
 import time
@@ -35,11 +36,15 @@ def run_one(idx: int, log_file: Path, alias: str, timeout: int) -> dict:
         result = subprocess.run(cmd, stdout=f, stderr=f)
     elapsed = time.time() - t0
 
-    # 성공 여부는 로그 마지막에서 파싱
+    # 성공 여부 + rango.json 기준 원래 성공 여부를 로그에서 파싱
     success = False
+    original_success = None  # rango.json(published Rango) 기준
     try:
         text = log_file.read_text()
         success = "CURRENT RESULT: SUCCESS" in text
+        m = re.search(r"RANGO_JSON_SUCCESS: (True|False)", text)
+        if m:
+            original_success = m.group(1) == "True"
     except Exception:
         pass
 
@@ -48,6 +53,7 @@ def run_one(idx: int, log_file: Path, alias: str, timeout: int) -> dict:
         "architecture": alias,
         "timeout_sec": timeout,
         "success": success,
+        "original_success": original_success,
         "exit_code": result.returncode,
         "elapsed_sec": round(elapsed, 2),
         "log": str(log_file),
