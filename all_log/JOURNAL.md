@@ -58,3 +58,9 @@
 - 방법: formatter가 top premise 이름 추출→stash, get_recs가 `exploit/eapply/apply <premise>` 강제 후보를 next_tactic_list에 append. classical(use_memo)이 이를 시도. alias `rango-apply`.
 - 검증(idx840 스모크): `load_rule` 강제 추출 → `exploit load_rule; eauto.`/`eapply load_rule; eauto.`/`apply load_rule.` 실제 시도 확인(이전엔 거의 안 씀). 메커니즘 완성.
 - 실행: first-20 @600 detach. 완료 후 baseline(11/20) 대비 판정 + idx840 별도 600s 검증 예정.
+
+### [오버나이트] 자동 연쇄 드라이버 가동 (14:30 UTC~)
+- 사용자 취침 → 무개입 대량 실험. `all_log/overnight.sh`가 queue.txt를 순차 처리(스모크→run_all 300s/20→make_report), 깨진 alias 스킵, done.txt resume, queue 추가 시 픽업.
+- 초기 큐 7개: rango(baseline@300), rango-apply, rango-alignapply, rango-mem, rango-mem-wide(branch16), rango-best-beam, rango-align.
+- 300s 스크리닝으로 처리량↑. 유망하면 600s/확대 확인. 완료마다 analysis.md.
+- 매 wakeup: 진행/결과 보고 + 큐에 새 방법 append(변형·조합·신규구현) + 드라이버 죽으면 재시작.
