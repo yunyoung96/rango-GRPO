@@ -133,6 +133,18 @@ def get_searcher_conf(model_alias: str) -> SearcherConf:
                 initial_proof=None,
             )
 
+        case "rango-mem":
+            # M2: best-first + transposition table/failed-tactic memo/cycle guard
+            return ClassicalSearchConf(
+                max_branch=4,
+                max_search_steps=1000000,
+                depth_limit=30,
+                timeout=600,
+                beam_decode=True,
+                initial_proof=None,
+                use_memo=True,
+            )
+
         case _:
             return straight_line_conf
 
@@ -189,7 +201,7 @@ def get_tactic_confs(model_alias: str, split: Split) -> list[TacticGenConf]:
     )
 
     match model_alias:
-        case "rango" | "rango-best-beam" | "rango-best-rand":
+        case "rango" | "rango-best-beam" | "rango-best-rand" | "rango-mem":
             checkpoint = (
                 "models/deepseek-bm25-proof-tfidf-proj-thm-prem-final/checkpoint-54500"
             )
