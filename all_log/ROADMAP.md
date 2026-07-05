@@ -41,3 +41,8 @@ STRATEGY_DIVERGE 36.2% · SEARCH_THRASH 47.0% · NO_RETRIEVAL 5.6% · LLM_INVALI
 - backtracking 유효성: SEARCH_THRASH 47% = "한 step 틀려 전부 버림". best-first면 구조적 회복.
 - normalize 유효성: idx 444에서 `unfold DN_UP_parity_prop` 직후 retrieval 매칭 0→6 관측.
 - selective-RAG: retrieval 신뢰도가 상태 의존적 → 신뢰도 낮은 가지에 비싼 RAG 낭비 대신 신뢰 높은 가지 집중.
+
+## M4 상세 설계 (error-repair, A4) — 구현 대기
+- Coq 에러: `proof_manager.py:220-222` diagnostic.message(severity 1)로 존재하나 ProofCheckResult에 미저장.
+- 간이형(우선): straight-line에서 실패한 tactic 텍스트를 다음 프롬프트에 '피해야 할 것'으로 주입(COPRA-lite, 에러문 없이도 재제안 회피). formatter align_hint처럼 flag+주입.
+- 정식형: ProofCheckResult에 error_msg 캡처→searcher→formatter 전달→프롬프트 주입.
