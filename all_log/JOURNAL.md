@@ -37,7 +37,11 @@
 - 해석: classical 계열은 memory·분기확대로도 straight-line 미달. 단 **idx 27처럼 straight-line이 못 찾는 걸 찾음** → 두 방식이 상보적(portfolio 가능성). 하지만 전면 대체로는 하락.
 - 결정: merge 안 함. **결론: 이후 retrieval 개선은 강한 baseline(straight-line) 위에 얹는다.** classical 단독 탐색 노선 중단.
 
-### [진행중] Iter 3 — M3 rango-align (straight-line + aligned next-tactic 힌트)
+### [진행중] Iter 3 — M3 rango-align (straight-line + aligned next-tactic 힌트) @600/20
+- 가설: STRATEGY_DIVERGE(36%) = retrieval된 sibling을 모델이 안 따라감 → sibling의 **매칭 중간상태 다음 tactic**을 프롬프트 최상단에 주입해 salient하게.
+- 구현: GeneralFormatterConf.align_hint; get_similar_proof_steps top-1의 ref_step_idx→tactic. 자명(Proof./불릿) 제외. **주석(* *) 대신 bare tactic**(모델이 따라 해도 유효 Coq). conf_utils formatter 재구성 시 align_hint 보존 버그 수정.
+- 검증: 스모크 idx6 성공, idx22 실질 hint(`red; intro; subst a y.`) 주입, Unterminated comment 0(baseline과 동일).
+- 상태: 10:45 UTC 실행 시작(detach). 완료 후 make_report→baseline(11/20) 대비 판정.
 - 가설: SEARCH_THRASH(47%)는 straight-line 재시작 낭비 → best-first backtracking(`rango-best-beam`)이 유효 prefix 보존해 성공률↑.
 - 실행: `setsid`로 detach, `all_log/run_method.sh rango-best-beam 600`. 로그 all_log/m1_run.log. 07:22 UTC 시작.
 - 완료 후 M0@600(11/20)과 성공 개수 비교→기록. ≥이면 master merge 검토, 그리고 M2(rango-mem) 동일조건 실행.
