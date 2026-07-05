@@ -49,3 +49,10 @@
 ### [완료] Iter 0 — 파이프라인 스모크 테스트
 - rango(StraightLine): idx 6 SUCCESS 6.6s. rango-best-beam(ClassicalSearch/backtracking): idx 6 SUCCESS. `--timeout` 오버라이드 정상.
 - 결론: 두 실행 경로 모두 정상 → Iter 1 진행.
+
+### [완료] Iter 3 — M3 rango-align → ❌ 하락 (9/20, 순증감 -2)
+- 회귀 [10,11], 신규 0 (단 rango.json 대비 idx2 신규). align 힌트가 baseline 못 넘음. merge 안 함.
+
+### [진행중] Iter 4 — M4' rango-apply (사용자 요청: 좋은 premise면 apply 강제)
+- 진단(idx 840 loadv_rule): `load_rule`이 premise/proof retrieval **Top1**로 완벽 검색됐으나, 모델은 수백 시도 중 `eapply load_rule`를 2~3회만 시도(정답=`exploit load_rule`). → 좋은 premise를 찾고도 apply/exploit를 거의 안 씀.
+- 방법: formatter가 top premise 이름 추출→stash, get_recs가 `exploit/eapply/apply <premise>` 강제 후보를 next_tactic_list에 append. classical(use_memo)이 이를 시도. alias `rango-apply`.
