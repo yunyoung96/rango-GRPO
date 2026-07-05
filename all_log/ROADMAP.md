@@ -3,16 +3,19 @@
 각 방법은 `run_thm.py`의 새 alias + `run_all --description`으로 실험한다. 근거는 `all_results/20260701-061839/analysis.md` §3 실패 유형(전체 1000건 기준):
 STRATEGY_DIVERGE 36.2% · SEARCH_THRASH 47.0% · NO_RETRIEVAL 5.6% · LLM_INVALID 3.9% · AUTO_LOOP 2.3% · LONG_PROOF 4.3%.
 
-| 방법 | alias | 핵심 아이디어 | 겨냥 실패유형 | 코드 상태 |
-|------|-------|--------------|--------------|-----------|
-| **M0 baseline** | `rango` | StraightLine, 재시작만 | (기준) | 존재 |
-| **M1 backtracking** | `rango-best-beam` | best-first + `seen_goals` 중복제거 → 유효 prefix 보존, 실패 step만 교체 | SEARCH_THRASH(47%) | **이미 존재**(ClassicalSearch) |
-| **M2 retrieval-aware search** | `rango-raware`(신규) | 노드 점수에 retrieval 신뢰도(top-k 매칭 overlap) 가산 → 신뢰도 높은 상태를 우선 확장(exploit) | STRATEGY_DIVERGE(36%) | 개발 예정 |
-| **M3 normalize-to-retrievable** | `rango-norm`(신규) | 신뢰도 낮으면 `intros/unfold head/simpl`로 goal 노출 후 재검색 | NO_RETRIEVAL(5.6%) | 개발 예정 |
-| **M4 selective-RAG candidates** | `rango-selrag`(신규) | 여러 candidate 생성 → 각 결과 상태의 retrieval 신뢰도 평가 → 의미 있는 것만 RAG 확장 | NO_RETRIEVAL+DIVERGE | 개발 예정 |
-| ~~M5 hammer fallback~~ | ~~`rango-hammer`~~ | ~~CoqHammer 폴백~~ | — | **제외**(사용자 요청: hammer 미설치·미사용) |
+> **순서 재정렬(논문 반영, `LITERATURE.md`)**: 실패 지분·구현 난이도 기준. M1(=ClassicalSearcher)이 최대 지분(SEARCH_THRASH 47%)을 이미 겨냥하므로, 그 위에 A2(검색 메모리)→C1(정렬 tactic)→A4(에러 repair)를 쌓는 게 1차 스프린트(실패 ~87% 공략). 이후 사용자 아이디어(retrieval-aware/normalize/selective-RAG)는 M6~로.
 
-> **범위 확정**: hammer는 설치/사용하지 않는다. **M1~M4**(search·backtracking·retrieval-aware·selective-RAG)만 진행.
+| 방법 | alias | 핵심 아이디어 | 겨냥 | 근거 | 상태 |
+|------|-------|--------------|------|------|------|
+| **M0 baseline** | `rango` | StraightLine, 재시작만 | (기준) | — | 존재 |
+| **M1 backtracking** | `rango-best-beam` | best-first + `seen_goals` 중복제거 → 유효 prefix 보존 | SEARCH_THRASH(47%) | A1 GPT-f | **실행 중** |
+| **M2 search-memory** | `rango-mem`(신규) | transposition table(정규화 goal 해시) + 실패-tactic 메모(check 전 차감) + dead-node 전파 + cycle guard | SEARCH_THRASH, AUTO_LOOP | A2 HTPS/DT-Solver | 다음 |
+| **M3 aligned-tactic** | `rango-align`(신규) | 매칭된 sibling 중간상태의 **다음 tactic 복원** → 프롬프트 힌트 + 강제 decode 후보 | STRATEGY_DIVERGE(36%) | C1 Rango/Graph2Tac | 예정 |
+| **M4 error-repair** | `rango-repair`(신규) | 거부된 tactic+Coq 에러를 다음 확장 프롬프트에 주입 | LLM_INVALID | A4 Baldur / A5 COPRA | 예정 |
+| **M5 unfold-gate** | `rango-unfold`(신규) | retrieval-miss 시 head 심볼 δ-unfold 후 재검색 (idx444 매칭 0→6) | NO_RETRIEVAL | B2 Graph2Tac / C2 FLARE | 예정 |
+| **M6+ (사용자 아이디어)** | `rango-raware`/`rango-norm`/`rango-selrag` | retrieval-confidence 탐색순서 · BM25 전 정규화 · 후보별 selective-RAG · cross-encoder rerank | DIVERGE/NO_RETR | C5/B1/C4 | 예정 |
+
+> **범위 확정**: hammer 미설치·미사용. RL 미사용. inference-time만.
 
 ## M2 상세 설계 (retrieval-aware search) — 구현 대기
 - 위치: `classical_searcher.py`의 `search_step` — 후보 생성 루프(recs.next_tactic_list) 지점. 새 candidate를 frontier에 push할 때 점수를 조정.
