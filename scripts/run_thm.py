@@ -22,6 +22,7 @@ from model_deployment.searcher import (
     StraightLineSearcherConf,
     ClassicalSearchConf,
 )
+from model_deployment.portfolio_searcher import PortfolioSearchConf
 from model_deployment.run_proof import TestProofConf
 
 from model_deployment.classical_searcher import ClassicalSuccess, ClassicalFailure
@@ -180,6 +181,22 @@ def get_searcher_conf(model_alias: str) -> SearcherConf:
                 try_candidates=6,
             )
 
+        case "rango-portfolio":
+            # straight-line(0.7) → 실패시 classical-mem(0.3). union 노림.
+            return PortfolioSearchConf(
+                straight_conf=StraightLineSearcherConf(
+                    timeout=timeout, print_proofs=True,
+                    initial_proof=None, token_mask=None,
+                ),
+                classical_conf=ClassicalSearchConf(
+                    max_branch=8, max_search_steps=1000000, depth_limit=30,
+                    timeout=timeout, beam_decode=True, initial_proof=None,
+                    use_memo=True,
+                ),
+                timeout=timeout,
+                straight_frac=0.7,
+            )
+
         case _:
             return straight_line_conf
 
@@ -236,7 +253,7 @@ def get_tactic_confs(model_alias: str, split: Split) -> list[TacticGenConf]:
     )
 
     match model_alias:
-        case "rango" | "rango-best-beam" | "rango-best-rand" | "rango-mem" | "rango-mem-wide":
+        case "rango" | "rango-best-beam" | "rango-best-rand" | "rango-mem" | "rango-mem-wide" | "rango-portfolio":
             checkpoint = (
                 "models/deepseek-bm25-proof-tfidf-proj-thm-prem-final/checkpoint-54500"
             )
