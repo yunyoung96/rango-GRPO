@@ -49,6 +49,22 @@ from util.util import get_basic_logger, FlexibleUrl
 _logger = get_basic_logger(__name__)
 
 
+def _append_forced_apply(result: ModelResult, premises: list[str]) -> None:
+    """M4': top premise들에 대해 apply/eapply/exploit 강제 후보를 결과에 추가한다.
+    classical searcher가 next_tactic_list 전체를 시도하므로, 좋은 premise를 찾고도
+    모델이 apply를 안 쓰는 문제(idx840 load_rule)를 보완. score는 top 후보와 동급으로."""
+    base = max(result.score_list) if result.score_list else 0.0
+    existing = set(t.strip() for t in result.next_tactic_list)
+    for p in premises:
+        for tac in (f"exploit {p}; eauto.", f"eapply {p}; eauto.", f"apply {p}."):
+            if tac in existing:
+                continue
+            existing.add(tac)
+            result.next_tactic_list.append(tac)
+            result.score_list.append(base)
+            result.num_tokens_list.append(10)
+
+
 @dataclass
 class FidTacticGenConf:
     ALIAS = "fid"
@@ -440,7 +456,12 @@ class LocalTacticGenClient:
         if request_id != request_id:
             _logger.error("ID MISMATCH IN REQUESTS")
         assert response["id"] == request_id
-        return ModelResult.from_json(response["result"])
+        result = ModelResult.from_json(response["result"])
+        # M4': formatter가 top premise를 stash했으면 apply/eapply/exploit 강제 후보 추가
+        forced = getattr(self.formatters[0], "forced_premises", None)
+        if forced:
+            _append_forced_apply(result, forced)
+        return result
 
     def set_seed(self, seed: int) -> None:
         request_data = {

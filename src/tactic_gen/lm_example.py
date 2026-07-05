@@ -7,6 +7,16 @@ import re
 
 _ID_FORM = re.compile(r"[^\[\]\{\}\(\):=,\s]+")
 
+_LEMMA_NAME = re.compile(
+    r"^\s*(?:Lemma|Theorem|Remark|Corollary|Definition|Fixpoint|Instance|Fact|Property|Proposition|Global\s+Instance)\s+([A-Za-z_][\w']*)"
+)
+
+
+def _lemma_name(text: str) -> Optional[str]:
+    """premise 텍스트('Lemma load_rule: ...')에서 lemma 이름 추출."""
+    m = _LEMMA_NAME.match(text.strip())
+    return m.group(1) if m else None
+
 
 from data_management.line_dict import LineDict
 from data_management.splits import FileInfo
@@ -152,6 +162,7 @@ class GeneralFormatterConf:
     num_premises: Optional[int]
     num_proofs: Optional[int]
     align_hint: bool = False  # M3(C1): retrieval된 sibling의 aligned 다음 tactic을 프롬프트에 주입
+    apply_hint: bool = False  # M4': top premise가 강하면 apply/eapply/exploit <premise>를 강제 후보로
 
     def __hash__(self) -> int:
         return hash(str(self))
@@ -180,6 +191,7 @@ class GeneralFormatterConf:
             num_premises,
             num_proofs,
             yaml_data.get("align_hint", False),
+            yaml_data.get("apply_hint", False),
         )
 
 
@@ -191,12 +203,16 @@ class GeneralFormatter:
         num_premises: Optional[int],
         num_proofs: Optional[int],
         align_hint: bool = False,
+        apply_hint: bool = False,
     ):
         self.premise_client = premise_client
         self.proof_retriever = proof_retriever
         self.num_premises = num_premises
         self.num_proofs = num_proofs
         self.align_hint = align_hint
+        self.apply_hint = apply_hint
+        # M4': example_from_step이 채우는 강제 apply 대상 premise 이름들 (get_recs가 소비)
+        self.forced_premises: list[str] = []
 
     def example_from_step(
         self,
@@ -307,6 +323,7 @@ class GeneralFormatter:
         else:
             similar_proof_strs = None
 
+        self.forced_premises = []  # M4': 매 스텝 초기화
         if self.premise_client is not None:
             assert self.num_premises is not None
             filtered_result = (
@@ -336,6 +353,15 @@ class GeneralFormatter:
                 print_retrieved(j + 1, p.text, prem_query_set)
             relevant_premises = all_relevant_premises[: self.num_premises]
             relevant_premise_strs = [p.text for p in relevant_premises]
+
+            # M4': top premise가 강하면 그 lemma 이름을 추출해 강제 apply 대상으로 stash
+            if self.apply_hint:
+                for p in all_relevant_premises[:2]:  # top-2 premise
+                    name = _lemma_name(p.text)
+                    if name and name not in self.forced_premises:
+                        self.forced_premises.append(name)
+                if self.forced_premises:
+                    print(f"  [Apply hint] 강제 apply 대상: {self.forced_premises}")
         else:
             relevant_premise_strs = None
 
@@ -377,6 +403,7 @@ class GeneralFormatter:
             conf.num_premises,
             conf.num_proofs,
             getattr(conf, "align_hint", False),
+            getattr(conf, "apply_hint", False),
         )
 
 

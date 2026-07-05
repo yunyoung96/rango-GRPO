@@ -133,6 +133,18 @@ def get_searcher_conf(model_alias: str) -> SearcherConf:
                 initial_proof=None,
             )
 
+        case "rango-apply":
+            # M4': classical+memo (강제 apply 후보를 시도하려면 다중 후보 탐색 필요)
+            return ClassicalSearchConf(
+                max_branch=8,
+                max_search_steps=1000000,
+                depth_limit=30,
+                timeout=600,
+                beam_decode=True,
+                initial_proof=None,
+                use_memo=True,
+            )
+
         case "rango-mem":
             # M2: best-first + transposition table/failed-tactic memo/cycle guard.
             # M1(branch=4)이 baseline보다 좁아 하락 → memo가 dedup으로 감당하므로 branch 확대(8).
@@ -225,6 +237,20 @@ def get_tactic_confs(model_alias: str, split: Split) -> list[TacticGenConf]:
                 num_premises=50,
                 num_proofs=20,
                 align_hint=True,
+            )
+            return [DecoderTacticGenConf(Path(checkpoint), [formatter])]
+
+        case "rango-apply":
+            # M4': classical+memo + 좋은 premise면 apply/eapply/exploit 강제 후보
+            checkpoint = (
+                "models/deepseek-bm25-proof-tfidf-proj-thm-prem-final/checkpoint-54500"
+            )
+            formatter = GeneralFormatterConf(
+                premise_client_conf=tfidf_premise_conf,
+                proof_retriever_conf=bm25_proof_conf,
+                num_premises=50,
+                num_proofs=20,
+                apply_hint=True,
             )
             return [DecoderTacticGenConf(Path(checkpoint), [formatter])]
 
