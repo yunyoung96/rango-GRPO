@@ -218,6 +218,40 @@ class GeneralFormatter:
                 print(f"      hyp: {h}")
             print(f"      ⊢   {g.goal}")
 
+        def print_query_state(indent: str, goals: list[Goal]) -> None:
+            """아래 top5가 '지금까지 어떤 tactic까지 실행됐고, 현재 어떤 goal
+            상태인지'(= 검색 쿼리로 쓰인 상태)에서 뽑힌 것임을 top5 바로 앞에
+            다시 보여준다."""
+            print(f"{indent}── 이 top5를 뽑은 기준 상태 ──")
+            print(f"{indent}· 지금까지 실행한 tactic (step_idx={step_idx}):")
+            if script_so_far:
+                for line in script_so_far.splitlines():
+                    print(f"{indent}    {line}")
+            else:
+                print(f"{indent}    (아직 실행한 tactic 없음 — 증명 시작 지점)")
+            print(f"{indent}· 위 tactic들을 실행한 뒤의 현재 goal (총 {len(goals)}개, 이걸 쿼리로 검색):")
+            if not goals:
+                print(f"{indent}    (남은 goal 없음)")
+            for gi, g in enumerate(goals):
+                print(f"{indent}    [Goal {gi}]")
+                for h in g.hyps:
+                    print(f"{indent}      hyp: {h}")
+                print(f"{indent}      ⊢   {g.goal}")
+
+        def print_retrieved(rank: int, text: str, query_set: set[str]) -> None:
+            """검색된 증명/전제 전체를 (줄바꿈 유지하여) 출력한다.
+            기존엔 한 줄로 flatten 후 160자에서 잘라 theorem 뒤 proof 본문이
+            통째로 사라졌었다 → 전체를 그대로 보여준다."""
+            text = text.strip()
+            item_ids = set(_ID_FORM.findall(text))
+            matched = sorted(query_set & item_ids)
+            print(f"      Top{rank}:")
+            for line in text.splitlines():
+                print(f"          {line}")
+            id_preview = sorted(item_ids)[:15]
+            print(f"              item_ids(전체): {id_preview}{'...' if len(item_ids) > 15 else ''}")
+            print(f"              매칭 IDs      : {matched}")
+
         if self.proof_retriever is not None:
             assert self.num_proofs is not None
             # 쿼리 ID 계산 (BM25/TFIDF에 실제 사용되는 값)
@@ -231,6 +265,7 @@ class GeneralFormatter:
             retriever_type = type(self.proof_retriever).__name__
             kind = getattr(self.proof_retriever, "kind", "?")
             print(f"\n  [Proof Retrieval ({retriever_type}, {kind})]")
+            print_query_state("    ", step.goals)
             print(f"    쿼리 hyp_ids : {proof_query_hyp_ids}")
             print(f"    쿼리 goal_ids: {proof_query_goal_ids}")
             all_similar_proofs = self.proof_retriever.get_similar_proofs(
@@ -241,12 +276,7 @@ class GeneralFormatter:
             )
             print(f"    전체 후보: {len(all_similar_proofs)}개  →  top5:")
             for j, p in enumerate(all_similar_proofs[:5]):
-                pstr = p.proof_text_to_string().strip().replace("\n", " ")
-                item_ids = set(_ID_FORM.findall(pstr))
-                matched = sorted(proof_query_set & item_ids)
-                print(f"      Top{j+1}: {pstr[:160]}")
-                print(f"              item_ids(전체): {sorted(item_ids)[:15]}{'...' if len(item_ids)>15 else ''}")
-                print(f"              매칭 IDs      : {matched}")
+                print_retrieved(j + 1, p.proof_text_to_string(), proof_query_set)
             simliar_proofs = all_similar_proofs[: self.num_proofs]
             similar_proof_strs = [p.proof_text_to_string() for p in simliar_proofs]
         else:
@@ -263,6 +293,8 @@ class GeneralFormatter:
             premise_type = type(self.premise_client).__name__
             kind = getattr(self.premise_client, "kind", "?")
             print(f"\n  [Premise Retrieval ({premise_type}, {kind})]")
+            # premise 검색은 focused_goal(goals[0]) 하나만 쿼리로 사용
+            print_query_state("    ", step.goals[:1])
             prem_query_set: set[str] = set()
             if step.goals:
                 focused_goal = step.goals[0]
@@ -276,12 +308,7 @@ class GeneralFormatter:
             )
             print(f"    전체 후보: {len(all_relevant_premises)}개  →  top5:")
             for j, p in enumerate(all_relevant_premises[:5]):
-                pstr = p.text.strip().replace("\n", " ")
-                item_ids = set(_ID_FORM.findall(pstr))
-                matched = sorted(prem_query_set & item_ids)
-                print(f"      Top{j+1}: {pstr[:160]}")
-                print(f"              item_ids(전체): {sorted(item_ids)[:15]}{'...' if len(item_ids)>15 else ''}")
-                print(f"              매칭 IDs      : {matched}")
+                print_retrieved(j + 1, p.text, prem_query_set)
             relevant_premises = all_relevant_premises[: self.num_premises]
             relevant_premise_strs = [p.text for p in relevant_premises]
         else:
