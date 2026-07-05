@@ -56,3 +56,5 @@
 ### [진행중] Iter 4 — M4' rango-apply (사용자 요청: 좋은 premise면 apply 강제)
 - 진단(idx 840 loadv_rule): `load_rule`이 premise/proof retrieval **Top1**로 완벽 검색됐으나, 모델은 수백 시도 중 `eapply load_rule`를 2~3회만 시도(정답=`exploit load_rule`). → 좋은 premise를 찾고도 apply/exploit를 거의 안 씀.
 - 방법: formatter가 top premise 이름 추출→stash, get_recs가 `exploit/eapply/apply <premise>` 강제 후보를 next_tactic_list에 append. classical(use_memo)이 이를 시도. alias `rango-apply`.
+- 검증(idx840 스모크): `load_rule` 강제 추출 → `exploit load_rule; eauto.`/`eapply load_rule; eauto.`/`apply load_rule.` 실제 시도 확인(이전엔 거의 안 씀). 메커니즘 완성.
+- 실행: first-20 @600 detach. 완료 후 baseline(11/20) 대비 판정 + idx840 별도 600s 검증 예정.
