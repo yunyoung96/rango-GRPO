@@ -85,7 +85,8 @@ def categorize(feat):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("run_dir")
-    ap.add_argument("--baseline", default="all_results/20260701-061839")
+    ap.add_argument("--baseline", default=None,
+                    help="미지정 시 실험 timeout에 맞는 all_results/baseline<timeout> 자동 선택(공정 비교)")
     args = ap.parse_args()
     run_dir = Path(args.run_dir)
     summ = json.loads((run_dir / "summary.json").read_text())
@@ -97,9 +98,17 @@ def main():
     idxs = sorted(res)
     logs = run_dir / "logs"
 
+    # baseline 자동선택: 같은 timeout의 named baseline(공정 비교) → 없으면 대실행 폴백
+    if args.baseline is not None:
+        baseline_dir = args.baseline
+    else:
+        cand = Path(f"all_results/baseline{timeout}")
+        baseline_dir = str(cand) if (cand / "summary.json").exists() else "all_results/20260701-061839"
+    args.baseline = baseline_dir
+
     # baseline (같은 idx만)
     base = {}
-    bpath = Path(args.baseline) / "summary.json"
+    bpath = Path(baseline_dir) / "summary.json"
     if bpath.exists():
         bd = json.loads(bpath.read_text())
         base = {r["idx"]: r.get("success", False) for r in bd["results"]}
