@@ -181,8 +181,10 @@ def get_searcher_conf(model_alias: str) -> SearcherConf:
                 try_candidates=6,
             )
 
-        case "rango-portfolio":
-            # straight-line(0.7) → 실패시 classical-mem(0.3). union 노림.
+        case "rango-portfolio" | "rango-portfolio-08" | "rango-portfolio-06":
+            # straight-line → 실패시 classical-mem. union 노림. straight_frac 변형.
+            frac = {"rango-portfolio": 0.7, "rango-portfolio-08": 0.8,
+                    "rango-portfolio-06": 0.6}[model_alias]
             return PortfolioSearchConf(
                 straight_conf=StraightLineSearcherConf(
                     timeout=timeout, print_proofs=True,
@@ -194,7 +196,7 @@ def get_searcher_conf(model_alias: str) -> SearcherConf:
                     use_memo=True,
                 ),
                 timeout=timeout,
-                straight_frac=0.7,
+                straight_frac=frac,
             )
 
         case _:
@@ -253,7 +255,7 @@ def get_tactic_confs(model_alias: str, split: Split) -> list[TacticGenConf]:
     )
 
     match model_alias:
-        case "rango" | "rango-best-beam" | "rango-best-rand" | "rango-mem" | "rango-mem-wide" | "rango-portfolio":
+        case "rango" | "rango-best-beam" | "rango-best-rand" | "rango-mem" | "rango-mem-wide" | "rango-portfolio" | "rango-portfolio-08" | "rango-portfolio-06":
             checkpoint = (
                 "models/deepseek-bm25-proof-tfidf-proj-thm-prem-final/checkpoint-54500"
             )
