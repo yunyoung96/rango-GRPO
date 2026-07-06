@@ -101,3 +101,13 @@ STRATEGY_DIVERGE 36.2% · SEARCH_THRASH 47.0% · NO_RETRIEVAL 5.6% · LLM_INVALI
 - **설계**: 초기 goal(step<=1, sparse)에서 goal의 head 심볼/패턴으로 `Search (f _ _)` 실행→출력에서 lemma 이름 파싱→강제후보 `rewrite <l>`/`apply <l>`/`sauto use: <l>` 주입. sauto와 결합(Search로 찾은 stdlib lemma를 sauto use로).
 - **구현 난이도**: 중. (a)패턴 도출(equality goal은 `Search (lhs_head _)`), (b)proof_manager/client로 Search 실행+메시지 파싱(check_proof 유사, add_step `Search ...` 후 diagnostic 읽기), (c)파싱. GPU-free 창에서 라이브 Coq client로 테스트 필요.
 - alias rango-search. sauto처럼 sparse(초기goal). 우선순위: sparse-sauto 결과 본 뒤.
+
+## MR2 expert iteration 계획 (사용자 승인, 추천안A: sauto/Search 후 착수)
+- **실현 가능 확인**: 성공 증명이 로그에 `CURRENT PROOF:`로 남음. 대실행(20260701-061839)에 379개 성공 증명 존재 → 데이터 확보. train_decoder.py(get_datasets, LmDataset)로 재학습.
+- **단계**:
+  1. 모든 all_results 로그 + rango.json에서 (theorem, 성공proof) 수집·중복제거 → scripts/collect_successes.py.
+  2. LmDataset 포맷(state→tactic)으로 변환, 기존 학습셋에 추가.
+  3. LoRA 재학습(train_decoder.py) → 새 checkpoint → alias rango-exit.
+  4. 재평가(20개@600, baseline600 대비). 개선되면 curriculum 반복.
+- **정직한 한계**: 성공 증명 대부분이 이미 fine-tune 분포 내(쉬운 것) → 자기성공 재학습 효과 불확실. 진짜 이득은 **sauto/Search가 새로 딴 어려운 증명**을 학습셋에 넣을 때. 그래서 추천안A(sauto/Search 먼저 → 늘어난 성공셋으로 ExIt).
+- GPU 학습이라 inference 실험 일시정지 필요.
