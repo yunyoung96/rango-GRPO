@@ -146,3 +146,7 @@ never-solved = [0,4,8,15,20,21,22,25]. 두 부류:
 ### [분석] ensemble 중간(8/20, idx11 회귀) — 2026-07-06 05:2x
 - ensemble(retrieval모델↔no-retrieval모델 로테이션)이 idx11 회귀. no-retrieval fine-tune이 그냥 더 약해서, 로테이션이 강한모델 attempt를 절반 낭비.
 - **교훈**: 연구 A1(retrieval 다양성)은 **약한 별도 모델 혼합이 아니라, 같은 강한 rango 모델에서 retrieval 컨텍스트 on/off 토글**이어야 함(decorrelation은 얻되 모델강도 유지). → 신규 **rango-divsample**: straight-line 재시도마다 formatter의 retrieval 주입 on/off 토글(같은 모델). ensemble보다 유망.
+
+### [완료] ensemble@600 = 10/20 (-1, 회귀 idx11, 신규 0)
+- 약한 no-retrieval 모델 혼합 → 강한모델이 풀던 idx11 회귀. **A1을 약한 별도모델로 하면 실패 확정.**
+- 다음: rango-divsample(같은 강한모델 retrieval토글) — 단 주의: rango는 retrieval과 함께 학습돼서 retrieval-off attempt가 OOD로 약할 수 있음. 데이터로 확인.
