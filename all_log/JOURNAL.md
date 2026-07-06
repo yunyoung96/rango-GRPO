@@ -87,3 +87,34 @@
 | rango-apply-sl (straight+force) | 9 | [27] |
 - **핵심 발견**: 어떤 inference tweak도 baseline(straight-line) 못 넘음. 공통적으로 **idx27만 신규**(classical/forcing이 찾는 것)이고 straight-line 성공 2-3개 회귀. straight-line의 다양한 재시작이 이 20-set에서 매우 강함.
 - 남은 희망: **portfolio**(straight∪classical=union). 실패 시 RL value-guided이 마지막 카드.
+
+---
+## ★ 결론 (오버나이트 최종, 2026-07-06 아침)
+
+### 🎉 baseline 돌파: rango-portfolio @600 = 12/20 (+1)
+- **첫이자 유일한 baseline(11/20) 돌파.** 회귀 0, 신규 [27]. published rango.json(8/20) 대비 +4[2,10,11,27].
+- **왜 됐나**: straight-line(420s)이 baseline을 회귀 없이 그대로 재현 + classical-mem(180s)이 straight-line이 못 찾는 idx27을 추가 → 두 방식의 union. **300s에선 각 phase가 굶어서 실패(6/20)했지만 600s에선 성공.**
+- `git branch -f master algo-dev`로 master에 반영(FF).
+
+### 전체 방법 결과 (앞-20, baseline@600=11, @300=10)
+| 방법 | @300 | @600 | 비고 |
+|------|------|------|------|
+| rango (baseline) | 10 | **11** | 강한 기준 |
+| rango-apply (premise 강제, classical) | 8 | - | 신규[27] |
+| rango-alignapply (align+apply) | 9 | - | 신규[27] |
+| rango-mem / mem-wide / best-beam (classical) | 8 | - | classical 한계 |
+| rango-align (aligned tactic, straight) | 8 | 9 | - |
+| rango-apply-sl (premise 강제, straight) | 9 | 진행중 | 신규[27] |
+| **rango-portfolio (straight∪classical)** | 6 | **12 ✓** | **돌파** |
+
+### 교훈
+1. **straight-line baseline이 매우 강함** — 다양한 재시작이 full 예산에서 효과적. classical 단독은 너무 좁아 ~8 (idx27만 얻고 2-3 회귀).
+2. **개별 inference tweak(apply/align/memo)은 baseline 못 넘음** — 전부 idx27만 신규 + 회귀. straight-line에 얹어도(apply-sl) 마찬가지.
+3. **돌파는 "대체"가 아니라 "합집합"에서** — portfolio가 baseline을 훼손 없이 재현 + 보완. 단 **예산이 충분해야(600s)** 각 phase가 제 역할.
+4. idx840류(premise Top1 강함+model 미적용)는 first-20에 부재 → apply-forcing 이점이 이 벤치에 안 드러남. 별도 검증 필요.
+
+### 다음 (진행 예정)
+- rango-portfolio **40개 확대**(--num 40 --timeout 600)로 +1 견고성 확인.
+- straight_frac 스윕(0.8/0.6)으로 portfolio 최적화.
+- idx840 검증(rango-apply-sl/rango-apply).
+- RL value-guided(MR1) — classical 순서 교정으로 idx27 외 추가 획득 시도.

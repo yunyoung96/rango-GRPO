@@ -1,0 +1,10 @@
+rango|300
+rango-apply|300
+rango-alignapply|300
+rango-mem|300
+rango-mem-wide|300
+rango-best-beam|300
+rango-align|300
+rango-apply-sl|300
+rango-portfolio|300
+rango-portfolio|600
