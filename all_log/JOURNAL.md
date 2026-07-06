@@ -183,3 +183,8 @@ never-solved = [0,4,8,15,20,21,22,25]. 두 부류:
 
 ### [완료] portfolio@40 최종 = 15/40, 순증감 0 (무승부) — +1 노이즈 확정
 - 신규 [27,55], 회귀 [10,11]. net 0 = baseline과 동급. **portfolio는 baseline을 견고하게 못 넘음.** inference-time 조사 종결.
+
+### [검증] Coq Search = built-in lemma 찾음 ✅ (but 통합은 플러밍 필요)
+- `Search (orb _ (andb _ _))` → `orb_andb_distrib_r`(Coq.Bool.Bool) 정확히 반환. BM25가 못 찾는 stdlib lemma를 Search가 찾음 = 사용자 아이디어 유효.
+- **단, 라이브 통합 난이도**: fast_client는 에러 diagnostic만 읽음. Search 출력(메시지)을 캡처하려면 coq-lsp 메시지 API 확장 필요(coqpyt ProofFile.get_diagnostics 유사). 상당한 플러밍.
+- 게다가 sauto가 BM25 premise로도 하드코어 0개였으니, Search premise 추가가 실제 크랙할지는 불확실(하드코어가 premise-limited가 아닐 수도).
