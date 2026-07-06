@@ -125,3 +125,15 @@ never-solved = [0,4,8,15,20,21,22,25]. 두 부류:
 - **구조적 시뮬레이션형(길고 커스텀 귀납)**: idx0 Deadcode step_simulation, idx20 Selection eval_load, idx21 Inlining match_stacks_invariant → 1.3B 사정권 밖, decomposition/큰모델 필요. 최난이도.
 → **rango-sauto는 자동화형(5개) 겨냥** → idx27 외 추가 획득 잠재력, baseline 초과 가능성. 스모크 타깃에 **idx22** 추가(결정가능성=sauto 교과서 케이스).
 → 구조형은 별도(subgoal 분해/앙상블/RL). 논문 조사(진행중)에서 decomposition·best-of-N 기법 반영 예정.
+
+### [인프라] 공정 비교 + 재사용 baseline (2026-07-06)
+- `all_results/baseline300`(rango@300/20=10) + `all_results/baseline600`(→대실행 @600, 앞-20=11) named 디렉토리 생성, 계속 재사용.
+- make_report가 **실험 timeout에 맞는 baseline 자동 선택**(@300→baseline300, @600→baseline600). 드라이버도 자동 공정 비교.
+- 기존 @300 리포트 재생성. **공정 비교 표(@300 vs 10, @600 vs 11)**:
+  | 방법 | 성공 | 공정순증감 |
+  |------|------|-----------|
+  | rango-portfolio@600 | 12 | **+1** |
+  | rango-mem-wide@300 | 10 | **+0**(동률) |
+  | rango-alignapply/apply-sl/portfolio@300 | 9 | -1 |
+  | 나머지 | 8~9 | -1~-3 |
+- 결론 유지: portfolio(union)만 baseline 초과. mem-wide(classical branch16)가 @300 동률로 근접.
