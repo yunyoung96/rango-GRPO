@@ -1,15 +1,4 @@
-rango|300|baseline @300 (fair reference for 300s screening)
-rango-apply|300|M4' top premise면 exploit/eapply/apply 강제 (classical+memo)
-rango-alignapply|300|조합: align 힌트 + apply 강제
-rango-mem|300|M2 memory(transposition+cycle guard) @300
-rango-mem-wide|300|M2 변형 max_branch 16
-rango-best-beam|300|M1 backtracking @300
-rango-align|300|M3 aligned next-tactic 힌트 @300
-rango-apply-sl|300|straight-line 다중후보(모델 실패시 forced apply premise 시도)
-rango-portfolio|300|straight-line 0.7 → 실패시 classical-mem 0.3 (union 노림)
-rango-portfolio|600|600s에선 각 phase 충분(straight420+classical180)—union 재시도
-rango-apply-sl|600|straight+apply 풀예산 재확인(idx10 등 timeout 케이스 회복)
+rango-ensemble|600|(A1) straight-line이 retrieval+no-retrieval 모델 번갈아 — 샘플 다양성
+no-retrieval|600|(A1) no-retrieval fine-tune 단독 참고
 rango-portfolio-08|600|portfolio straight_frac 0.8 (straight 우세)
 rango-portfolio-06|600|portfolio straight_frac 0.6 (classical 우세)
-rango-ensemble|600|(3) straight-line이 retrieval+no-retrieval 모델 번갈아 사용
-no-retrieval|600|(3) 참고: no-retrieval fine-tune 단독(basic-ablation)

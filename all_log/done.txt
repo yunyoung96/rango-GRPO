@@ -8,3 +8,4 @@ rango-align|300
 rango-apply-sl|300
 rango-portfolio|300
 rango-portfolio|600
+rango-apply-sl|600
