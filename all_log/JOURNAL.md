@@ -155,3 +155,8 @@ never-solved = [0,4,8,15,20,21,22,25]. 두 부류:
 - rango-sauto(classical 모든 노드에 sauto/hauto/`sauto use:` 주입)가 5/17로 심각 회귀. **원인: sauto가 비싸서(호출당 수초) 모든 노드 호출→시간예산 폭식→정상 증명까지 실패.**
 - **교훈(연구 PALM/DT-Solver와 일치)**: hammer/sauto는 **모든 노드가 아니라 드물게(초기 goal/fallback)** 써야. → **수정: step_idx<=1(초기 goal)에만 sauto 주입(sparse).** 재시도 중.
 - 대안(안되면): sauto를 portfolio 3rd phase로(normal search 실패시 마지막에 sauto 1회) — PALM식.
+
+### [분석] divsample 중간 7/13 (-1 pace) — 2026-07-06 11:3x
+- A1 개선(같은 rango모델 retrieval on/off 토글)도 ensemble처럼 -1 추세. **원인: rango가 retrieval과 함께 학습돼서 retrieval-off attempt가 OOD로 약함** → 다양성 얻어도 절반 약해짐.
+- **결론: A1(샘플 다양성) 계열은 이 세팅에서 실패**(ensemble -1, divsample -1). retrieval 의존적 fine-tune이라 diversity로 못 이김.
+- 남은 진짜 카드: **B(sauto/Search/repair=다른 정리 따기)** + MR2. sparse sauto가 다음 실증.
