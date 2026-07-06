@@ -137,3 +137,8 @@ never-solved = [0,4,8,15,20,21,22,25]. 두 부류:
   | rango-alignapply/apply-sl/portfolio@300 | 9 | -1 |
   | 나머지 | 8~9 | -1~-3 |
 - 결론 유지: portfolio(union)만 baseline 초과. mem-wide(classical branch16)가 @300 동률로 근접.
+
+### [개입] apply-sl@600 중단 + 큐 재정렬 (2026-07-06 04:2x)
+- rango-apply-sl@600이 **try_candidates=6으로 정리당 6배 느림 + 로그 150MB/정리**로 3.5h째 큐 정체(17/20). 기대값 낮아(@300=9) 중단.
+- **교훈**: try_candidates 높이면(다중후보 straight-line) 검증콜·로그 폭증 → 비효율. 향후 지양. retrieval 디버그 프린트도 로그 비대 주범(추후 축소 필요).
+- 큐 재정렬: **rango-ensemble(A1 retrieval다양성, 연구 1순위)·no-retrieval 우선** → portfolio 변형. 드라이버 재시작(fd 갱신).
