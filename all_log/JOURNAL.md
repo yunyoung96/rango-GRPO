@@ -150,3 +150,8 @@ never-solved = [0,4,8,15,20,21,22,25]. 두 부류:
 ### [완료] ensemble@600 = 10/20 (-1, 회귀 idx11, 신규 0)
 - 약한 no-retrieval 모델 혼합 → 강한모델이 풀던 idx11 회귀. **A1을 약한 별도모델로 하면 실패 확정.**
 - 다음: rango-divsample(같은 강한모델 retrieval토글) — 단 주의: rango는 retrieval과 함께 학습돼서 retrieval-off attempt가 OOD로 약할 수 있음. 데이터로 확인.
+
+### [분석/수정] sauto-모든노드 = 5/17 회귀 → sparse sauto — 2026-07-06 09:4x
+- rango-sauto(classical 모든 노드에 sauto/hauto/`sauto use:` 주입)가 5/17로 심각 회귀. **원인: sauto가 비싸서(호출당 수초) 모든 노드 호출→시간예산 폭식→정상 증명까지 실패.**
+- **교훈(연구 PALM/DT-Solver와 일치)**: hammer/sauto는 **모든 노드가 아니라 드물게(초기 goal/fallback)** 써야. → **수정: step_idx<=1(초기 goal)에만 sauto 주입(sparse).** 재시도 중.
+- 대안(안되면): sauto를 portfolio 3rd phase로(normal search 실패시 마지막에 sauto 1회) — PALM식.
