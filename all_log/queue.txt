@@ -1,5 +1,2 @@
-rango-ensemble|600|(A1) straight-line이 retrieval+no-retrieval 모델 번갈아 — 샘플 다양성
-no-retrieval|600|(A1) no-retrieval fine-tune 단독 참고
-rango-divsample|600|(A1개선) 같은 rango모델 retrieval on/off 토글 (ensemble보다 유망)
-rango-portfolio-08|600|portfolio straight_frac 0.8 (straight 우세)
-rango-portfolio-06|600|portfolio straight_frac 0.6 (classical 우세)
+rango-sauto|600|retrieval-guided hammer: top premise를 sauto use로 (하드코어 자동화형 겨냥)
+rango-divsample|600|(A1개선) 같은 rango모델 retrieval on/off 토글

@@ -9,3 +9,5 @@ rango-apply-sl|300
 rango-portfolio|300
 rango-portfolio|600
 rango-apply-sl|600
+rango-ensemble|600
+no-retrieval|600
