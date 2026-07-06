@@ -267,6 +267,32 @@ def get_tactic_confs(model_alias: str, split: Split) -> list[TacticGenConf]:
             )
             return [DecoderTacticGenConf(Path(checkpoint), [formatter])]
 
+        case "rango-ensemble":
+            # (3) retrieval 과의존 보완: straight-line이 retrieval-finetune과
+            # no-retrieval-finetune(basic-ablation)을 재시도마다 번갈아 사용.
+            rango_fmt = GeneralFormatterConf(
+                premise_client_conf=tfidf_premise_conf,
+                proof_retriever_conf=bm25_proof_conf,
+                num_premises=50,
+                num_proofs=20,
+            )
+            noretr_fmt = GeneralFormatterConf(
+                premise_client_conf=None,
+                proof_retriever_conf=None,
+                num_premises=None,
+                num_proofs=None,
+            )
+            return [
+                DecoderTacticGenConf(
+                    Path("models/deepseek-bm25-proof-tfidf-proj-thm-prem-final/checkpoint-54500"),
+                    [rango_fmt],
+                ),
+                DecoderTacticGenConf(
+                    Path("models/deepseek-basic-ablation/checkpoint-37500"),
+                    [noretr_fmt],
+                ),
+            ]
+
         case "rango-alignapply":
             # 조합: align 힌트 + apply 강제 (classical+memo)
             checkpoint = (
