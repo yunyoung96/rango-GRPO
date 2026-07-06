@@ -94,3 +94,10 @@ STRATEGY_DIVERGE 36.2% · SEARCH_THRASH 47.0% · NO_RETRIEVAL 5.6% · LLM_INVALI
 ### 주의
 - 실행 중 opam install 금지(락/재빌드로 실험 깨짐). 반드시 idle.
 - ATP 미설치 → 완전 hammer 아님, sauto/hauto/best만. 충분히 강력.
+
+## [사용자 아이디어 2026-07-06] rango-search: Coq `Search`로 built-in premise 찾기 (방향1 구현안)
+- **문제**: BM25 retrieval은 프로젝트 증명만 검색 → stdlib built-in lemma(orb_andb_distrib_r, demorgan1 등) 못 찾음. or_and_distrib 실패 원인.
+- **해결**: Coq `Search <pattern>` = 로드된 모든 라이브러리(stdlib 포함)에서 매칭 lemma 반환. coqpyt 지원 확인(proof_file.py `__get_queries`/`get_diagnostics`가 query 결과 메시지 캡처).
+- **설계**: 초기 goal(step<=1, sparse)에서 goal의 head 심볼/패턴으로 `Search (f _ _)` 실행→출력에서 lemma 이름 파싱→강제후보 `rewrite <l>`/`apply <l>`/`sauto use: <l>` 주입. sauto와 결합(Search로 찾은 stdlib lemma를 sauto use로).
+- **구현 난이도**: 중. (a)패턴 도출(equality goal은 `Search (lhs_head _)`), (b)proof_manager/client로 Search 실행+메시지 파싱(check_proof 유사, add_step `Search ...` 후 diagnostic 읽기), (c)파싱. GPU-free 창에서 라이브 Coq client로 테스트 필요.
+- alias rango-search. sauto처럼 sparse(초기goal). 우선순위: sparse-sauto 결과 본 뒤.
