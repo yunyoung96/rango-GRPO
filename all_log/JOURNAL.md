@@ -118,3 +118,10 @@
 - straight_frac 스윕(0.8/0.6)으로 portfolio 최적화.
 - idx840 검증(rango-apply-sl/rango-apply).
 - RL value-guided(MR1) — classical 순서 교정으로 idx27 외 추가 획득 시도.
+
+### [분석] 하드코어 8개 (어떤 방법도 못 푼 first-20 정리) — 2026-07-06
+never-solved = [0,4,8,15,20,21,22,25]. 두 부류:
+- **자동화 가능형(arith/bit/decidability)**: idx4 flocq Zrnd_ZR_or_AW(반올림 disjunction), idx8 aarch64 Int bit, idx15 Integers translate_ltu(정수 부등식), **idx22 Intv In_dec `{In x i}+{~In x i}`(결정가능성)**, idx25 x86 addrmode(어셈블리) → **sauto/lia/decide/hauto 직격 대상**. retrieval도 매칭~6-7로 나쁘지 않음.
+- **구조적 시뮬레이션형(길고 커스텀 귀납)**: idx0 Deadcode step_simulation, idx20 Selection eval_load, idx21 Inlining match_stacks_invariant → 1.3B 사정권 밖, decomposition/큰모델 필요. 최난이도.
+→ **rango-sauto는 자동화형(5개) 겨냥** → idx27 외 추가 획득 잠재력, baseline 초과 가능성. 스모크 타깃에 **idx22** 추가(결정가능성=sauto 교과서 케이스).
+→ 구조형은 별도(subgoal 분해/앙상블/RL). 논문 조사(진행중)에서 decomposition·best-of-N 기법 반영 예정.
