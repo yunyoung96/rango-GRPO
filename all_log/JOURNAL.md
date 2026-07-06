@@ -174,3 +174,9 @@ never-solved = [0,4,8,15,20,21,22,25]. 두 부류:
 
 ### [검증] portfolio +1 진짜인지 40개 확대 실행 (2026-07-06 13:4x)
 - 유일한 돌파(portfolio@600=12/20,+1)가 20개 노이즈인지 40개로 확인. run_all --num 40 --timeout 600.
+
+### [중대 발견] portfolio@40 중간 15/40 = -2 → +1은 노이즈였을 가능성 (2026-07-06 15:4x)
+- portfolio@20=+1(12/20)이었으나 **@40에선 -2**(회귀 [10,11] — @20에선 풀던 것). 
+- **원인**: portfolio의 straight-line phase(420s=70%)가 baseline(600s)보다 짧아, **timeout-민감 정리(idx10 등)를 굶김.** classical phase(180s)는 idx27류만 추가. 즉 portfolio는 "timeout-민감 정리 ↔ classical-findable 정리"를 **트레이드**하는 것이라, 세트 구성에 따라 ±. @20의 +1은 유리한 변동(운).
+- **정직한 결론 강화**: **어떤 inference-time 방법도 straight-line baseline을 견고하게 넘지 못함.** portfolio +1조차 노이즈. 문헌(diverse full-budget sampling 지배) 그대로.
+- **→ 남은 진짜 레버: MR2(학습) 또는 더 큰 모델.** inference-time 조사 종료 수순.
