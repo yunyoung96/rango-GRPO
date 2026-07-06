@@ -180,3 +180,6 @@ never-solved = [0,4,8,15,20,21,22,25]. 두 부류:
 - **원인**: portfolio의 straight-line phase(420s=70%)가 baseline(600s)보다 짧아, **timeout-민감 정리(idx10 등)를 굶김.** classical phase(180s)는 idx27류만 추가. 즉 portfolio는 "timeout-민감 정리 ↔ classical-findable 정리"를 **트레이드**하는 것이라, 세트 구성에 따라 ±. @20의 +1은 유리한 변동(운).
 - **정직한 결론 강화**: **어떤 inference-time 방법도 straight-line baseline을 견고하게 넘지 못함.** portfolio +1조차 노이즈. 문헌(diverse full-budget sampling 지배) 그대로.
 - **→ 남은 진짜 레버: MR2(학습) 또는 더 큰 모델.** inference-time 조사 종료 수순.
+
+### [완료] portfolio@40 최종 = 15/40, 순증감 0 (무승부) — +1 노이즈 확정
+- 신규 [27,55], 회귀 [10,11]. net 0 = baseline과 동급. **portfolio는 baseline을 견고하게 못 넘음.** inference-time 조사 종결.
