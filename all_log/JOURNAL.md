@@ -160,3 +160,9 @@ never-solved = [0,4,8,15,20,21,22,25]. 두 부류:
 - A1 개선(같은 rango모델 retrieval on/off 토글)도 ensemble처럼 -1 추세. **원인: rango가 retrieval과 함께 학습돼서 retrieval-off attempt가 OOD로 약함** → 다양성 얻어도 절반 약해짐.
 - **결론: A1(샘플 다양성) 계열은 이 세팅에서 실패**(ensemble -1, divsample -1). retrieval 의존적 fine-tune이라 diversity로 못 이김.
 - 남은 진짜 카드: **B(sauto/Search/repair=다른 정리 따기)** + MR2. sparse sauto가 다음 실증.
+
+### [분석] sparse-sauto 중간 5/20 (idx2 회귀, 하드코어 미해결) — 2026-07-06 12:3x
+- 속도는 고침(sparse=~5분/정리 vs every-node 2h). 하지만 여전히 -1 pace: idx2 회귀, 하드코어 idx4(자동화형) 미해결, 신규 0.
+- **원인**: sauto가 classical 기반이라 classical -2 페널티 상속 + sauto가 raw goal에서 하드코어를 못 뚫음(적절한 premise/setup 필요).
+- **올바른 설계 = portfolio-sauto**(PALM식): straight-line(강함, baseline 11 확보) → 실패한 정리만 마지막에 sauto/`sauto use:` 1회. classical 페널티 회피 + sauto는 baseline이 못 푼 것에만. divsample 완료 후 구현.
+- 또한 sauto가 못 뚫는 이유가 premise 부족이면 **Search(stdlib lemma)로 sauto use 강화**가 열쇠.
