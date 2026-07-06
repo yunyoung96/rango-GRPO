@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import shutil
 
 from pathlib import Path
@@ -134,8 +135,8 @@ def get_searcher_conf(model_alias: str) -> SearcherConf:
                 initial_proof=None,
             )
 
-        case "rango-apply" | "rango-alignapply":
-            # M4'/조합: classical+memo (강제 apply 후보를 시도하려면 다중 후보 탐색 필요)
+        case "rango-apply" | "rango-alignapply" | "rango-sauto":
+            # M4'/조합/sauto: classical+memo (강제 후보를 시도하려면 다중 후보 탐색 필요)
             return ClassicalSearchConf(
                 max_branch=8,
                 max_search_steps=1000000,
@@ -314,6 +315,20 @@ def get_tactic_confs(model_alias: str, split: Split) -> list[TacticGenConf]:
                     [noretr_fmt],
                 ),
             ]
+
+        case "rango-sauto":
+            # retrieval-guided hammer: top premise를 sauto use:로 먹임 (coq-hammer-tactics)
+            checkpoint = (
+                "models/deepseek-bm25-proof-tfidf-proj-thm-prem-final/checkpoint-54500"
+            )
+            formatter = GeneralFormatterConf(
+                premise_client_conf=tfidf_premise_conf,
+                proof_retriever_conf=bm25_proof_conf,
+                num_premises=50,
+                num_proofs=20,
+                sauto_hint=True,
+            )
+            return [DecoderTacticGenConf(Path(checkpoint), [formatter])]
 
         case "rango-alignapply":
             # 조합: align 힌트 + apply 강제 (classical+memo)
@@ -696,6 +711,8 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    if getattr(args, "alias", None) in ("rango-sauto", "rango-repair"):
+        os.environ["RANGO_HAMMER_PREAMBLE"] = "1"
     if args.command == "info":
         print_info()
         exit()

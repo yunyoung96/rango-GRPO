@@ -357,6 +357,7 @@ def formatter_conf_to_client_conf(
                 conf.num_proofs,
                 getattr(conf, "align_hint", False),
                 getattr(conf, "apply_hint", False),
+                getattr(conf, "sauto_hint", False),
             )
             return (
                 new_general_formatter,

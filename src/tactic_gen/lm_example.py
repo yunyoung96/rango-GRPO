@@ -163,6 +163,7 @@ class GeneralFormatterConf:
     num_proofs: Optional[int]
     align_hint: bool = False  # M3(C1): retrieval된 sibling의 aligned 다음 tactic을 프롬프트에 주입
     apply_hint: bool = False  # M4': top premise가 강하면 apply/eapply/exploit <premise>를 강제 후보로
+    sauto_hint: bool = False  # rango-sauto: sauto/hauto/`sauto use:<premise>`를 강제 후보로 (retrieval-guided hammer)
 
     def __hash__(self) -> int:
         return hash(str(self))
@@ -192,6 +193,7 @@ class GeneralFormatterConf:
             num_proofs,
             yaml_data.get("align_hint", False),
             yaml_data.get("apply_hint", False),
+            yaml_data.get("sauto_hint", False),
         )
 
 
@@ -204,6 +206,7 @@ class GeneralFormatter:
         num_proofs: Optional[int],
         align_hint: bool = False,
         apply_hint: bool = False,
+        sauto_hint: bool = False,
     ):
         self.premise_client = premise_client
         self.proof_retriever = proof_retriever
@@ -211,6 +214,7 @@ class GeneralFormatter:
         self.num_proofs = num_proofs
         self.align_hint = align_hint
         self.apply_hint = apply_hint
+        self.sauto_hint = sauto_hint
         # M4': example_from_step이 채우는 강제 apply 대상 premise 이름들 (get_recs가 소비)
         self.forced_premises: list[str] = []
 
@@ -355,7 +359,7 @@ class GeneralFormatter:
             relevant_premise_strs = [p.text for p in relevant_premises]
 
             # M4': top premise가 강하면 그 lemma 이름을 추출해 강제 apply 대상으로 stash
-            if self.apply_hint:
+            if self.apply_hint or self.sauto_hint:
                 for p in all_relevant_premises[:2]:  # top-2 premise
                     name = _lemma_name(p.text)
                     if name and name not in self.forced_premises:
@@ -404,6 +408,7 @@ class GeneralFormatter:
             conf.num_proofs,
             getattr(conf, "align_hint", False),
             getattr(conf, "apply_hint", False),
+            getattr(conf, "sauto_hint", False),
         )
 
 

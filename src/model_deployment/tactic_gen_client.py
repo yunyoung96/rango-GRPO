@@ -65,6 +65,25 @@ def _append_forced_apply(result: ModelResult, premises: list[str]) -> None:
             result.num_tokens_list.append(10)
 
 
+def _append_sauto(result: ModelResult, premises: list[str]) -> None:
+    """rango-sauto: retrieval-guided hammer. 우리가 찾은 top premise를 sauto에
+    use로 먹여, retrieval은 정답 lemma를 찾고 sauto가 자동 적용/재구성하게 한다.
+    (coq-hammer-tactics, ATP 불필요)"""
+    base = max(result.score_list) if result.score_list else 0.0
+    existing = set(t.strip() for t in result.next_tactic_list)
+    use = ", ".join(premises[:3])
+    cands = ["sauto.", "hauto.", "qauto.", "sfirstorder."]
+    if use:
+        cands += [f"sauto use: {use}.", f"hauto use: {use}.", f"sfirstorder use: {use}."]
+    for tac in cands:
+        if tac in existing:
+            continue
+        existing.add(tac)
+        result.next_tactic_list.append(tac)
+        result.score_list.append(base)
+        result.num_tokens_list.append(10)
+
+
 @dataclass
 class FidTacticGenConf:
     ALIAS = "fid"
@@ -457,10 +476,14 @@ class LocalTacticGenClient:
             _logger.error("ID MISMATCH IN REQUESTS")
         assert response["id"] == request_id
         result = ModelResult.from_json(response["result"])
-        # M4': formatter가 top premise를 stash했으면 apply/eapply/exploit 강제 후보 추가
-        forced = getattr(self.formatters[0], "forced_premises", None)
+        # formatter가 top premise를 stash했으면 강제 후보 추가 (sauto 우선, 아니면 apply)
+        fmt = self.formatters[0]
+        forced = getattr(fmt, "forced_premises", None)
         if forced:
-            _append_forced_apply(result, forced)
+            if getattr(fmt, "sauto_hint", False):
+                _append_sauto(result, forced)
+            elif getattr(fmt, "apply_hint", False):
+                _append_forced_apply(result, forced)
         return result
 
     def set_seed(self, seed: int) -> None:

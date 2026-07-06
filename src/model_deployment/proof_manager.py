@@ -132,7 +132,12 @@ class ProofManager:
 
     @property
     def file_prefix(self) -> str:
-        return "".join([s.text for s in self.proof_info.prefix_steps])
+        base = "".join([s.text for s in self.proof_info.prefix_steps])
+        # rango-sauto: Hammer 전술을 스코프에 넣기 위해 파일 최상단에 Require 주입.
+        # file_prefix에 포함해야 gather_steps 정합(parsed_prefix==file_prefix)이 유지됨.
+        if os.environ.get("RANGO_HAMMER_PREAMBLE"):
+            return "From Hammer Require Import Tactics.\n" + base
+        return base
 
     @property
     def workspace_uri(self) -> str:
