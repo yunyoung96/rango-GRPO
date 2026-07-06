@@ -166,3 +166,11 @@ never-solved = [0,4,8,15,20,21,22,25]. 두 부류:
 - **원인**: sauto가 classical 기반이라 classical -2 페널티 상속 + sauto가 raw goal에서 하드코어를 못 뚫음(적절한 premise/setup 필요).
 - **올바른 설계 = portfolio-sauto**(PALM식): straight-line(강함, baseline 11 확보) → 실패한 정리만 마지막에 sauto/`sauto use:` 1회. classical 페널티 회피 + sauto는 baseline이 못 푼 것에만. divsample 완료 후 구현.
 - 또한 sauto가 못 뚫는 이유가 premise 부족이면 **Search(stdlib lemma)로 sauto use 강화**가 열쇠.
+
+### [완료] sparse-sauto 최종 9/20 (-2) — 하드코어 전부 미해결
+- succ [5,6,10,12,19,26,27,28,29]. 하드코어[4,8,15,22,25] 0개, 신규는 27뿐(classical이 이미 찾음). 회귀 [2,9,11].
+- **retrieval-guided sauto(BM25 premise) 하드코어 크랙 가설 실패.** sauto가 raw goal+BM25 premise로 자동화형(부동소수/결정가능성/정수)을 못 뚫음. classical -2 페널티도.
+- 다음: (1)portfolio-sauto(강한 base)로 페널티 회피—단 sauto 신규가 27뿐이라 portfolio(12) 못넘을 가능성. (2)Search로 stdlib premise 강화(sauto가 못 뚫은 게 premise 부족 때문이면). (3)MR2.
+
+### [검증] portfolio +1 진짜인지 40개 확대 실행 (2026-07-06 13:4x)
+- 유일한 돌파(portfolio@600=12/20,+1)가 20개 노이즈인지 40개로 확인. run_all --num 40 --timeout 600.
