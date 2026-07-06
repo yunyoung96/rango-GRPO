@@ -67,3 +67,16 @@ STRATEGY_DIVERGE 36.2% · SEARCH_THRASH 47.0% · NO_RETRIEVAL 5.6% · LLM_INVALI
 - **MR2 (expert iteration)** — 자기 성공증명으로 LoRA 재학습(train_decoder.py 재사용). policy 개선. MR1 다음.
 - 주의: classical 계열은 M1/M2에서 straight-line 미달이었음 → value-guiding으로 순서 개선이 그 격차를 메우는지가 관건. 안 되면 value 신호를 straight-line 후보 재랭킹에 쓰는 변형 고려.
 - GPU 학습 job은 inference 실험과 순차(동시 금지).
+
+## [사용자 피드백 2026-07-06] 신규 방향 4개 + 참조 케이스
+### 새 실패 케이스 (분석용)
+- **or_and_distrib** (bit_solve; apply orb_andb_distrib_r): built-in premise `orb_andb_distrib_r`를 못 찾음/증명 못함. reference `and_or_distrib`는 `demorgan1` 사용. → **built-in(Coq stdlib) lemma 검색 부재**.
+- **idx 971 lt_le_trans** (ref idx 9335 le_lt_trans): reference는 거의 동일하게 잘 찾았으나, `elim (@E.lt_not_eq x1 x2)`의 **명시적 인자(x1 x2 vs x2 x3)** 적응이 약함. premise가 아니라 **explicit proposition/argument 추론** 문제. → proof-adaptation 강화 필요.
+
+### 방향
+1. **built-in premise 검색**: Coq stdlib lemma를 retrieval 대상에 포함(orb_andb_distrib_r 등). 인프라 큼(stdlib lemma DB). 보류/조사.
+2. **proof-adaptation(explicit arg 적응)**: aligned sibling tactic의 명시적 인자를 goal에 맞게 순열/치환한 변형을 강제후보로. idx971류 겨냥. 파싱 필요.
+3. **retrieval 약할 때 non-fine-tuned/일반 모델 사용** ← **실현가능(base=deepseek-coder-1.3b-instruct HF캐시, no-retrieval fine-tune=deepseek-basic-ablation 로컬)**. fine-tuning이 retrieval에 과적합됐을 수 있음. **→ 앙상블(straight-line이 tactic_clients 회전) or gated 전환.**
+4. **multi-agent LLM**: 여러 에이전트(생성/비평/적응) 협업. 설계 단계.
+
+### 우선순위: 3(앙상블, 지금 구현) → 2(arg 적응) → 1(stdlib) → 4(multi-agent)
