@@ -80,3 +80,17 @@ STRATEGY_DIVERGE 36.2% · SEARCH_THRASH 47.0% · NO_RETRIEVAL 5.6% · LLM_INVALI
 4. **multi-agent LLM**: 여러 에이전트(생성/비평/적응) 협업. 설계 단계.
 
 ### 우선순위: 3(앙상블, 지금 구현) → 2(arg 적응) → 1(stdlib) → 4(multi-agent)
+
+## rango-sauto 설계 (coq-hammer-tactics, idle시 설치·구현) — 창의적
+### 핵심 아이디어: retrieval-guided sauto (retrieval을 hammer에 먹임)
+- 단순 `sauto.`가 아니라, **우리가 잘 찾는 top premise를 sauto에 use로 넣음**: `sauto use: p1, p2, p3.`
+- 근거: idx840(load_rule)·or_and_distrib(orb_andb_distrib_r)처럼 **retrieval은 정답 lemma를 Top1로 찾는데 모델이 apply를 못함** → sauto가 그 lemma를 받아 자동으로 올바르게 적용/재구성. ATP 없이도 sauto-tactics만으로 강력.
+- 강제후보(get_recs append, apply_hint 확장 sauto_hint flag): `sauto.`, `sauto use: <top3 premise>.`, `hauto use: <top3>.`, `best.`. classical+memo가 시도.
+### 구현 단계 (idle=GPU free일 때)
+1. `opam install -y coq-hammer-tactics.1.3.2+8.18` (Coq 8.18 정확히 매칭, Coq 안 건드림). 실험 idle 확인 후.
+2. Hammer import 주입: proof_manager.check_proof의 `contents = file_prefix+partial_proof` 앞에 flag시 `From Hammer Require Import Tactics.\n` 프리펜드(위치어긋남/assert 주의 → 스모크로 검증). 안 되면 coqpyt 워크스페이스 프리로드 대안.
+3. lm_example에 sauto_hint flag → self.forced_premises 기반 sauto use 후보를 get_recs가 주입(_append_forced_apply에 sauto 변형 추가).
+4. alias rango-sauto = classical+memo + sauto_hint + hammer preamble. 스모크(test 6/840) → 큐.
+### 주의
+- 실행 중 opam install 금지(락/재빌드로 실험 깨짐). 반드시 idle.
+- ATP 미설치 → 완전 hammer 아님, sauto/hauto/best만. 충분히 강력.
