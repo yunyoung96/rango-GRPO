@@ -359,7 +359,8 @@ class GeneralFormatter:
             relevant_premise_strs = [p.text for p in relevant_premises]
 
             # M4': top premise가 강하면 그 lemma 이름을 추출해 강제 apply 대상으로 stash
-            if self.apply_hint or self.sauto_hint:
+            # sauto는 비싸므로 초기 goal(step_idx<=1)에만 주입(sparse) — 모든 노드면 시간 폭식→회귀.
+            if self.apply_hint or (self.sauto_hint and step_idx <= 1):
                 for p in all_relevant_premises[:2]:  # top-2 premise
                     name = _lemma_name(p.text)
                     if name and name not in self.forced_premises:
