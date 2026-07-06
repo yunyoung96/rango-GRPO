@@ -111,3 +111,10 @@ STRATEGY_DIVERGE 36.2% · SEARCH_THRASH 47.0% · NO_RETRIEVAL 5.6% · LLM_INVALI
   4. 재평가(20개@600, baseline600 대비). 개선되면 curriculum 반복.
 - **정직한 한계**: 성공 증명 대부분이 이미 fine-tune 분포 내(쉬운 것) → 자기성공 재학습 효과 불확실. 진짜 이득은 **sauto/Search가 새로 딴 어려운 증명**을 학습셋에 넣을 때. 그래서 추천안A(sauto/Search 먼저 → 늘어난 성공셋으로 ExIt).
 - GPU 학습이라 inference 실험 일시정지 필요.
+
+## MR2 스코핑 결과 (2026-07-06) — 큰 작업, 낮은 payoff
+- 학습 데이터는 (proof_state→next_tactic) 예제 포맷(LmProcessedDataset, tactic_data.py). raw proof를 넣는 게 아님.
+- 찾은 증명→학습예제 변환 = **각 증명을 단계별 재실행(Coq)해 상태 추출 + retrieval 포맷팅** = 데이터빌드 파이프라인 재구동. 상당한 엔지니어링.
+- payoff 불확실: 찾은 성공증명 대부분이 이미 fine-tune 분포 내(쉬운 test정리) → 자기재학습 이득 제한적. 진짜 이득은 sauto/Search가 딴 '새로운' 증명인데 그건 0개였음(sauto 하드코어 0).
+- **정직한 판단**: MR2를 지금 셋업에서 제대로 하려면 큰 투자인데 개선 기대 낮음. 사용자에게 go/no-go 제시 필요.
+- 대안(더 유망): (a) 학습 데이터를 TEST가 아니라 더 어려운/많은 정리로, (b) 더 큰 base 모델, (c) curriculum(쉬운→어려운).
