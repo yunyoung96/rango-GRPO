@@ -11,3 +11,5 @@ rango-portfolio|600|600s에선 각 phase 충분(straight420+classical180)—unio
 rango-apply-sl|600|straight+apply 풀예산 재확인(idx10 등 timeout 케이스 회복)
 rango-portfolio-08|600|portfolio straight_frac 0.8 (straight 우세)
 rango-portfolio-06|600|portfolio straight_frac 0.6 (classical 우세)
+rango-ensemble|600|(3) straight-line이 retrieval+no-retrieval 모델 번갈아 사용
+no-retrieval|600|(3) 참고: no-retrieval fine-tune 단독(basic-ablation)
