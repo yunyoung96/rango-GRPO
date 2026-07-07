@@ -24,6 +24,20 @@
 | rango-sauto | retrieval-guided hammer (`sauto use:<premise>`) | 9/20 | −2 |
 | **rango-portfolio** | straight∪classical (예산 70/30) | **12/20 @20** → **-1 @40** | **노이즈** |
 
+## 헤비 레버 결과 (2026-07-07, 사용자 4→1→3→2 + 하이브리드)
+inference-time 소진 후 "진짜 레버"(학습/큰모델/RL)로 전환. 진행 결과:
+
+| 레버 | 방법 | 결과 | 순증감 |
+|------|------|------|--------|
+| **1. raw 6.7B 추론** | DeepSeek-Coder-6.7B-instruct(LoRA X) + Rango 프롬프트 | **0/20** | −11 |
+| **4. RL value-guided** | 학습된 critic(val_acc 0.94)으로 best-first 유도 | **9/20**(신규 idx27) | −2 |
+| **hybrid** | retrieval-신뢰도 게이팅 adaptive-width(사용자 아이디어) | 진행중 | ? |
+| 3. expert-iter / 2. 6.7B 파인튜닝 | SFT 데이터 재생성 필요(gate) | 대기 | ? |
+
+- **6.7B(item1)**: 로드·생성은 되나 **포맷 드리프트**(파인튜닝 안 돼서 [STATE]/환각/C++ 텍스트로 샘)로 baseline이 푸는 쉬운 정리도 실패. **용량이 아니라 포맷이 병목** → item2(파인튜닝)의 근거.
+- **RL value-guided(item4)**: value 모델은 잘 학습됨(pos-neg gap 0.85). 그러나 약한 classical 탐색을 유도해선 강한 straight-line baseline 못 넘음(−2). idx27은 획득. "학습된 search-order도 diverse sampling에 진다" 재확인.
+- **공통**: 탐색/순서 조정(학습 유무 무관)으로는 baseline 초과 실패. **유일 유망 레버 = 모델을 이 포맷+데이터로 파인튜닝(item 2/3).**
+
 ## 왜 실패했나 (핵심 인과)
 1. **straight-line baseline이 매우 강함**: 다양한 재시작(diverse sampling)이 1.3B 모델의 사정권을 full 예산으로 잘 훑는다. 문헌(Large Language Monkeys 등): verifier 있으면 coverage@k가 지배적.
 2. **탐색 기법(backtracking/memory/classical)**: 예산을 systematic 탐색에 쓰면 diverse 재시작보다 좁아져 진다. (−2~−3)
