@@ -6,6 +6,20 @@
 QEDCartographer의 실제 이득 원천(value 순서화 + product-over-subgoals backup)을 Rango의 ClassicalSearcher에 이식.
 policy(DeepSeek 생성)는 supervised 유지, **critic(value head)만** 학습해 frontier 우선순위를 블렌드.
 
+## 구현 플랫폼/프레임워크 (사용자 질문 답)
+**외부 RL 플랫폼을 쓰지 않는다. 전부 PyTorch로 직접 구현한 커스텀 파이프라인이다.**
+- **탐색 하네스**: Rango 자체의 `ClassicalSearcher`(best-first, heapq). gym/environment 없음.
+- **value 모델**: 순수 `torch.nn` MLP — `src/model_deployment/value_head.py`(특징 v1: hand feats + goal 토큰 해시 BoW → MLP[520→128→1] sigmoid).
+- **학습**: `scripts/train_value.py`, **지도학습 BCE**(자기 탐색 트리에서 뽑은 (state→solvable) 라벨). Adam, pos_weight 불균형 보정.
+- **의존성**: `torch`만. stable-baselines/RLlib/gym/Ray 등 **RL 프레임워크 미사용**.
+- **QEDCartographer 원본 코드 미사용**: 그건 Proverbot9001(Coq 8.10.2 + coq2vec LSTM + polyarg + MPI)로 Rango(DeepSeek/LoRA/Coq8.18)와 통합 불가(→ RL_LITERATURE.md). **아이디어(value 순서화 + subgoal product backup)만 이식.**
+
+### 정직한 명명: 이건 "full RL"이 아니라 **지도학습 critic(value-guided search)**이다
+- policy gradient 없음, reward 최대화 루프 없음, environment stepping 없음.
+- 하는 일 = **V(state)=P(solvable)를 self-play 탐색 결과로 학습**(라벨=실제 탐색에서 그 state가 QED로 이어졌나) → best-first 우선순위 블렌드.
+- QEDCartographer는 "reward-free value iteration"(Bellman 부트스트랩). 우리 v1은 그 **단순화판(1-pass 지도학습, 부트스트랩 없이 실측 라벨)**. expert iteration(자기증명 재학습)까지 가면 online RL에 근접하나 현재 v1은 아님.
+- 즉 "강화학습"이라기보다 **학습된 탐색 휴리스틱(critic)**. 보고 시 이 구분을 유지한다.
+
 ## 파이프라인
 - **A. 데이터 로깅 (완료)**: ClassicalSearcher가 탐색 트리의 각 VALID 노드에 도달 goal 상태 저장,
   탐색 종료 시 `_dump_tree()`로 (goal, label, dist, depth, cum_score, tactic_score, tactic) JSONL 덤프.
