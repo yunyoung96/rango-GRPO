@@ -221,3 +221,12 @@ never-solved = [0,4,8,15,20,21,22,25]. 두 부류:
 - raw DeepSeek-Coder-6.7B-instruct는 Rango tactic 포맷 미학습 → 깨끗한 단일 tactic/증명 생성 불가. **용량이 아니라 포맷이 병목.**
 - **함의: item 1(raw 6.7B 추론)은 실패 확정. item 2(6.7B를 Rango 데이터로 QLoRA 파인튜닝)가 정확히 이 문제를 푼다.** 파인튜닝하면 1.3B의 깔끔한 포맷 + 6.7B 용량 결합 가능.
 - eval은 완주시켜 최종 0/N 기록 예정. 그 뒤 MR1(RL, item4) 대기분 진행.
+
+### [oracle ablation] retrieval vs capacity 실험 착수 — 2026-07-07 22:xx (사용자 요청)
+- 질문: 병목이 retrieval인가 model capacity인가? teacher-forcing으로 분리.
+- `scripts/oracle_ablation.py`: 각 target×모든 prefix k에서 oracle prefix(gold) 상태 → rango retrieval+생성 → gold와 비교(정규화 exact top-1/top-k). (target,prefix)마다 **입력상태·retrieval증명/premise·생성tactic·gold·match**를 md 상세 기록.
+- 스모크(1파일) 조기 인사이트:
+  - **retrieval이 무관한 걸 가져옴**: goal `ExistsL A P (xs++bs)`(리스트)에 premise가 `lift_eq_complete_2`(MetricSpace)/`cmp_ne_1_optbool`(CompCert) — 완전 무관. → retrieval 문제 신호.
+  - **gold가 compound**(`intros A P xs; elim xs; simpl; auto`)인데 모델은 atomic 생성 → exact top1 낮고 topk 높음. **주의: exact-match는 하한**(compound/대안 tactic 미인정). 실행기반/first-atom 지표 보강 검토.
+- 진행: rango 40파일 상세 실행중(`all_log/oracle_rango.md`). 
+- **다음**: (B) gold lemma 주입 조건, (C) gold tactic 실행 sanity, (6.7b) 큰 모델 동일 실험 → retrieval vs capacity 최종 판정.
