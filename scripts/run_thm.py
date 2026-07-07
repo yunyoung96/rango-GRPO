@@ -321,6 +321,17 @@ def get_tactic_confs(model_alias: str, split: Split) -> list[TacticGenConf]:
             )
             return [DecoderTacticGenConf(Path(checkpoint), [formatter])]
 
+        case "rango-6.7b":
+            # 헤비 레버 1: raw DeepSeek-Coder-6.7B-instruct(LoRA 미적용) + 동일 Rango 프롬프트.
+            # 모델 용량이 진짜 레버인지 검증(구조형 하드코어 겨냥).
+            formatter = GeneralFormatterConf(
+                premise_client_conf=tfidf_premise_conf,
+                proof_retriever_conf=bm25_proof_conf,
+                num_premises=50,
+                num_proofs=20,
+            )
+            return [DecoderTacticGenConf(Path("models/rango-6.7b/base"), [formatter])]
+
         case "rango-divsample":
             # (A1 개선) 같은 강한 rango 모델에서 retrieval on/off 토글(ensemble의
             # 약한 2nd모델 문제 회피). straight-line이 두 client(동일 checkpoint,
