@@ -196,3 +196,10 @@ never-solved = [0,4,8,15,20,21,22,25]. 두 부류:
 ### [구현착수] rango-search (사용자 선택) — Coq Search로 built-in premise
 - 헬퍼 검증: `From Coq Require Import Bool Arith ZArith List Lia. Search <pat>.` → orb_andb_distrib_r 등 반환·파싱 가능.
 - 설계: 초기goal(step<=1) 식별자로 Search→stdlib lemma 파싱→sauto use/apply/rewrite 강제후보. 형제 sauto_hint 경로 재사용.
+
+### [핵심 통찰] first-20 벤치가 sauto 가치를 못 담음 — 2026-07-07 04:1x
+- rango-search 최종 7/20(net -4). rango-psauto 12/20 시점 net -2(회귀[10,11], 신규0).
+- **rango-psauto 실패 원인 = 벤치 편향**: (a) phase1 straight-line@480s(frac0.8)가 baseline@600s보다 짧아 timeout-민감 정리(idx10,11) 놓침, (b) phase2 sauto는 first-20에 **sauto-고유 정리(idx840류)가 없어** 추가 0.
+- **즉 first-20에선 어떤 구성도 못 이김**: 예산분할은 timeout-민감을 잃고, sauto-고유 정리는 세트에 없음.
+- **정직한 재정리**: sauto/Search는 idx840(premise-heavy)처럼 baseline이 못 푸는 정리를 실제로 닫음(0→1 실재). 단 **표준 20-벤치가 그런 정리를 포함 안 해** 측정 불가. 올바른 구성(frac↑로 phase1=거의 full → 회귀0 + sauto는 값싼 bonus)은 그런 정리 있는 세트에서만 +.
+- **결론**: inference-time으로 *대표 벤치*의 baseline은 못 넘는다(확정). sauto의 실가치는 벤치 밖(premise-heavy)에 있어, 이를 보이려면 그런 정리 포함 세트 필요.
