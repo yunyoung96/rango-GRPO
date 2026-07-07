@@ -203,3 +203,8 @@ never-solved = [0,4,8,15,20,21,22,25]. 두 부류:
 - **즉 first-20에선 어떤 구성도 못 이김**: 예산분할은 timeout-민감을 잃고, sauto-고유 정리는 세트에 없음.
 - **정직한 재정리**: sauto/Search는 idx840(premise-heavy)처럼 baseline이 못 푸는 정리를 실제로 닫음(0→1 실재). 단 **표준 20-벤치가 그런 정리를 포함 안 해** 측정 불가. 올바른 구성(frac↑로 phase1=거의 full → 회귀0 + sauto는 값싼 bonus)은 그런 정리 있는 세트에서만 +.
 - **결론**: inference-time으로 *대표 벤치*의 baseline은 못 넘는다(확정). sauto의 실가치는 벤치 밖(premise-heavy)에 있어, 이를 보이려면 그런 정리 포함 세트 필요.
+
+### [정정+검증] "sauto=새 capability" 거짓 판명 — 2026-07-07 05:2x
+- psauto 최종 10/20 (신규 idx27, 회귀 idx9·idx11, net -1). 신규 idx27은 24 run 중 유일 성공(phase2 classical+sauto), 그러나 1/24라 rare-sampling.
+- **idx840 검증**: 전 실험 로그 grep → idx840 성공 로그 **0개**. "sauto가 idx840을 푼다"는 미검증 가설이 사실처럼 전파됐던 것. hprobe(값싼 sauto probe+full straight-line)로 재시도 → 역시 실패, sauto가 유효 tactic조차 못 냄. **주장 철회, FINAL_REPORT 정정.**
+- **최종 정직한 결론**: inference-time·sauto/hammer 레버 소진. baseline이 못 푸는 정리를 재현가능하게 딴 방법 없음. 진짜 레버=학습(expert iter)/더 큰 모델/외부 ATP(z3/eprover).

@@ -5,7 +5,7 @@
 > 방법: 로그 분석 → 논문 조사 → 창의적 구현 → 실험 → 반복. 모든 실험 자동화(overnight 드라이버, 완료마다 analysis.md).
 
 ## 한 줄 결론
-**시도한 어떤 inference-time 방법도 straight-line baseline을 견고하게 넘지 못했다.** 유일한 "+1"(portfolio@20)도 40개 확대에서 −1로 뒤집혀 **노이즈로 판명**. 이는 최신 문헌의 합의("verifier가 있으면 diverse full-budget sampling이 지배적이고, 예산을 분산/변형하는 tweak은 진다")와 정확히 일치한다.
+**시도한 어떤 inference-time 방법도 straight-line baseline을 견고하게 넘지 못했다.** 유일한 "+1"(portfolio@20)도 40개 확대에서 −1로 뒤집혀 **노이즈로 판명**. 이는 최신 문헌의 합의("verifier가 있으면 diverse full-budget sampling이 지배적이고, 예산을 분산/변형하는 tweak은 진다")와 정확히 일치한다. 또한 **sauto/hammer가 "baseline이 못 푸는 정리를 새로 딴다"는 초기 기대(idx840)도 실측에서 거짓으로 판명**(24 run 중 idx840 성공 로그 0개, hprobe 재시도도 실패). sauto가 유일하게 기여한 idx27조차 24회 중 1회(rare-sampling). → **inference-time·hammer 레버는 소진. 진짜 레버는 학습/더 큰 모델/외부 ATP.**
 
 ## 시도한 방법과 결과 (공정 비교)
 
@@ -36,12 +36,18 @@
 - **자동화형** [4,8,15,22,25]: 부동소수 반올림·정수 부등식·비트·결정가능성·어셈블리. sauto로 겨냥했으나 실패(premise 부족 or 부적절 setup).
 - **구조형** [0,20,21]: 긴 시뮬레이션/불변식 증명. 1.3B 사정권 밖.
 
+## ★정정 (2026-07-07): "sauto가 idx840을 푼다=새 capability" 주장은 미검증이었음
+- 전 실험(24개 run)의 로그를 grep한 결과 **idx840을 성공시킨 로그는 어디에도 없음** (baseline 포함 전부 실패). "sauto가 idx840을 푼다"는 초기 *가설*이 검증 없이 사실처럼 저널·요약에 전파된 것. **철회한다.**
+- 새 설계 rango-hprobe(값싼 sauto probe + full straight-line)로 idx840 재시도 → **역시 실패**. sauto는 idx840에 대해 유효 tactic조차 못 냄.
+- **결론 강화**: sauto/hammer는 *지금까지* baseline이 못 푸는 정리를 **단 하나도 재현가능하게** 못 땄다.
+- 유일한 예외: **idx27** — 24개 run 중 오직 rango-psauto phase2(classical+sauto, 트레이스에 `sauto use: bind_inversion, mmap_inversion`)만 1회 성공. 그러나 24회 중 1회라 **robust capability가 아니라 rare-sampling에 가깝다**(net은 여전히 −1: idx9,11 회귀).
+
 ## 교훈
 - **inference-time tweak으로는 강한 sampling baseline을 못 넘는다** (문헌+실험 일치). reranking/voting은 verifier 있으면 무용, search-order tweak은 진다.
-- 개선하려면 **baseline이 원천적으로 못 푸는 정리를 새로 따야** 하는데, 시도한 도구(sauto)는 그걸 못 했다.
+- 개선하려면 **baseline이 원천적으로 못 푸는 정리를 새로 따야** 하는데, 시도한 도구(sauto)는 그걸 **재현가능하게 하지 못했다**(idx840 실패, idx27은 1/24 운).
 
 ## 권장 (진짜 레버)
-1. **built-in premise: Coq `Search`** (미완, 유망): BM25가 못 찾는 stdlib lemma를 Search로 찾아 sauto use에 먹이면 자동화형 하드코어 일부 구제 가능. coqpyt 지원 확인됨. ← **다음 시도할 것.**
+1. ~~built-in premise: Coq `Search`~~ **(시도함 → 실패)**: rango-search 최종 7/20(net −4). Search+sauto의 per-node coqc 오버헤드가 탐색 예산을 굶겨 오히려 크게 회귀. 자동화형 하드코어 0개 구제. **이 레버는 이 구현에선 죽음.**
 2. **학습(MR2 expert iteration)**: 큰 작업 + payoff 불확실(성공증명 대부분 학습분포 내). 진짜 이득은 sauto/Search가 딴 *새* 증명을 학습셋에 넣을 때.
 3. **더 큰 base 모델** 또는 **더 어려운/많은 학습 데이터 + curriculum**: 구조형 하드코어엔 이게 필요.
 4. **완전 hammer(외부 ATP: z3/eprover)**: 현재 sauto-tactics만 설치. ATP 추가하면 자동화형에 더 강력.

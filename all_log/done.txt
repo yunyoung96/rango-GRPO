@@ -14,3 +14,4 @@ no-retrieval|600
 rango-divsample|600
 rango-sauto|600
 rango-search|600
+rango-psauto|600
