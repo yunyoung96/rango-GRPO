@@ -31,8 +31,22 @@ from model_deployment.conf_utils import (
 from util.util import clear_port_map
 import run_thm
 
+from model_deployment.model_result import ModelResult
+import random
+
 DATA_LOC = Path("raw-data/coqstoq-test/data_points")
 SENTENCE_DB = Path("raw-data/coq-dataset/sentences.db")
+
+
+def post_example(client, example, proof, n, beam=True):
+    """수정된 example을 모델 서버에 직접 post(get_recs 복제) → ModelResult."""
+    req = {"method": "get_recs", "params": [
+        example.to_json(), n,
+        proof.proof_text_to_string(include_theorem=False), beam, None,
+    ], "jsonrpc": "2.0", "id": hash(example)}
+    url = random.choice(client.urls)
+    resp = client.session.post(url, json=req).json()
+    return ModelResult.from_json(resp["result"])
 
 
 def norm(t: str) -> str:
@@ -40,6 +54,41 @@ def norm(t: str) -> str:
     t = t.strip()
     t = re.sub(r"\s+", " ", t)
     return t.rstrip(".").strip()
+
+
+_TACWORDS = {"apply", "eapply", "rewrite", "erewrite", "exact", "use", "with", "in",
+    "by", "as", "at", "intros", "intro", "destruct", "induction", "elim", "case",
+    "simpl", "auto", "eauto", "lia", "omega", "reflexivity", "assumption", "left",
+    "right", "split", "exists", "unfold", "fold", "pose", "proof", "specialize",
+    "generalize", "revert", "clear", "subst", "trivial", "congruence", "discriminate"}
+
+
+def extract_gold_lemmas(gold: str) -> list[str]:
+    """gold tactic이 참조한 lemma 이름 추출(apply/rewrite/exact/use 뒤 식별자 + 한정명)."""
+    lemmas = []
+    for m in re.finditer(
+        r"\b(?:apply|eapply|rewrite|erewrite|exact|use|pose proof|specialize|"
+        r"destruct|induction|elim|case)\b([^.;|]*)", gold):
+        for ident in re.findall(r"[A-Za-z_][A-Za-z_0-9']*(?:\.[A-Za-z_][A-Za-z_0-9']*)*", m.group(1)):
+            base = ident.split(".")[0]
+            if ident.lower() not in _TACWORDS and base.lower() not in _TACWORDS and len(ident) > 2:
+                if ident not in lemmas:
+                    lemmas.append(ident)
+    return lemmas
+
+
+def gold_premise_stmts(lemmas: list[str], step) -> list[str]:
+    """추출 lemma 이름을 step의 available context와 매칭해 전체 statement 확보(없으면 이름만)."""
+    ctx = getattr(step.step, "context", []) or []
+    stmts, matched = [], set()
+    for lem in lemmas:
+        found = None
+        for s in ctx:
+            if re.search(rf"\b{re.escape(lem)}\b", s.text):
+                found = s.text.strip(); break
+        stmts.append(found if found else lem)
+        matched.add(lem)
+    return stmts
 
 
 _TRIVIAL = {"proof", "qed", "defined", "abstract", "admitted"}
@@ -79,6 +128,8 @@ def main():
     ap.add_argument("--max-proofs-per-file", type=int, default=10)
     ap.add_argument("--max-steps-per-proof", type=int, default=40)
     ap.add_argument("--nbest", type=int, default=8, help="생성 후보 수(top-k)")
+    ap.add_argument("--cond", choices=["A", "B"], default="A",
+                    help="A=normal retrieval, B=gold lemma 주입")
     ap.add_argument("--detail", action="store_true", help="retrieval/입력을 md에 상세 기록(2배 retrieval)")
     ap.add_argument("--out", default="all_log/oracle_ablation.md")
     args = ap.parse_args()
@@ -91,7 +142,8 @@ def main():
     by_pos = {}  # prefix 길이 bucket -> [top1_hits, total]
     detail = []  # md 라인
 
-    detail.append(f"# Oracle-prefix teacher-forcing ablation — `{args.alias}`\n")
+    detail.append(f"# Oracle-prefix teacher-forcing ablation — `{args.alias}` · 조건 {args.cond}"
+                  f"{' (gold lemma 주입)' if args.cond=='B' else ' (normal retrieval)'}\n")
     detail.append(f"> 각 target×prefix에서 oracle prefix(gold) 상태 → retrieval+생성 → gold와 비교.\n")
     detail.append(f"> exact-match(정규화 문자열)은 **하한**(다른 유효 tactic 미인정). nbest={args.nbest}\n")
 
@@ -114,15 +166,21 @@ def main():
                     if is_trivial(gold) or not step.goals:
                         continue  # 구조적 스텝/무-goal 제외 (capacity 측정 무의미)
                     goal_txt = " / ".join(g.goal for g in step.goals)[:200]
+                    gold_lemmas = extract_gold_lemmas(gold)
                     try:
-                        # retrieval/입력 캡처용 example (get_recs가 내부서 재생성하나, 상세기록 위해)
                         ex = None
-                        if args.detail:
+                        if args.detail or args.cond == "B":
                             try:
                                 ex = client.formatters[0].example_from_step(k, proof.proof_idx, dp)
                             except Exception:
                                 ex = None
-                        res = client.get_recs(k, proof, dp, args.nbest, beam=True)
+                        if args.cond == "B" and ex is not None:
+                            # gold lemma를 premise 앞에 주입 → 직접 post
+                            gstmts = gold_premise_stmts(gold_lemmas, step)
+                            ex.premises = gstmts + (ex.premises or [])
+                            res = post_example(client, ex, proof, args.nbest, beam=True)
+                        else:
+                            res = client.get_recs(k, proof, dp, args.nbest, beam=True)
                         cands = list(zip(res.next_tactic_list, res.score_list))
                     except Exception as e:
                         detail.append(f"- step {k}: get_recs 실패 {e}\n")
@@ -148,6 +206,8 @@ def main():
                             detail.append(f"- **retrieval premise top{len(rprem)}**: " +
                                           " ; ".join(f"`{p.strip()[:70].replace(chr(10),' ')}`" for p in rprem))
                     detail.append(f"- **gold**: `{norm(gold)}`")
+                    if args.cond == "B" and gold_lemmas:
+                        detail.append(f"- **주입 gold lemma**: {', '.join(f'`{l}`' for l in gold_lemmas)}")
                     cand_str = " · ".join(f"`{norm(c)}`({s:.2f})" for c, s in cands[:5])
                     detail.append(f"- **생성 top{min(5,len(cands))}**: {cand_str}")
         # summary
