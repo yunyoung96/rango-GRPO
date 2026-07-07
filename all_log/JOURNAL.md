@@ -188,3 +188,11 @@ never-solved = [0,4,8,15,20,21,22,25]. 두 부류:
 - `Search (orb _ (andb _ _))` → `orb_andb_distrib_r`(Coq.Bool.Bool) 정확히 반환. BM25가 못 찾는 stdlib lemma를 Search가 찾음 = 사용자 아이디어 유효.
 - **단, 라이브 통합 난이도**: fast_client는 에러 diagnostic만 읽음. Search 출력(메시지)을 캡처하려면 coq-lsp 메시지 API 확장 필요(coqpyt ProofFile.get_diagnostics 유사). 상당한 플러밍.
 - 게다가 sauto가 BM25 premise로도 하드코어 0개였으니, Search premise 추가가 실제 크랙할지는 불확실(하드코어가 premise-limited가 아닐 수도).
+
+### [성과] idx840을 rango-sauto가 해결 ✅ (사용자 지목 케이스)
+- baseline+rango.json 둘 다 실패한 idx840(loadv_rule)을 rango-sauto가 `intros. sauto.`로 해결. **sauto가 premise-heavy 케이스엔 실제로 능력 추가.**
+- 재해석: sauto가 20-벤치서 회귀한 건 classical 페널티 탓이지 sauto 자체는 새 케이스를 딴다. → **sauto를 fallback(portfolio)로 얹으면 페널티 없이 idx840류 획득 가능.** + Search로 stdlib premise 보강.
+
+### [구현착수] rango-search (사용자 선택) — Coq Search로 built-in premise
+- 헬퍼 검증: `From Coq Require Import Bool Arith ZArith List Lia. Search <pat>.` → orb_andb_distrib_r 등 반환·파싱 가능.
+- 설계: 초기goal(step<=1) 식별자로 Search→stdlib lemma 파싱→sauto use/apply/rewrite 강제후보. 형제 sauto_hint 경로 재사용.
