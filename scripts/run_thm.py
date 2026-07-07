@@ -194,6 +194,19 @@ def get_searcher_conf(model_alias: str) -> SearcherConf:
                 timeout=timeout, straight_frac=0.8,
             )
 
+        case "rango-hprobe":
+            return PortfolioSearchConf(
+                straight_conf=StraightLineSearcherConf(
+                    timeout=timeout, print_proofs=True, initial_proof=None, token_mask=None,
+                ),
+                classical_conf=ClassicalSearchConf(
+                    max_branch=8, max_search_steps=1000000, depth_limit=30,
+                    timeout=timeout, beam_decode=True, initial_proof=None, use_memo=True,
+                ),
+                timeout=timeout, straight_frac=0.8,
+                phase2_mode="straight", probe_cap=90,
+            )
+
         case "rango-portfolio" | "rango-portfolio-08" | "rango-portfolio-06":
             # straight-line → 실패시 classical-mem. union 노림. straight_frac 변형.
             frac = {"rango-portfolio": 0.7, "rango-portfolio-08": 0.8,
@@ -344,6 +357,21 @@ def get_tactic_confs(model_alias: str, split: Split) -> list[TacticGenConf]:
 
         case "rango-psauto":
             # portfolio: phase1 plain straight-line(강함) + phase2 sauto fallback client
+            ck = "models/deepseek-bm25-proof-tfidf-proj-thm-prem-final/checkpoint-54500"
+            plain_fmt = GeneralFormatterConf(
+                premise_client_conf=tfidf_premise_conf, proof_retriever_conf=bm25_proof_conf,
+                num_premises=50, num_proofs=20,
+            )
+            sauto_fmt = GeneralFormatterConf(
+                premise_client_conf=tfidf_premise_conf, proof_retriever_conf=bm25_proof_conf,
+                num_premises=50, num_proofs=20, sauto_hint=True,
+            )
+            return [DecoderTacticGenConf(Path(ck), [plain_fmt]),
+                    DecoderTacticGenConf(Path(ck), [sauto_fmt])]
+
+        case "rango-hprobe":
+            # 값싼 sauto probe(앞 90s) + full straight-line(plain, 나머지 전부).
+            # 예산 분할 없이 straight-line에 거의 전부 → 회귀0 + sauto 보너스만.
             ck = "models/deepseek-bm25-proof-tfidf-proj-thm-prem-final/checkpoint-54500"
             plain_fmt = GeneralFormatterConf(
                 premise_client_conf=tfidf_premise_conf, proof_retriever_conf=bm25_proof_conf,
@@ -752,7 +780,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    if getattr(args, "alias", None) in ("rango-sauto", "rango-repair", "rango-search", "rango-psauto"):
+    if getattr(args, "alias", None) in ("rango-sauto", "rango-repair", "rango-search", "rango-psauto", "rango-hprobe"):
         os.environ["RANGO_HAMMER_PREAMBLE"] = "1"
     if args.command == "info":
         print_info()

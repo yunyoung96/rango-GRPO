@@ -25,6 +25,8 @@ class PortfolioSearchConf:
     classical_conf: ClassicalSearchConf
     timeout: int
     straight_frac: float = 0.7
+    phase2_mode: str = "classical"  # "classical" | "straight"
+    probe_cap: int = 90  # phase2_mode=straight일 때 phase1(sauto probe) 최대 초
     ALIAS = "portfolio"
 
     @classmethod
@@ -34,6 +36,8 @@ class PortfolioSearchConf:
             ClassicalSearchConf.from_yaml(yaml_data["classical"]),
             yaml_data["timeout"],
             yaml_data.get("straight_frac", 0.7),
+            yaml_data.get("phase2_mode", "classical"),
+            yaml_data.get("probe_cap", 90),
         )
 
 
@@ -46,6 +50,8 @@ class PortfolioSearcher:
         straight_frac: float,
         tactic_gens: list[TacticGenClient],
         manager: ProofManager,
+        phase2_mode: str = "classical",
+        probe_cap: int = 90,
     ):
         self.straight_conf = straight_conf
         self.classical_conf = classical_conf
@@ -53,6 +59,8 @@ class PortfolioSearcher:
         self.straight_frac = straight_frac
         self.tactic_gens = tactic_gens
         self.manager = manager
+        self.phase2_mode = phase2_mode
+        self.probe_cap = probe_cap
 
     @classmethod
     def from_conf(
@@ -68,9 +76,34 @@ class PortfolioSearcher:
             conf.straight_frac,
             tactic_gens,
             manager,
+            getattr(conf, "phase2_mode", "classical"),
+            getattr(conf, "probe_cap", 90),
         )
 
+    def _search_straight2(self, **kwargs):
+        """probe 모드: phase1=값싼 sauto probe(캡), phase2=full straight-line(plain).
+        예산을 나누지 않고 straight-line에 거의 전부 줘서 회귀 0 + sauto 보너스만 획득."""
+        gens_probe = self.tactic_gens[1:2] if len(self.tactic_gens) >= 2 else self.tactic_gens
+        gens_main = self.tactic_gens[:1] if len(self.tactic_gens) >= 2 else self.tactic_gens
+        t1 = min(self.probe_cap, int(self.timeout * self.straight_frac))
+        t2 = max(1, self.timeout - t1)
+        # phase 1: 짧은 hammer probe (sauto client) — 되면 즉시, 안되면 빨리 포기
+        self.straight_conf.timeout = t1
+        print(f"\n[Portfolio] phase1 sauto-probe {t1}s")
+        p = StraightLineSearcher.from_conf(self.straight_conf, gens_probe, self.manager)
+        r1 = p.search(**kwargs)
+        if isinstance(r1, StraightLineSuccess):
+            print("[Portfolio] phase1(probe) 성공")
+            return r1
+        # phase 2: 거의 full straight-line (plain client) = baseline parity
+        self.straight_conf.timeout = t2
+        print(f"\n[Portfolio] phase2 straight-line(plain) {t2}s")
+        m = StraightLineSearcher.from_conf(self.straight_conf, gens_main, self.manager)
+        return m.search(**kwargs)
+
     def search(self, **kwargs):
+        if self.phase2_mode == "straight":
+            return self._search_straight2(**kwargs)
         t1 = int(self.timeout * self.straight_frac)
         t2 = max(1, self.timeout - t1)
         # client 2개면 phase1=client0(plain), phase2=client1(sauto). 아니면 공용.

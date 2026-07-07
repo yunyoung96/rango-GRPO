@@ -13,3 +13,4 @@ rango-ensemble|600
 no-retrieval|600
 rango-divsample|600
 rango-sauto|600
+rango-search|600
