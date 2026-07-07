@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Any, Optional
 from pathlib import Path
 from dataclasses import dataclass
+import os
 import functools
 import re
 
@@ -16,6 +17,48 @@ def _lemma_name(text: str) -> Optional[str]:
     """premise 텍스트('Lemma load_rule: ...')에서 lemma 이름 추출."""
     m = _LEMMA_NAME.match(text.strip())
     return m.group(1) if m else None
+
+
+import subprocess as _sp
+import tempfile as _tf
+
+_SEARCH_REQUIRES = "From Coq Require Import Bool Arith ZArith List Lia.\n"
+_SEARCH_RESULT = re.compile(r"^([A-Za-z_][\w'.]*):")
+_search_cache: dict[str, list[str]] = {}
+
+
+def coq_search(idents: list[str], max_results: int = 6) -> list[str]:
+    """Coq `Search`로 stdlib built-in lemma를 찾는다(BM25가 못 찾는 것).
+    goal 식별자들을 Search에 넣어 매칭 lemma 이름을 반환. subprocess coqc."""
+    idents = [i for i in idents if re.fullmatch(r"[A-Za-z_][\w'.]*", i) and len(i) > 1]
+    if not idents:
+        return []
+    key = " ".join(sorted(set(idents))[:4])
+    if key in _search_cache:
+        return _search_cache[key]
+    query = "Search " + " ".join(sorted(set(idents))[:4]) + "."
+    src = _SEARCH_REQUIRES + query + "\n"
+    found: list[str] = []
+    try:
+        with _tf.NamedTemporaryFile("w", suffix=".v", delete=False) as f:
+            f.write(src)
+            path = f.name
+        out = _sp.run(["coqc", path], capture_output=True, text=True, timeout=40).stdout
+        for line in out.splitlines():
+            m = _SEARCH_RESULT.match(line.strip())
+            if m and m.group(1) not in found:
+                found.append(m.group(1))
+            if len(found) >= max_results:
+                break
+    except Exception:
+        found = []
+    finally:
+        try:
+            os.remove(path)
+        except Exception:
+            pass
+    _search_cache[key] = found
+    return found
 
 
 from data_management.line_dict import LineDict
@@ -164,6 +207,7 @@ class GeneralFormatterConf:
     align_hint: bool = False  # M3(C1): retrieval된 sibling의 aligned 다음 tactic을 프롬프트에 주입
     apply_hint: bool = False  # M4': top premise가 강하면 apply/eapply/exploit <premise>를 강제 후보로
     sauto_hint: bool = False  # rango-sauto: sauto/hauto/`sauto use:<premise>`를 강제 후보로 (retrieval-guided hammer)
+    search_hint: bool = False  # rango-search: Coq Search로 stdlib lemma 찾아 premise에 추가
 
     def __hash__(self) -> int:
         return hash(str(self))
@@ -194,6 +238,7 @@ class GeneralFormatterConf:
             yaml_data.get("align_hint", False),
             yaml_data.get("apply_hint", False),
             yaml_data.get("sauto_hint", False),
+            yaml_data.get("search_hint", False),
         )
 
 
@@ -207,6 +252,7 @@ class GeneralFormatter:
         align_hint: bool = False,
         apply_hint: bool = False,
         sauto_hint: bool = False,
+        search_hint: bool = False,
     ):
         self.premise_client = premise_client
         self.proof_retriever = proof_retriever
@@ -215,6 +261,7 @@ class GeneralFormatter:
         self.align_hint = align_hint
         self.apply_hint = apply_hint
         self.sauto_hint = sauto_hint
+        self.search_hint = search_hint
         # M4': example_from_step이 채우는 강제 apply 대상 premise 이름들 (get_recs가 소비)
         self.forced_premises: list[str] = []
 
@@ -370,6 +417,20 @@ class GeneralFormatter:
         else:
             relevant_premise_strs = None
 
+        # rango-search: 초기 goal의 식별자로 Coq Search → stdlib built-in lemma를
+        # 찾아 forced_premises에 추가(get_recs가 sauto use:로 먹임). BM25가 못 찾는 것.
+        if self.search_hint and step_idx <= 1 and step.goals:
+            goal_ids: list[str] = []
+            for g in step.goals[:1]:
+                _, gid = g.get_ids()
+                goal_ids.extend(gid)
+            found = coq_search(goal_ids)
+            for name in found:
+                if name not in self.forced_premises:
+                    self.forced_premises.append(name)
+            if found:
+                print(f"  [Search hint] stdlib lemma: {found}")
+
         script = proof.proof_prefix_to_string(step)
         goals = fmt_goals(step.goals)
         next_steps = [s.step.text for s in proof.steps[step_idx:]]
@@ -410,6 +471,7 @@ class GeneralFormatter:
             getattr(conf, "align_hint", False),
             getattr(conf, "apply_hint", False),
             getattr(conf, "sauto_hint", False),
+            getattr(conf, "search_hint", False),
         )
 
 

@@ -135,7 +135,7 @@ def get_searcher_conf(model_alias: str) -> SearcherConf:
                 initial_proof=None,
             )
 
-        case "rango-apply" | "rango-alignapply" | "rango-sauto":
+        case "rango-apply" | "rango-alignapply" | "rango-sauto" | "rango-search":
             # M4'/조합/sauto: classical+memo (강제 후보를 시도하려면 다중 후보 탐색 필요)
             return ClassicalSearchConf(
                 max_branch=8,
@@ -327,6 +327,21 @@ def get_tactic_confs(model_alias: str, split: Split) -> list[TacticGenConf]:
                 num_premises=50,
                 num_proofs=20,
                 sauto_hint=True,
+            )
+            return [DecoderTacticGenConf(Path(checkpoint), [formatter])]
+
+        case "rango-search":
+            # built-in premise: Coq Search로 stdlib lemma 찾아 sauto use: (사용자 아이디어)
+            checkpoint = (
+                "models/deepseek-bm25-proof-tfidf-proj-thm-prem-final/checkpoint-54500"
+            )
+            formatter = GeneralFormatterConf(
+                premise_client_conf=tfidf_premise_conf,
+                proof_retriever_conf=bm25_proof_conf,
+                num_premises=50,
+                num_proofs=20,
+                sauto_hint=True,
+                search_hint=True,
             )
             return [DecoderTacticGenConf(Path(checkpoint), [formatter])]
 
@@ -711,7 +726,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    if getattr(args, "alias", None) in ("rango-sauto", "rango-repair"):
+    if getattr(args, "alias", None) in ("rango-sauto", "rango-repair", "rango-search"):
         os.environ["RANGO_HAMMER_PREAMBLE"] = "1"
     if args.command == "info":
         print_info()
