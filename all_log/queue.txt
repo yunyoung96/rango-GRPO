@@ -1,1 +1,2 @@
 rango-search|600|Coq Search로 stdlib lemma 찾아 sauto use — built-in premise, 하드코어 자동화형 겨냥
+rango-psauto|600|portfolio: 강한 straight-line phase1 + sauto fallback phase2 (페널티 회피, 새 정리 획득)
