@@ -49,3 +49,9 @@ policy(DeepSeek 생성)는 supervised 유지, **critic(value head)만** 학습�
 - [ ] E 평가
 
 출처: QEDCartographer 2408.09237 · HTPS 2205.11491 · GPT-f 2009.03393 · ExIt 2202.01344.
+
+## ★실측 리스크 (2026-07-07 08:5x): positive 데이터 부족
+- Part B 재생성(수정 후) 초반 10정리 전부 classical 실패 → **positive 0, negative 884**. classical이 CompCert(idx30~)를 거의 못 풀어 성공경로(=positive) 상태가 안 나옴.
+- value 모델은 pos/neg 둘 다 필요(train_value: pos==0이면 학습 불가). 100정리 완주 후 positive 총량 재확인 필요.
+- positive 부족 시 대응: (a) 더 큰 data-gen 세트, (b) straight-line 성공증명을 pseudo-tree(성공경로=positive)로 변환해 positive 보강, (c) 더 쉬운(그러나 eval과 분리된) 정리 포함.
+- 이 자체가 시사점: classical이 약해 positive 자체가 희소 → value-guided classical의 baseline 초과 가능성을 더 낮춤(정직 반영).

@@ -118,3 +118,12 @@ STRATEGY_DIVERGE 36.2% · SEARCH_THRASH 47.0% · NO_RETRIEVAL 5.6% · LLM_INVALI
 - payoff 불확실: 찾은 성공증명 대부분이 이미 fine-tune 분포 내(쉬운 test정리) → 자기재학습 이득 제한적. 진짜 이득은 sauto/Search가 딴 '새로운' 증명인데 그건 0개였음(sauto 하드코어 0).
 - **정직한 판단**: MR2를 지금 셋업에서 제대로 하려면 큰 투자인데 개선 기대 낮음. 사용자에게 go/no-go 제시 필요.
 - 대안(더 유망): (a) 학습 데이터를 TEST가 아니라 더 어려운/많은 정리로, (b) 더 큰 base 모델, (c) curriculum(쉬운→어려운).
+
+## [대기] BFS-Prover 기법 이식 (사용자 요청, 헤비레버 4→1→3→2 이후)
+- **주의**: BFS-Prover(ByteDance 2025)는 **Lean/miniF2F** 기반 — 그 모델/체크포인트를 Coq에 직접 못 씀. 우리 실험 = **기법 이식**.
+- 핵심 기법:
+  1. **length-normalized best-first**: tactic score를 길이/토큰수로 정규화해 짧은 증명 편향 제거(우리 ClassicalSearcher score에 적용 가능).
+  2. **expert iteration + DPO**: 성공 tactic을 chosen, 실패를 rejected로 preference 학습(item 3 expert-iter의 강화판).
+  3. **BFS 스케일링**: 컴퓨트↑에 best-first가 잘 scale(우리 baseline은 straight-line이라 비교 의미).
+- 우리 맥락 실험안: (a) ClassicalSearcher에 length-norm 스코어 옵션(`rango-lnbfs`), (b) MR1 value + length-norm 결합, (c) expert-iter를 DPO로.
+- 정직한 리스크: 우리 발견상 best-first(classical)가 straight-line baseline에 이미 -3. length-norm이 그걸 뒤집을지는 실측 필요. BFS-Prover 이득은 Lean/miniF2F에서였음.
