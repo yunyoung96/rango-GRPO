@@ -3,12 +3,14 @@ cd /app/coq-modeling
 log(){ echo "[$(date -u +%H:%M:%S)] $*" >> all_log/mr1.log; }
 log "=== MR1 러너 시작: hprobe 완료 대기 ==="
 while ps -eo args | grep -q "[r]un_all.py --alias rango-hprobe"; do sleep 60; done
-log "hprobe 완료. 고아 서버 정리."
+log "hprobe 완료. 6.7B 러너(사용자 우선) 완료 대기."
+while pgrep -f "[r]un_6.7b.sh" >/dev/null 2>&1; do sleep 60; done
+log "6.7B 러너 완료. 고아 서버 정리."
 for p in $(pgrep -f tactic_gen_server); do kill "$p" 2>/dev/null; done
 sleep 3
 # Part B: 라벨 트리 생성 (idx 30~129, eval first-20과 분리). timeout 240.
-log "▶ Part B: rango-vlog 데이터 생성 (start=30 num=100 @240s)"
-python3 scripts/run_all.py --alias rango-vlog --start 30 --num 100 --timeout 240 --workers 1 \
+log "▶ Part B: rango-vlog 데이터 생성 (start=30 num=100 @150s)"
+python3 scripts/run_all.py --alias rango-vlog --start 30 --num 100 --timeout 150 --workers 1 \
   --description "MR1 value-model 학습데이터 생성(트리 덤프)" >> all_log/mr1.log 2>&1
 ntrees=$(ls data/vguided_trees/*.jsonl 2>/dev/null | wc -l)
 npos=$(cat data/vguided_trees/*.jsonl 2>/dev/null | grep -c '"label": 1')

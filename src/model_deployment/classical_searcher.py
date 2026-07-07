@@ -179,10 +179,14 @@ class ClassicalSearcher:
         for i in range(self.max_search_steps):
             cur = time.time()
             if self.timeout <= cur - start:
+                if self.log_tree:  # MR1: timeout 실패 트리도 덤프(negative 데이터)
+                    self._dump_tree()
                 return ClassicalFailure(
                     cur - start, self.total_model_time, num_steps, self.root_candidate
                 )
             if len(self.frontier) == 0:
+                if self.log_tree:  # MR1: frontier 소진 실패 트리도 덤프
+                    self._dump_tree()
                 return ClassicalFailure(
                     cur - start, self.total_model_time, num_steps, self.root_candidate
                 )
