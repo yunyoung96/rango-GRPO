@@ -1,2 +1,1 @@
-rango-divsample|600|(A1개선) 같은 rango모델 retrieval on/off 토글
-rango-sauto|600|retrieval-guided hammer, sauto를 초기goal(step<=1)에만 sparse 주입
+rango-search|600|Coq Search로 stdlib lemma 찾아 sauto use — built-in premise, 하드코어 자동화형 겨냥
