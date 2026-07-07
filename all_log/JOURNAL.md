@@ -230,3 +230,9 @@ never-solved = [0,4,8,15,20,21,22,25]. 두 부류:
   - **gold가 compound**(`intros A P xs; elim xs; simpl; auto`)인데 모델은 atomic 생성 → exact top1 낮고 topk 높음. **주의: exact-match는 하한**(compound/대안 tactic 미인정). 실행기반/first-atom 지표 보강 검토.
 - 진행: rango 40파일 상세 실행중(`all_log/oracle_rango.md`). 
 - **다음**: (B) gold lemma 주입 조건, (C) gold tactic 실행 sanity, (6.7b) 큰 모델 동일 실험 → retrieval vs capacity 최종 판정.
+
+### [하이브리드 실패 + oracle A 결과] — 2026-07-07 23:2x
+- **rango-hybrid 최종 2/20**(baseline 11, classical 8보다도 낮음). 원인: conf_threshold=-0.05면 거의 모든 스텝이 "확신"→width1 결정론적 단일체인(baseline의 resampling 다양성 없음)→약함. **사용자 아이디어는 옳으나 classical best-first 기반 구현이 약함**(greedy=단일체인 ≠ 강한 straight-line resampling). 재설계: straight-line 기반 + stuck시만 분기.
+- **oracle 조건A (rango 1.3b, 40파일, 337스텝)**: top-1 exact **8.0%**, top-8 **23.1%**. prefix 위치별 2~21%(추세 약함).
+  - 상세 md에서 관찰: retrieval premise가 goal과 **무관**한 경우 다수(리스트 goal에 MetricSpace/CompCert lemma). exact-match는 하한(gold가 compound `a;b;c` 한 줄, 모델은 atomic).
+- 진행: 조건B(gold lemma 주입) + 6.7b oracle 실행중 → retrieval vs capacity 판정 예정.
