@@ -208,3 +208,9 @@ never-solved = [0,4,8,15,20,21,22,25]. 두 부류:
 - psauto 최종 10/20 (신규 idx27, 회귀 idx9·idx11, net -1). 신규 idx27은 24 run 중 유일 성공(phase2 classical+sauto), 그러나 1/24라 rare-sampling.
 - **idx840 검증**: 전 실험 로그 grep → idx840 성공 로그 **0개**. "sauto가 idx840을 푼다"는 미검증 가설이 사실처럼 전파됐던 것. hprobe(값싼 sauto probe+full straight-line)로 재시도 → 역시 실패, sauto가 유효 tactic조차 못 냄. **주장 철회, FINAL_REPORT 정정.**
 - **최종 정직한 결론**: inference-time·sauto/hammer 레버 소진. baseline이 못 푸는 정리를 재현가능하게 딴 방법 없음. 진짜 레버=학습(expert iter)/더 큰 모델/외부 ATP(z3/eprover).
+
+### [inference-time 종결] hprobe 최종 8/20 net -3 — 2026-07-07 06:5x
+- hprobe(값싼 90s sauto probe + full straight-line) 최종 8/20, 신규 0, 회귀 3. "무손실 fallback" 설계조차 probe 90s 손실로 3개 회귀+추가 0.
+- **결론 확정: 어떤 inference-time 방법도 baseline(11/20) 미달.** search/retrieval-hint/sauto/portfolio/probe 전부.
+- → 헤비 레버로 전환(사용자 4→1→3→2). 
+- **6.7B 스모크 통과**: raw DeepSeek-Coder-6.7B-instruct가 Rango 프롬프트로 로드·생성 정상, idx6 풀음(True). 단 **포맷 드리프트 심각**(stop 못함, [STATE]/[GOAL] 토큰 흉내, C++ 환각) — 파인튜닝 안 돼서. first-20에서 용량 이득 vs 드리프트 손해 관건. 진행중.
