@@ -172,6 +172,34 @@ def get_searcher_conf(model_alias: str) -> SearcherConf:
                 use_memo=True,
             )
 
+        case "rango-vlog":
+            # MR1(RL): classical+memo로 탐색 트리 생성 + (state,label) 덤프(value model 학습 데이터).
+            return ClassicalSearchConf(
+                max_branch=8,
+                max_search_steps=1000000,
+                depth_limit=30,
+                timeout=timeout,
+                beam_decode=True,
+                initial_proof=None,
+                use_memo=True,
+                log_tree=True,
+                log_dir="data/vguided_trees",
+            )
+
+        case "rango-vguided":
+            # MR1(RL): 학습된 value head로 frontier 블렌드된 best-first.
+            return ClassicalSearchConf(
+                max_branch=8,
+                max_search_steps=1000000,
+                depth_limit=30,
+                timeout=timeout,
+                beam_decode=True,
+                initial_proof=None,
+                use_memo=True,
+                value_ckpt="models/value_head/value.pt",
+                value_weight=1.0,
+            )
+
         case "rango-apply-sl":
             # straight-line(강한 base) + 각 step 다중후보 시도(forced apply premise 포함)
             return StraightLineSearcherConf(
@@ -281,7 +309,7 @@ def get_tactic_confs(model_alias: str, split: Split) -> list[TacticGenConf]:
     )
 
     match model_alias:
-        case "rango" | "rango-best-beam" | "rango-best-rand" | "rango-mem" | "rango-mem-wide" | "rango-portfolio" | "rango-portfolio-08" | "rango-portfolio-06":
+        case "rango" | "rango-best-beam" | "rango-best-rand" | "rango-mem" | "rango-mem-wide" | "rango-portfolio" | "rango-portfolio-08" | "rango-portfolio-06" | "rango-vlog" | "rango-vguided":
             checkpoint = (
                 "models/deepseek-bm25-proof-tfidf-proj-thm-prem-final/checkpoint-54500"
             )

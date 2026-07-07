@@ -20,6 +20,10 @@ class ClassicalSearchConf:
     beam_decode: bool
     initial_proof: Optional[str]
     use_memo: bool = False  # M2: transposition table + failed-tactic memo + cycle guard
+    log_tree: bool = False  # MR1(RL): 탐색 트리의 (state,label) 쌍을 value model 학습용으로 덤프
+    log_dir: Optional[str] = None
+    value_ckpt: Optional[str] = None  # MR1: 학습된 value head 경로(있으면 frontier 블렌드)
+    value_weight: float = 0.0  # score = cum_logprob + value_weight*log(V+eps)
     ALIAS = "classical"
 
     @classmethod
@@ -32,6 +36,10 @@ class ClassicalSearchConf:
             yaml_data["beam_decode"],
             yaml_data.get("initial_proof", None),
             yaml_data.get("use_memo", False),
+            yaml_data.get("log_tree", False),
+            yaml_data.get("log_dir", None),
+            yaml_data.get("value_ckpt", None),
+            yaml_data.get("value_weight", 0.0),
         )
 
 
@@ -72,6 +80,9 @@ class Candidate:
         self.depth = depth
         # M2: goal-state hash of the state this candidate's tactic was applied FROM
         self.parent_goal_key = parent_goal_key
+        # MR1(RL): 이 candidate의 tactic 적용 후 도달한 goal 상태(가치 라벨 대상). solved=이 노드가 COMPLETE.
+        self.goal_text: Optional[str] = None
+        self.solved: bool = False
         if children is None:
             self.children = []
         else:
@@ -93,6 +104,10 @@ class ClassicalSearcher:
         beam_decode: bool,
         initial_proof: Optional[str] = None,
         use_memo: bool = False,
+        log_tree: bool = False,
+        log_dir: Optional[str] = None,
+        value_ckpt: Optional[str] = None,
+        value_weight: float = 0.0,
     ):
         self.tactic_client = tactic_client
         self.proof_manager = proof_manager
@@ -102,6 +117,12 @@ class ClassicalSearcher:
         self.timeout = timeout
         self.beam_decode = beam_decode
         self.initial_proof = initial_proof
+        # MR1(RL)
+        self.log_tree = log_tree
+        self.log_dir = log_dir or "data/vguided_trees"
+        self.value_ckpt = value_ckpt
+        self.value_weight = value_weight
+        self._value_model = None  # lazy
         # M2 (search-memory): goal-hash → {"dead", "rejected": set[str], "expanded"}
         self.use_memo = use_memo
         self.goal_memo: dict[str, dict[str, Any]] = {}
@@ -144,6 +165,10 @@ class ClassicalSearcher:
             conf.beam_decode,
             conf.initial_proof,
             conf.use_memo,
+            getattr(conf, "log_tree", False),
+            getattr(conf, "log_dir", None),
+            getattr(conf, "value_ckpt", None),
+            getattr(conf, "value_weight", 0.0),
         )
 
     def search(
@@ -164,6 +189,8 @@ class ClassicalSearcher:
             num_steps += 1
             possible_success = self.search_step(num_steps, print_proofs)
             if possible_success is not None:
+                if self.log_tree:
+                    self._dump_tree()
                 return ClassicalSuccess(
                     time.time() - start,
                     self.total_model_time,
@@ -171,9 +198,54 @@ class ClassicalSearcher:
                     possible_success,
                     self.root_candidate,
                 )
+        if self.log_tree:
+            self._dump_tree()
         return ClassicalFailure(
             time.time() - start, self.total_model_time, num_steps, self.root_candidate
         )
+
+    def _dump_tree(self) -> None:
+        """MR1(RL): 탐색 트리를 (state, label, dist) JSONL로 덤프.
+        label=1: 이 state에서 (예산 내) 증명 완료 가능(성공경로/조상). dist=QED까지 step.
+        label=0: subtree 전멸(예산 내 미완). value model이 P(solvable)를 학습하도록."""
+        import os, json
+        records: list[dict] = []
+
+        def visit(node: "Candidate") -> tuple[bool, int]:
+            child_res = [visit(c) for c in node.children]
+            solved_below = node.solved or any(r[0] for r in child_res)
+            if node.solved:
+                dist = 0
+            elif solved_below:
+                dist = 1 + min(r[1] for r in child_res if r[0])
+            else:
+                dist = -1
+            if node.goal_text is not None:
+                records.append({
+                    "goal": node.goal_text,
+                    "label": 1 if solved_below else 0,
+                    "dist": dist,
+                    "depth": node.depth,
+                    "cum_score": node.score,
+                    "tactic_score": node.tactic_score,
+                    "tactic": node.tactic.strip()[:200],
+                })
+            return (solved_below, dist)
+
+        try:
+            visit(self.root_candidate)
+            if not records:
+                return
+            os.makedirs(self.log_dir, exist_ok=True)
+            thm = self.initial_dset_file.proofs[-1].theorem.term.text if self.initial_dset_file.proofs else "unknown"
+            fname = f"{abs(hash(thm)) % (10**12)}.jsonl"
+            with open(os.path.join(self.log_dir, fname), "w") as f:
+                for r in records:
+                    f.write(json.dumps(r, ensure_ascii=False) + "\n")
+            n_pos = sum(r["label"] for r in records)
+            print(f"[MR1] tree dump: {len(records)} states ({n_pos} pos) → {self.log_dir}/{fname}")
+        except Exception as e:
+            print(f"[MR1] tree dump 실패: {e}")
 
     # Delay checking until node is selected
     def is_only_focusing(self, tactic: str) -> bool:
@@ -225,6 +297,7 @@ class ClassicalSearcher:
             case TacticResult.COMPLETE:
                 assert proof_check_result.new_proof is not None
                 cur_candidate.proof = proof_check_result.new_proof
+                cur_candidate.solved = True  # MR1: 라벨링용
                 return cur_candidate
             case TacticResult.INVALID:
                 # M2: 이 tactic이 parent goal 상태에서 실패했음을 기록
@@ -239,6 +312,10 @@ class ClassicalSearcher:
                 cur_candidate.proof = proof_check_result.new_proof
                 cur_dset_file = self.proof_manager.build_dset_file(cur_candidate.proof)
                 cur_goals = proof_check_result.current_goals
+
+                # MR1(RL): 이 노드가 도달한 goal 상태 저장(라벨/특징용)
+                if self.log_tree or self.value_weight != 0.0:
+                    cur_candidate.goal_text = self._goal_key(cur_goals)
 
                 if self.use_memo:
                     goal_key = self._goal_key(cur_goals)
