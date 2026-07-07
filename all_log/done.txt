@@ -15,3 +15,4 @@ rango-divsample|600
 rango-sauto|600
 rango-search|600
 rango-psauto|600
+rango-hprobe|600

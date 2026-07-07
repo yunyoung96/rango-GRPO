@@ -54,27 +54,32 @@ def extract(idx):
     endmark = "server quit" if "server quit" in tail else ("failed" if "failed" in tail else "timeout")
     return {"steps":steps or "?","valid":valid or "?","goal":goal[:400],"proof":"\n".join(proof[:40]),"end":endmark}
 
-def block(idx,name,nb):
+def block(idx,name,tfile,nb):
     e=extract(idx)
     name=name or "None"
+    nname=nb.get("cname") or "None"; nfile=nb.get("cfile","")
+    tL=ga.line_of(tfile,name); nL=ga.line_of(nfile,nname)
+    tloc=f"{tfile}:L{tL}" if tL else tfile
+    nloc=f"{nfile}:L{nL}" if nL else nfile
+    av=ga.avail_mark(tfile,tL,nfile,nL)
     if not e:
-        return f"<details>\n<summary><b>idx {idx}</b> · <code>{name}</code> — 로그 없음</summary>\n<pre style=\"{PRE_STYLE}\"><code>(run 로그 미존재)</code></pre>\n</details>\n"
-    head=(f'<summary><b>idx {idx}</b> · <code>{name}</code> · '
+        return f"<details>\n<summary><b>idx {idx}</b> · <code>{name}</code> (<code>{tloc}</code>) — 로그 없음</summary>\n<pre style=\"{PRE_STYLE}\"><code>(run 로그 미존재)</code></pre>\n</details>\n"
+    head=(f'<summary><b>idx {idx}</b> · <code>{name}</code> (<code>{tloc}</code>) ← 이웃 <code>{nname}</code> (<code>{nloc}</code>) · {av} · '
           f'rango: {e["steps"]}회 시도(VALID {e["valid"]}) → <b>{e["end"]}</b> · <b>{status_badge(idx)}</b></summary>')
-    # 좌우 2열: 막힌 goal | 포기 직전 누적 부분증명
-    tbl=("<table><thead><tr>"
-         "<th align=\"left\">막힌 goal (마지막 focused_goal)</th>"
-         "<th align=\"left\">포기 직전 누적 부분증명</th>"
-         "</tr></thead><tbody><tr>"
-         f"<td valign=\"top\">{_pre_hl(e['goal'])}</td>"
-         f"<td valign=\"top\">{_pre_hl(e['proof'])}</td>"
+    nbr_code=ga.lemma_code(nfile,nname)   # 참조한 형제(이웃)의 실제 증명 = 이식원
+    # 상단: 막힌 goal / 하단 2열: rango 포기 직전 부분증명 | 이웃 형제 증명(참조)
+    tbl=("<table><tbody>"
+         f"<tr><td colspan=\"2\" valign=\"top\"><b>막힌 goal</b> (rango 포기 시점의 focused_goal){_pre_hl(e['goal'])}</td></tr>"
+         "<tr>"
+         f"<td valign=\"top\"><b>rango 포기 직전 누적 부분증명</b> — 여기서 발산·정지{_pre_hl(e['proof'])}</td>"
+         f"<td valign=\"top\"><b>이웃 형제 증명 (참조·이식원)</b> <code>{nname}</code> — <sub>{nloc}</sub>{_pre_hl(nbr_code)}</td>"
          "</tr></tbody></table>")
     return f"<details>\n{head}\n{tbl}\n</details>\n"
 
 def main():
     blocks=[]
     for idx,name,tfile,nb in ROWS:
-        blocks.append(block(idx,name,nb))
+        blocks.append(block(idx,name,tfile,nb))
     section=("\n\n## 6.2 원래 rango 증명이 어디서 막혔나 (접기/펴기)\n\n"
              "> rango 실패는 전부 `valid_but_stuck`(COMPLETE 0건) — 즉 **유효한 tactic 을 계속 두면서도\n"
              "> 정해진 시간(≈600s) 안에 증명을 못 닫음**. 아래는 각 정리에서 rango 가 (1)몇 번 tactic 을\n"

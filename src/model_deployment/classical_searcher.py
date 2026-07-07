@@ -24,6 +24,10 @@ class ClassicalSearchConf:
     log_dir: Optional[str] = None
     value_ckpt: Optional[str] = None  # MR1: 학습된 value head 경로(있으면 frontier 블렌드)
     value_weight: float = 0.0  # score = cum_logprob + value_weight*log(V+eps)
+    # MR-Hybrid: retrieval-신뢰도(모델 top log-prob) 게이팅 adaptive-width.
+    #   확신↑(top≥conf_threshold) → width 1 greedy(=rango 기법), 확신↓ → width max_branch 탐색.
+    hybrid_conf: bool = False
+    conf_threshold: float = -0.05
     ALIAS = "classical"
 
     @classmethod
@@ -40,6 +44,8 @@ class ClassicalSearchConf:
             yaml_data.get("log_dir", None),
             yaml_data.get("value_ckpt", None),
             yaml_data.get("value_weight", 0.0),
+            yaml_data.get("hybrid_conf", False),
+            yaml_data.get("conf_threshold", -0.05),
         )
 
 
@@ -108,7 +114,11 @@ class ClassicalSearcher:
         log_dir: Optional[str] = None,
         value_ckpt: Optional[str] = None,
         value_weight: float = 0.0,
+        hybrid_conf: bool = False,
+        conf_threshold: float = -0.05,
     ):
+        self.hybrid_conf = hybrid_conf
+        self.conf_threshold = conf_threshold
         self.tactic_client = tactic_client
         self.proof_manager = proof_manager
         self.max_branch = max_branch
@@ -169,6 +179,8 @@ class ClassicalSearcher:
             getattr(conf, "log_dir", None),
             getattr(conf, "value_ckpt", None),
             getattr(conf, "value_weight", 0.0),
+            getattr(conf, "hybrid_conf", False),
+            getattr(conf, "conf_threshold", -0.05),
         )
 
     def search(
@@ -374,9 +386,17 @@ class ClassicalSearcher:
                 if self.value_weight != 0.0:
                     import math as _m
                     value_bonus = self.value_weight * _m.log(self._value_of(cur_candidate) + 1e-6)
-                for tactic, tactic_score, num_tokens in zip(
-                    recs.next_tactic_list, recs.score_list, recs.num_tokens_list
-                ):
+
+                # MR-Hybrid: 모델 확신도로 width 게이팅. 확신 높으면 top-1만(greedy=rango 기법),
+                #   낮으면 전체(max_branch) 탐색. retrieval이 잘 매치될수록 top log-prob이 뾰족.
+                rec_triples = list(zip(recs.next_tactic_list, recs.score_list, recs.num_tokens_list))
+                if self.hybrid_conf and rec_triples:
+                    top_score = max(t[1] for t in rec_triples)
+                    if top_score >= self.conf_threshold:
+                        # 확신↑ → argmax 하나만 유지(greedy commit)
+                        rec_triples = [max(rec_triples, key=lambda t: t[1])]
+                        print(f"[Hybrid] 확신↑(top={top_score:.3f}≥{self.conf_threshold}) → greedy width1")
+                for tactic, tactic_score, num_tokens in rec_triples:
                     # M2: 이 goal 상태에서 이미 실패한 tactic은 Coq 치기 전에 제외
                     if self.use_memo and tactic.strip() in rejected:
                         self.memo_pruned += 1

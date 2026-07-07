@@ -74,6 +74,53 @@ def highlight(code):
                lambda m:f'<span style="color:{C_CMT}">{html.escape(cmts[int(m.group(1))])}</span>', esc)
     return esc
 
+_SSJ=os.path.join(HERE,"..","results","compcert_report","step_states.json")
+STEPSTATES=json.load(open(_SSJ)) if os.path.exists(_SSJ) else {}
+
+def _pre_state(raw):
+    """goal state 텍스트 → 색칠된 <pre> (빈 줄 제거)."""
+    lines=[l for l in (raw or "").split("\n") if l.strip()!=""]
+    if not lines: return f'<pre style="{PRE_STYLE}"><code><span style="color:{C_CMT}">증명 종료 — no more goals</span></code></pre>'
+    return f'<pre style="{PRE_STYLE}"><code>'+highlight("\n".join(lines))+"</code></pre>"
+
+# 중첩 계층 시각화: 왼쪽 색상 레일 + 들여쓰기 (레벨별 색/굵기 차등). VS Code 미리보기·Artifact 에서 표시.
+NEST_L1='style="margin:10px 0;border-left:4px solid rgba(70,110,240,.75);border-radius:0 10px 10px 0;padding:4px 0 4px 15px;background:rgba(70,110,240,.05)"'
+NEST_L2='style="margin:7px 0;border-left:3px solid rgba(130,110,225,.55);border-radius:0 8px 8px 0;padding:3px 0 3px 13px;background:rgba(130,110,225,.045)"'
+NEST_L3='style="margin:5px 0;border-left:2px solid rgba(90,150,120,.55);border-radius:0 7px 7px 0;padding:2px 0 2px 11px;background:rgba(90,150,120,.05)"'
+SUM_STYLE='style="cursor:pointer"'
+
+def _trace_items(rec):
+    """한 정리의 스텝별 goal state 를 중첩 <details> 리스트로(레벨3 레일)."""
+    if not rec or not rec.get("steps"): return "<i>(스텝 상태 추출 없음 — 파일/타임아웃)</i>"
+    out=[f'<details {NEST_L3}><summary {SUM_STYLE}>0 · <i>초기 goal</i></summary>\n{_pre_state(rec.get("initial",""))}\n</details>']
+    for i,s in enumerate(rec.get("steps",[]),1):
+        out.append(f'<details {NEST_L3}><summary {SUM_STYLE}>{i} · <code>{html.escape(s["tac"])}</code></summary>\n{_pre_state(s.get("state",""))}\n</details>')
+    return "".join(out)
+
+def trace_table(trec, nrec, tlabel, nlabel):
+    """스텝별 goal state 를 좌우 2열(대상 | 이웃)로. 레벨2 레일."""
+    if not trec and not nrec: return ""
+    return (f"<details {NEST_L2}><summary {SUM_STYLE}><b>스텝별 goal state (대상 | 이웃)</b> — 각 스텝 펼치면 그 tactic 직후 상태·가설 포함</summary>\n"
+            "<table><thead><tr>"
+            f"<th align=\"left\">대상 <code>{tlabel}</code></th><th align=\"left\">이웃 <code>{nlabel}</code></th>"
+            "</tr></thead><tbody><tr>"
+            f"<td valign=\"top\">{_trace_items(trec)}</td>"
+            f"<td valign=\"top\">{_trace_items(nrec)}</td>"
+            "</tr></tbody></table>\n</details>")
+
+def line_of(cfile, nm):
+    if not nm or nm=="None": return None
+    try: L=cov.read(cfile)
+    except Exception: return None
+    loc=cov.find_lemma(L,nm)
+    return loc[0]+1 if loc else None
+
+def avail_mark(tfile,tL,nfile,nL):
+    """이웃이 rango 증명시점에 접근 가능한가. 같은파일: 앞이면 available. 타파일: 의존성 확인필요."""
+    if tfile==nfile and tL and nL:
+        return "이웃 available ✅" if nL<tL else "이웃 나중 ⚠️(rango 미접근)"
+    return "타 파일(의존성 확인要)"
+
 def _pre(code):
     """Coq 코드를 색칠된 HTML <pre> 로. 빈 줄 제거(마크다운 HTML블록이 빈줄에서 끊기는 것 방지)."""
     if not code: return f'<pre style="{PRE_STYLE}"><code>(코드 추출 실패)</code></pre>'
@@ -86,17 +133,23 @@ def block(idx, name, tfile, nb):
     name=name or "None"; nname=nname or "None"
     tcode=lemma_code(tfile, name)
     ncode=lemma_code(nfile, nname)
+    tL=line_of(tfile,name); nL=line_of(nfile,nname)
+    tloc=f"{tfile}:L{tL}" if tL else tfile
+    nloc=f"{nfile}:L{nL}" if nL else nfile
+    av=avail_mark(tfile,tL,nfile,nL)
     head=(f'<summary><b>idx {idx}</b> · <code>{name}</code> ↔ <code>{nname}</code> · '
-          f'{tfile} · suffix {suf} / full-match {fm} · <b>{status_badge(idx)}</b></summary>')
+          f'suffix {suf}/full {fm} · {av} · <b>{status_badge(idx)}</b></summary>')
     # 좌우 2열(대상 | 이웃) HTML 표. 표 안엔 빈 줄이 없어야 함(한 줄로 이어붙임).
     tbl=("<table><thead><tr>"
-         f"<th align=\"left\">대상 <code>{html.escape(name)}</code> — <sub>{html.escape(tfile)}</sub></th>"
-         f"<th align=\"left\">이웃 <code>{html.escape(nname)}</code> — <sub>{html.escape(nfile)}</sub></th>"
+         f"<th align=\"left\">대상 <code>{html.escape(name)}</code> — <sub>{html.escape(tloc)}</sub></th>"
+         f"<th align=\"left\">이웃 <code>{html.escape(nname)}</code> — <sub>{html.escape(nloc)}</sub></th>"
          "</tr></thead><tbody><tr>"
          f"<td valign=\"top\">{_pre(tcode)}</td>"
          f"<td valign=\"top\">{_pre(ncode)}</td>"
          "</tr></tbody></table>")
-    return f"<details>\n{head}\n{tbl}\n</details>\n"
+    ss=STEPSTATES.get(str(idx),{})
+    tr=trace_table(ss.get("t"), ss.get("n"), html.escape(name), html.escape(nname)) if ss else ""
+    return f"<details>\n{head}\n{tbl}\n{tr}\n</details>\n"
 
 def main():
     # 표 순서(suffix 내림차순 근사)와 무관하게 ROWS 순서대로

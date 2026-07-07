@@ -222,6 +222,24 @@ def get_searcher_conf(model_alias: str) -> SearcherConf:
                 timeout=timeout, straight_frac=0.8,
             )
 
+        case "rango-hybrid":
+            # MR-Hybrid: retrieval-신뢰도(모델 top log-prob) 게이팅 adaptive-width best-first.
+            # 확신↑ → greedy(rango 기법), 확신↓ → width8 탐색. use_memo로 중복 방지.
+            return ClassicalSearchConf(
+                max_branch=8, max_search_steps=1000000, depth_limit=30,
+                timeout=timeout, beam_decode=True, initial_proof=None,
+                use_memo=True, hybrid_conf=True, conf_threshold=-0.05,
+            )
+
+        case "rango-hybrid-v":
+            # MR-Hybrid + MR1 value: 불확신 구간을 학습된 value로 정렬.
+            return ClassicalSearchConf(
+                max_branch=8, max_search_steps=1000000, depth_limit=30,
+                timeout=timeout, beam_decode=True, initial_proof=None,
+                use_memo=True, hybrid_conf=True, conf_threshold=-0.05,
+                value_ckpt="models/value_head/value.pt", value_weight=1.0,
+            )
+
         case "rango-hprobe":
             return PortfolioSearchConf(
                 straight_conf=StraightLineSearcherConf(
@@ -309,7 +327,7 @@ def get_tactic_confs(model_alias: str, split: Split) -> list[TacticGenConf]:
     )
 
     match model_alias:
-        case "rango" | "rango-best-beam" | "rango-best-rand" | "rango-mem" | "rango-mem-wide" | "rango-portfolio" | "rango-portfolio-08" | "rango-portfolio-06" | "rango-vlog" | "rango-vguided":
+        case "rango" | "rango-best-beam" | "rango-best-rand" | "rango-mem" | "rango-mem-wide" | "rango-portfolio" | "rango-portfolio-08" | "rango-portfolio-06" | "rango-vlog" | "rango-vguided" | "rango-hybrid" | "rango-hybrid-v":
             checkpoint = (
                 "models/deepseek-bm25-proof-tfidf-proj-thm-prem-final/checkpoint-54500"
             )
