@@ -73,20 +73,24 @@ class PortfolioSearcher:
     def search(self, **kwargs):
         t1 = int(self.timeout * self.straight_frac)
         t2 = max(1, self.timeout - t1)
-        # phase 1: straight-line
+        # client 2개면 phase1=client0(plain), phase2=client1(sauto). 아니면 공용.
+        gens1 = self.tactic_gens[:1] if len(self.tactic_gens) >= 2 else self.tactic_gens
+        gens2 = self.tactic_gens[1:2] if len(self.tactic_gens) >= 2 else self.tactic_gens
+
+        # phase 1: straight-line (강한 base, sauto 없음)
         self.straight_conf.timeout = t1
         print(f"\n[Portfolio] phase1 straight-line {t1}s")
         sl = StraightLineSearcher.from_conf(
-            self.straight_conf, self.tactic_gens, self.manager
+            self.straight_conf, gens1, self.manager
         )
         r1 = sl.search(**kwargs)
         if isinstance(r1, StraightLineSuccess):
             print("[Portfolio] phase1 성공")
             return r1
-        # phase 2: classical (memo)
+        # phase 2: classical (memo) — sauto client이면 fallback으로 새 정리 획득
         self.classical_conf.timeout = t2
         print(f"\n[Portfolio] phase2 classical {t2}s")
         cl = ClassicalSearcher.from_conf(
-            self.classical_conf, self.tactic_gens, self.manager
+            self.classical_conf, gens2, self.manager
         )
         return cl.search(**kwargs)
