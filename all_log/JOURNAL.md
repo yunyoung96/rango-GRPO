@@ -214,3 +214,10 @@ never-solved = [0,4,8,15,20,21,22,25]. 두 부류:
 - **결론 확정: 어떤 inference-time 방법도 baseline(11/20) 미달.** search/retrieval-hint/sauto/portfolio/probe 전부.
 - → 헤비 레버로 전환(사용자 4→1→3→2). 
 - **6.7B 스모크 통과**: raw DeepSeek-Coder-6.7B-instruct가 Rango 프롬프트로 로드·생성 정상, idx6 풀음(True). 단 **포맷 드리프트 심각**(stop 못함, [STATE]/[GOAL] 토큰 흉내, C++ 환각) — 파인튜닝 안 돼서. first-20에서 용량 이득 vs 드리프트 손해 관건. 진행중.
+
+### [헤비레버 1 진단] raw 6.7B = 포맷 드리프트로 실패(용량 문제 아님) — 2026-07-07 07:2x
+- rango-6.7b first-20 초반 0/5(idx0,2,4,5,6 실패). idx2·5·6은 baseline(1.3B)이 쉽게 푸는데 6.7B 실패.
+- **원인=포맷 드리프트**(로그 확증): 첫 줄만 그럴듯, 이후 [PATCH]/Previous./환각 Lemma/비-Coq 문법(`apply [x] to y`)/StackOverflow·Isabelle 텍스트로 샘. 통짜 garbage→INVALID/Syntax error.
+- raw DeepSeek-Coder-6.7B-instruct는 Rango tactic 포맷 미학습 → 깨끗한 단일 tactic/증명 생성 불가. **용량이 아니라 포맷이 병목.**
+- **함의: item 1(raw 6.7B 추론)은 실패 확정. item 2(6.7B를 Rango 데이터로 QLoRA 파인튜닝)가 정확히 이 문제를 푼다.** 파인튜닝하면 1.3B의 깔끔한 포맷 + 6.7B 용량 결합 가능.
+- eval은 완주시켜 최종 0/N 기록 예정. 그 뒤 MR1(RL, item4) 대기분 진행.
