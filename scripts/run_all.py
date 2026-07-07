@@ -64,6 +64,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--num", type=int, default=None, metavar="N",
                         help="실행할 compcert 인덱스 수 (기본값: 전체)")
+    parser.add_argument("--start", type=int, default=0, metavar="I",
+                        help="시작 오프셋(compcert 인덱스 리스트 기준). eval셋과 분리용. (기본값: 0)")
     parser.add_argument("--workers", type=int, default=2, metavar="N",
                         help="병렬 실행 워커 수 (기본값: 2)")
     parser.add_argument("--alias", "--arch", dest="alias", default="rango", metavar="ALIAS",
@@ -78,6 +80,8 @@ def main():
 
     # compcert 인덱스 결정
     indices = get_compcert_indices()
+    if args.start:
+        indices = indices[args.start:]
     if args.num is not None:
         indices = indices[: args.num]
 

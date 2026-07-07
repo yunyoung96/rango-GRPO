@@ -52,3 +52,7 @@ CoqStoq/
 .DS_Store
 Thumbs.db
 all_log/*.log
+
+# heavy model downloads / generated RL data
+models_dl/
+data/vguided_trees/

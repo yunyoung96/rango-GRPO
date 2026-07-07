@@ -275,6 +275,17 @@ class ClassicalSearcher:
         """goal 상태의 (정확) 문자열 해시 키. coqpyt Goal.__repr__는 hyps+ty를 준다."""
         return "\n===\n".join(repr(g) for g in goals)
 
+    def _value_of(self, cand: "Candidate") -> float:
+        """MR1: 확장 중인 state의 P(solvable). value_weight==0이면 미사용."""
+        if self.value_weight == 0.0 or cand.goal_text is None:
+            return 1.0
+        if self._value_model is None:
+            from model_deployment.value_head import ValuePredictor
+            self._value_model = ValuePredictor(self.value_ckpt)
+        return self._value_model.value(
+            cand.goal_text, cand.depth, cand.score, cand.tactic_score
+        )
+
     def _memo(self, key: str) -> dict[str, Any]:
         entry = self.goal_memo.get(key)
         if entry is None:
@@ -353,6 +364,12 @@ class ClassicalSearcher:
                 end_time = time.time()
                 self.total_model_time += end_time - start_time
                 rejected = self.goal_memo[goal_key]["rejected"] if self.use_memo else set()
+                # MR1: 확장 중인 state의 value를 자식 우선순위에 블렌드(가지 간 판별).
+                #   score = cum_score + tactic_score + value_weight*log(V(parent_state)+eps)
+                value_bonus = 0.0
+                if self.value_weight != 0.0:
+                    import math as _m
+                    value_bonus = self.value_weight * _m.log(self._value_of(cur_candidate) + 1e-6)
                 for tactic, tactic_score, num_tokens in zip(
                     recs.next_tactic_list, recs.score_list, recs.num_tokens_list
                 ):
@@ -367,7 +384,7 @@ class ClassicalSearcher:
                         )
                         + tactic
                     )
-                    score = cur_candidate.score + tactic_score
+                    score = cur_candidate.score + tactic_score + value_bonus
                     depth = cur_candidate.depth + 1
                     new_candidate = Candidate(
                         None, proof_str, tactic, score, tactic_score, depth, None,
