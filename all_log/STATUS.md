@@ -3,7 +3,7 @@
 > 갱신: 2026-07-08 06:00 UTC. 사용자 부재 중 자동 진행. 돌아오면 이 문서부터 보세요.
 
 ## 지금 실행 중
-- **bigger 재실행**: `rango-sauto` 24/60 (succ 7). unique-solve 강점 측정용 60정리 @600.
+- **bigger 재실행**: `rango-portfolio` 진행중. sauto 완료(19/60, **unique idx27,43,76**). unique-solve 강점 측정용 60정리 @600.
 
 ## 자동 큐 (순차, 선행 완료 시 자동 시작)
 1. **bigger 재실행** (진행중): sauto → portfolio → mem → search → vguided × 60정리. 매 기법 후 `unique_solves.md` 갱신.

@@ -236,3 +236,8 @@ never-solved = [0,4,8,15,20,21,22,25]. 두 부류:
 - **oracle 조건A (rango 1.3b, 40파일, 337스텝)**: top-1 exact **8.0%**, top-8 **23.1%**. prefix 위치별 2~21%(추세 약함).
   - 상세 md에서 관찰: retrieval premise가 goal과 **무관**한 경우 다수(리스트 goal에 MetricSpace/CompCert lemma). exact-match는 하한(gold가 compound `a;b;c` 한 줄, 모델은 atomic).
 - 진행: 조건B(gold lemma 주입) + 6.7b oracle 실행중 → retrieval vs capacity 판정 예정.
+
+### [큰 재실행 강점] sauto unique 3개(idx27,43,76) — 2026-07-08 08:xx
+- rango-sauto 60정리: 19/60. baseline(idx0-59)=25. **★sauto unique(baseline 실패인데 성공): idx 27, 43, 76** (20-세트의 idx27 하나에서 확대 — 자동화 강점이 큰 세트서 드러남).
+- 회귀 9개(idx2,9,10,11,12,44,57,98,107): classical 기반이라 timeout-민감 정리 놓침. → 총 net−6이나 **고유 강점은 실재**.
+- 함의(재확인): sauto/search는 baseline 구조적으로 불가한 자동화형을 새로 딴다. **baseline과 결합(portfolio/fallback)해야 순증**, 대체하면 회귀. portfolio가 idx27,55 unique인 이유와 일치.

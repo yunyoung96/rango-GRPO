@@ -7,12 +7,12 @@
 
 | 기법 | 성공 | timeout | **unique** | unique idx | 회귀 | dir |
 |---|---|---|---|---|---|---|
+| `rango-sauto` | 19/60 | 600 | **3** | 27,43,76 | 9 | 20260708-045704 |
 | `rango-portfolio` | 15/40 | 600 | **2** | 27,55 | 2 | 20260706-134146 |
 | `rango-mem-wide` | 10/20 | 300 | **1** | 27 | 2 | 20260705-175027 |
 | `rango-psauto` | 10/20 | 600 | **1** | 27 | 2 | 20260707-032044 |
 | `rango-alignapply` | 9/20 | 300 | **1** | 27 | 3 | 20260705-162547 |
 | `rango-apply-sl` | 9/20 | 300 | **1** | 27 | 3 | 20260705-203453 |
-| `rango-sauto` | 9/20 | 600 | **1** | 27 | 3 | 20260706-121312 |
 | `rango-vguided` | 9/20 | 600 | **1** | 27 | 3 | 20260707-114603 |
 | `rango-mem` | 8/20 | 600 | **1** | 27 | 4 | 20260705-082853 |
 | `rango-apply` | 8/20 | 300 | **1** | 27 | 4 | 20260705-154028 |
@@ -33,6 +33,8 @@
 | idx | 푼 기법들 |
 |---|---|
 | 27 | rango-mem, rango-apply, rango-alignapply, rango-mem-wide, rango-apply-sl, rango-portfolio, rango-sauto, rango-search, rango-psauto, rango-vguided, rango-hybrid, rango-hybrid-v |
+| 43 | rango-sauto |
 | 55 | rango-portfolio |
+| 76 | rango-sauto |
 
-**총 2개 정리**가 baseline 실패인데 어떤 기법이 성공(=inference 기법들의 종합 강점).
+**총 4개 정리**가 baseline 실패인데 어떤 기법이 성공(=inference 기법들의 종합 강점).
