@@ -1,0 +1,56 @@
+# 6.7B QLoRA 파인튜닝 (rango 레시피와 동일 포맷: bm25 proof + tfidf premise, proof-premise collator).
+# on-the-fly retrieval(cached_loc null) + ExampleCache. rango가 쓰던 학습 코드(train_decoder.py) 그대로.
+model_name: "deepseek-ai/deepseek-coder-6.7b-instruct"
+output_dir: "models/rango-6.7b-ft"
+
+tactic_data:
+  data_loc: raw-data/coq-dataset
+  sentence_db_loc: raw-data/coq-dataset/sentences.db
+  shuffled_index_loc: data/ft6.7b-shuffled-index.json
+  model_name: "deepseek-ai/deepseek-coder-6.7b-instruct"
+  cache_loc: /tmp/ft6.7b-cache
+  hard_seq_len: 4096
+  formatter_conf:
+    alias: general
+    num_proofs: 20
+    num_premises: 50
+    n_step_conf:
+      alias: one
+    proof_ret:
+      alias: sparse
+      kind: bm25
+      max_examples: 20
+      data_loc: raw-data/coq-dataset
+      sentence_db_loc: raw-data/coq-dataset/sentences.db
+      cached_proof_loc: data/bm25-proof-db
+    premise:
+      alias: sparse
+      kind: tfidf
+      context_format_alias: basic
+      premise_format_alias: basic
+      sentence_db_loc: raw-data/coq-dataset/sentences.db
+      cached_premise_loc: data/tfidf-proj-thm-prem-db
+      premise_filter:
+        known_filter: proj-thm
+  collator_conf:
+    alias: proof-premise
+    state_tokens: 1024
+    script_tokens: 512
+    proof_tokens: 1024
+    premise_tokens: 512
+    out_tokens: 128
+
+per_device_train_batch_size: 1        # 6.7B라 배치 축소(메모리)
+gradient_accumulation_steps: 4
+learning_rate: 1.0e-4                  # 파인튜닝 LR(1.3B의 1e-3보다 보수적)
+num_train_epochs: 1
+max_steps: 20000                       # 포맷 학습엔 충분(rango는 60k, 6.7B는 용량 커 적게)
+peft_lora_r: 32
+peft_lora_alpha: 16
+eval_steps: 1000
+save_steps: 1000
+eval_accumulation_steps: 1
+per_device_eval_batch_size: 1
+num_eval_examples: 500
+logging_steps: 50
+save_total_limit: 2
