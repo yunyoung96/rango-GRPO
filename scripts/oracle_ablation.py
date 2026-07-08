@@ -128,8 +128,8 @@ def main():
     ap.add_argument("--max-proofs-per-file", type=int, default=10)
     ap.add_argument("--max-steps-per-proof", type=int, default=40)
     ap.add_argument("--nbest", type=int, default=8, help="생성 후보 수(top-k)")
-    ap.add_argument("--cond", choices=["A", "B"], default="A",
-                    help="A=normal retrieval, B=gold lemma 주입")
+    ap.add_argument("--cond", choices=["A", "B", "both"], default="A",
+                    help="A=normal, B=gold lemma 주입, both=동일스텝 A·B 비교(깨끗한 delta)")
     ap.add_argument("--detail", action="store_true", help="retrieval/입력을 md에 상세 기록(2배 retrieval)")
     ap.add_argument("--out", default="all_log/oracle_ablation.md")
     args = ap.parse_args()
@@ -139,7 +139,18 @@ def main():
     client, procs = build_client(args.alias)
 
     n_steps = n_top1 = n_topk = 0
+    n_top1_B = n_topk_B = 0  # cond=both일 때 B(gold lemma)
     by_pos = {}  # prefix 길이 bucket -> [top1_hits, total]
+
+    def gen(cond_letter, ex_norm, step, k, proof, dp):
+        """조건별 후보 생성. A=normal, B=gold lemma 주입."""
+        if cond_letter == "B" and ex_norm is not None:
+            exb = client.formatters[0].example_from_step(k, proof.proof_idx, dp)
+            exb.premises = gold_premise_stmts(extract_gold_lemmas(step.step.text), step) + (exb.premises or [])
+            r = post_example(client, exb, proof, args.nbest, beam=True)
+        else:
+            r = client.get_recs(k, proof, dp, args.nbest, beam=True)
+        return list(zip(r.next_tactic_list, r.score_list))
     detail = []  # md 라인
 
     detail.append(f"# Oracle-prefix teacher-forcing ablation — `{args.alias}` · 조건 {args.cond}"
@@ -167,29 +178,27 @@ def main():
                         continue  # 구조적 스텝/무-goal 제외 (capacity 측정 무의미)
                     goal_txt = " / ".join(g.goal for g in step.goals)[:200]
                     gold_lemmas = extract_gold_lemmas(gold)
+                    gnorm = norm(gold)
                     try:
                         ex = None
-                        if args.detail or args.cond == "B":
+                        if args.detail or args.cond in ("B", "both"):
                             try:
                                 ex = client.formatters[0].example_from_step(k, proof.proof_idx, dp)
                             except Exception:
                                 ex = None
-                        if args.cond == "B" and ex is not None:
-                            # gold lemma를 premise 앞에 주입 → 직접 post
-                            gstmts = gold_premise_stmts(gold_lemmas, step)
-                            ex.premises = gstmts + (ex.premises or [])
-                            res = post_example(client, ex, proof, args.nbest, beam=True)
-                        else:
-                            res = client.get_recs(k, proof, dp, args.nbest, beam=True)
-                        cands = list(zip(res.next_tactic_list, res.score_list))
+                        prim = "B" if args.cond == "B" else "A"
+                        cands = gen(prim, ex, step, k, proof, dp)
+                        cands_B = gen("B", ex, step, k, proof, dp) if args.cond == "both" else None
                     except Exception as e:
                         detail.append(f"- step {k}: get_recs 실패 {e}\n")
                         continue
                     n_steps += 1
-                    gnorm = norm(gold)
                     top1_hit = bool(cands) and norm(cands[0][0]) == gnorm
                     topk_hit = any(norm(c) == gnorm for c, _s in cands)
                     n_top1 += int(top1_hit); n_topk += int(topk_hit)
+                    if cands_B is not None:
+                        n_top1_B += int(bool(cands_B) and norm(cands_B[0][0]) == gnorm)
+                        n_topk_B += int(any(norm(c) == gnorm for c, _s in cands_B))
                     bucket = min(k, 10)
                     b = by_pos.setdefault(bucket, [0, 0]); b[0] += int(top1_hit); b[1] += 1
                     # 상세 기록
@@ -216,8 +225,13 @@ def main():
         summ = [
             "\n---\n# Summary\n",
             f"- 총 (target,prefix) 스텝: **{n_steps}**",
-            f"- **top-1 exact-match**: {n_top1}/{n_steps} = **{rate1:.1%}**",
+            f"- **top-1 exact-match ({'A' if args.cond!='B' else 'B'})**: {n_top1}/{n_steps} = **{rate1:.1%}**",
             f"- **top-{args.nbest} exact-match**: {n_topk}/{n_steps} = **{ratek:.1%}**",
+        ] + ([
+            f"- **[B gold-lemma] top-1**: {n_top1_B}/{n_steps} = **{n_top1_B/max(1,n_steps):.1%}**  "
+            f"(vs A {rate1:.1%}, Δ={n_top1_B/max(1,n_steps)-rate1:+.1%})",
+            f"- **[B gold-lemma] top-{args.nbest}**: {n_topk_B}/{n_steps} = **{n_topk_B/max(1,n_steps):.1%}**",
+        ] if args.cond == "both" else []) + [
             "\n## prefix 위치별 top-1 (0..9, 10=10+)\n",
             "| pos | top1 | n | rate |", "|---|---|---|---|",
         ]
