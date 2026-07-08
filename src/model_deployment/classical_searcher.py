@@ -28,6 +28,7 @@ class ClassicalSearchConf:
     #   확신↑(top≥conf_threshold) → width 1 greedy(=rango 기법), 확신↓ → width max_branch 탐색.
     hybrid_conf: bool = False
     conf_threshold: float = -0.05
+    qed_ckpt: Optional[str] = None  # QEDCartographer: coq2vec value + product-over-subgoals backup
     ALIAS = "classical"
 
     @classmethod
@@ -46,6 +47,7 @@ class ClassicalSearchConf:
             yaml_data.get("value_weight", 0.0),
             yaml_data.get("hybrid_conf", False),
             yaml_data.get("conf_threshold", -0.05),
+            yaml_data.get("qed_ckpt", None),
         )
 
 
@@ -116,9 +118,12 @@ class ClassicalSearcher:
         value_weight: float = 0.0,
         hybrid_conf: bool = False,
         conf_threshold: float = -0.05,
+        qed_ckpt: Optional[str] = None,
     ):
         self.hybrid_conf = hybrid_conf
         self.conf_threshold = conf_threshold
+        self.qed_ckpt = qed_ckpt
+        self._qed_model = None
         self.tactic_client = tactic_client
         self.proof_manager = proof_manager
         self.max_branch = max_branch
@@ -181,6 +186,7 @@ class ClassicalSearcher:
             getattr(conf, "value_weight", 0.0),
             getattr(conf, "hybrid_conf", False),
             getattr(conf, "conf_threshold", -0.05),
+            getattr(conf, "qed_ckpt", None),
         )
 
     def search(
@@ -292,9 +298,17 @@ class ClassicalSearcher:
         return "\n===\n".join(repr(g) for g in goals)
 
     def _value_of(self, cand: "Candidate") -> float:
-        """MR1: 확장 중인 state의 P(solvable). value_weight==0이면 미사용."""
+        """확장 중인 state의 value. QED모드=coq2vec value의 **product-over-subgoals**(∏V),
+        아니면 MR1 supervised critic. value_weight==0이면 미사용."""
         if self.value_weight == 0.0 or cand.goal_text is None:
             return 1.0
+        # QEDCartographer: per-subgoal value의 곱(AND 구조 backup)
+        if self.qed_ckpt is not None:
+            if self._qed_model is None:
+                from model_deployment.qed_cartographer import QEDValuePredictor
+                self._qed_model = QEDValuePredictor(self.qed_ckpt)
+            subgoals = [g for g in cand.goal_text.split("\n===\n") if g.strip()]
+            return self._qed_model.value_state(subgoals)
         if self._value_model is None:
             from model_deployment.value_head import ValuePredictor
             self._value_model = ValuePredictor(self.value_ckpt)
