@@ -401,15 +401,15 @@ class ClassicalSearcher:
                     import math as _m
                     value_bonus = self.value_weight * _m.log(self._value_of(cur_candidate) + 1e-6)
 
-                # MR-Hybrid: 모델 확신도로 width 게이팅. 확신 높으면 top-1만(greedy=rango 기법),
-                #   낮으면 전체(max_branch) 탐색. retrieval이 잘 매치될수록 top log-prob이 뾰족.
+                # MR-Hybrid: 모델 확신도(retrieval 잘 매치될수록 top log-prob 뾰족)로 게이팅.
+                #   확신↑ → top-1을 크게 boost해 그 경로를 depth-first로 먼저 파고듦(=rango greedy),
+                #   단 대안은 버리지 않고 frontier에 남겨 백트랙 유지(이전 width1-drop의 죽은체인 방지).
                 rec_triples = list(zip(recs.next_tactic_list, recs.score_list, recs.num_tokens_list))
+                greedy_top = None
                 if self.hybrid_conf and rec_triples:
                     top_score = max(t[1] for t in rec_triples)
                     if top_score >= self.conf_threshold:
-                        # 확신↑ → argmax 하나만 유지(greedy commit)
-                        rec_triples = [max(rec_triples, key=lambda t: t[1])]
-                        print(f"[Hybrid] 확신↑(top={top_score:.3f}≥{self.conf_threshold}) → greedy width1")
+                        greedy_top = max(rec_triples, key=lambda t: t[1])[0]
                 for tactic, tactic_score, num_tokens in rec_triples:
                     # M2: 이 goal 상태에서 이미 실패한 tactic은 Coq 치기 전에 제외
                     if self.use_memo and tactic.strip() in rejected:
@@ -422,7 +422,9 @@ class ClassicalSearcher:
                         )
                         + tactic
                     )
-                    score = cur_candidate.score + tactic_score + value_bonus
+                    # 확신 경로 boost: top-1을 frontier 최상단으로(depth-first commit), 대안은 유지
+                    greedy_boost = 5.0 if (greedy_top is not None and tactic == greedy_top) else 0.0
+                    score = cur_candidate.score + tactic_score + value_bonus + greedy_boost
                     depth = cur_candidate.depth + 1
                     new_candidate = Candidate(
                         None, proof_str, tactic, score, tactic_score, depth, None,

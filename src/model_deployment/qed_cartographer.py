@@ -46,11 +46,13 @@ class Coq2Vec(nn.Module):
         return torch.tensor(ids, dtype=torch.long)
 
     def forward(self, batch_ids: list[torch.Tensor]) -> torch.Tensor:
-        lens = [len(x) for x in batch_ids]
+        device = self.emb.weight.device
+        lens = [max(1, len(x)) for x in batch_ids]
         maxl = max(lens)
-        padded = torch.zeros(len(batch_ids), maxl, dtype=torch.long)
+        padded = torch.zeros(len(batch_ids), maxl, dtype=torch.long, device=device)
         for i, x in enumerate(batch_ids):
-            padded[i, : len(x)] = x
+            if len(x):
+                padded[i, : len(x)] = x.to(device)
         e = self.emb(padded)
         packed = nn.utils.rnn.pack_padded_sequence(e, lens, batch_first=True, enforce_sorted=False)
         _, (h, _) = self.lstm(packed)

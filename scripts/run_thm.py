@@ -232,6 +232,17 @@ def get_searcher_conf(model_alias: str) -> SearcherConf:
                 qed_ckpt="models/qed_value/qed.pt",
             )
 
+        case "rango-qed-hybrid":
+            # 사용자 요청: QEDCartographer 탐색 + retrieval 확신 높으면 rango greedy 혼용.
+            #   qed value(product backup)로 순서화 + 확신 스텝은 boost로 depth-first commit.
+            return ClassicalSearchConf(
+                max_branch=8, max_search_steps=1000000, depth_limit=30,
+                timeout=timeout, beam_decode=True, initial_proof=None,
+                use_memo=True, value_weight=1.0,
+                qed_ckpt="models/qed_value/qed.pt",
+                hybrid_conf=True, conf_threshold=-0.05,
+            )
+
         case "rango-hybrid":
             # MR-Hybrid: retrieval-신뢰도(모델 top log-prob) 게이팅 adaptive-width best-first.
             # 확신↑ → greedy(rango 기법), 확신↓ → width8 탐색. use_memo로 중복 방지.
@@ -337,7 +348,7 @@ def get_tactic_confs(model_alias: str, split: Split) -> list[TacticGenConf]:
     )
 
     match model_alias:
-        case "rango" | "rango-best-beam" | "rango-best-rand" | "rango-mem" | "rango-mem-wide" | "rango-portfolio" | "rango-portfolio-08" | "rango-portfolio-06" | "rango-vlog" | "rango-vguided" | "rango-hybrid" | "rango-hybrid-v" | "rango-qed":
+        case "rango" | "rango-best-beam" | "rango-best-rand" | "rango-mem" | "rango-mem-wide" | "rango-portfolio" | "rango-portfolio-08" | "rango-portfolio-06" | "rango-vlog" | "rango-vguided" | "rango-hybrid" | "rango-hybrid-v" | "rango-qed" | "rango-qed-hybrid":
             checkpoint = (
                 "models/deepseek-bm25-proof-tfidf-proj-thm-prem-final/checkpoint-54500"
             )
