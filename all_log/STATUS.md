@@ -12,6 +12,10 @@
 4. **QED**: value 학습 → `rango-qed` + `rango-qed-hybrid`(QED+retrieval 혼용) 평가.
 5. **6.7B 파인튜닝**: on-the-fly LmDataset(rango 레시피) QLoRA 20k step → **fine-tuned 6.7b oracle**(진짜 capacity 판정).
 
+
+## ★핵심 긍정 결과 (2026-07-08)
+- **portfolio가 큰 세트(60정리)에서 net +2** (27 vs baseline 25), unique 3[idx27,43,55], 회귀 1. 조사 전체 첫 견고한 net-양. 강점은 자동화형 정리 포함 큰 세트에서만 드러남. **baseline 대체 아닌 union이어야 순증.**
+
 ## 핵심 결론 (지금까지, 정직하게)
 - **inference-time 방법 전부 baseline(11/20) 미달**: search/retrieval-hint/sauto/portfolio/probe/hybrid/RL. (FINAL_REPORT.md)
 - **unique-solve 강점**: 탐색계열이 idx27(portfolio는 +55)을 baseline 대신 품. retrieval-hint계열은 강점 0.

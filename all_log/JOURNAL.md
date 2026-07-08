@@ -241,3 +241,9 @@ never-solved = [0,4,8,15,20,21,22,25]. 두 부류:
 - rango-sauto 60정리: 19/60. baseline(idx0-59)=25. **★sauto unique(baseline 실패인데 성공): idx 27, 43, 76** (20-세트의 idx27 하나에서 확대 — 자동화 강점이 큰 세트서 드러남).
 - 회귀 9개(idx2,9,10,11,12,44,57,98,107): classical 기반이라 timeout-민감 정리 놓침. → 총 net−6이나 **고유 강점은 실재**.
 - 함의(재확인): sauto/search는 baseline 구조적으로 불가한 자동화형을 새로 딴다. **baseline과 결합(portfolio/fallback)해야 순증**, 대체하면 회귀. portfolio가 idx27,55 unique인 이유와 일치.
+
+### [★큰세트 첫 net-양] portfolio +2 (60정리) — 2026-07-08 15:xx
+- **rango-portfolio(idx0-59) 27 vs baseline 25 = net +2.** unique 3[27,43,55](baseline 구조적 실패), 회귀 1[10].
+- **이전 "portfolio=노이즈(@40 −1)" 결론 정밀화**: portfolio 강점(straight-line 다양성 + classical/sauto 자동화 unique)은 **자동화형 정리가 충분히 든 큰 세트에서만 드러남**. 작은 세트(20)=노이즈, 60=modest 진짜 win.
+- 핵심 교훈: **baseline 대체가 아니라 union(portfolio)** 이어야 함. sauto 단독=net−6(회귀9), portfolio=net+2(회귀1) — straight-line phase가 timeout-민감을 지키고 classical phase가 unique를 더함.
+- 주의: baseline600은 단일 run(sampling 변동). +2는 modest지만 unique 3개(자동화형)는 구조적이라 신뢰도 높음.

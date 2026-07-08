@@ -7,8 +7,8 @@
 
 | 기법 | 성공 | timeout | **unique** | unique idx | 회귀 | dir |
 |---|---|---|---|---|---|---|
+| `rango-portfolio` | 26/57 | 600 | **3** | 27,43,55 | 1 | 20260708-080851 |
 | `rango-sauto` | 19/60 | 600 | **3** | 27,43,76 | 9 | 20260708-045704 |
-| `rango-portfolio` | 15/40 | 600 | **2** | 27,55 | 2 | 20260706-134146 |
 | `rango-mem-wide` | 10/20 | 300 | **1** | 27 | 2 | 20260705-175027 |
 | `rango-psauto` | 10/20 | 600 | **1** | 27 | 2 | 20260707-032044 |
 | `rango-alignapply` | 9/20 | 300 | **1** | 27 | 3 | 20260705-162547 |
@@ -33,7 +33,7 @@
 | idx | 푼 기법들 |
 |---|---|
 | 27 | rango-mem, rango-apply, rango-alignapply, rango-mem-wide, rango-apply-sl, rango-portfolio, rango-sauto, rango-search, rango-psauto, rango-vguided, rango-hybrid, rango-hybrid-v |
-| 43 | rango-sauto |
+| 43 | rango-portfolio, rango-sauto |
 | 55 | rango-portfolio |
 | 76 | rango-sauto |
 
