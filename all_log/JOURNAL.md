@@ -300,3 +300,8 @@ never-solved = [0,4,8,15,20,21,22,25]. 두 부류:
 - **★핵심: DUCB→랜덤이 8/20으로 동일** = MCTS 선택이 랜덤보다 안 나음. intrinsic reward도 무의미. state-merge만 미미(+1).
 - **결론: RMaxTS의 MCTS 정교함(DUCB/RMax reward)은 우리 세팅서 성능 기여 0. "모델로 트리탐색"일 뿐, 상한 8/20은 학습 안 된 모델 탓.** → 논문 성능은 MCTS가 아니라 GRPO 학습모델에서 나온다는 방증. 이게 "GRPO가 최종 목표"의 근거.
 - 다음: ★bfs-a0(length-norm 제거) — BFS의 +2가 length-norm 덕인지 확정.
+
+### [★핵심 ablation] length-norm 제거 = 7/20 (KST 2026-07-10 07:36)
+- bfs-a0(α=0) 7/20 vs bfs-prover(α=0.5) 10/20 → **length-norm이 +3**. α=0은 순수 누적 log-prob=classical/rmaxts(8) 수준으로 하락.
+- **확정: BFS +2~3의 동력 = length-normalization**(짧은증명 편향 교정→깊은 증명 탐색). BFS-Prover 논문 핵심주장 우리 세팅 재현.
+- **effectiveness study 대조: RMaxTS MCTS 정교함=효과0, BFS length-norm=+3.** 논문 탐색 컴포넌트 중 실효 있는 건 length-norm 하나. 다음: bfs-a1(α=1) 완료 후 20 효과표 자동생성 → 40 라운드.
