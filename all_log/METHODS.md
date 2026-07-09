@@ -62,8 +62,8 @@
 ## 8. 논문 알고리즘 충실 재구현 (rango 탐색과 안 섞음, 정책 모델만 Coq 1.3B)
 | alias | 뭐하는가 | 결과 | 출처 |
 |-------|---------|------|------|
-| `rmaxts` | **DeepSeek-Prover-V1.5** (2408.08152). DUCB MCTS(γ=.99) + RMax intrinsic reward(novelty) + truncate-and-resume + state merging | (큐 대기) | paper 충실 |
-| `bfs-prover` | **BFS-Prover** (2502.03438). length-normalized best-first: `score=Σlogp/L^α`, α=0.5, width2 | (큐 대기) | paper 충실 |
+| `rmaxts` | **DeepSeek-Prover-V1.5의 RMaxTS 탐색만**(2408.08152). GRPO/RLPAF/SFT 모델학습 미구현, 정책=Coq1.3B. DUCB MCTS(γ=.99) + RMax intrinsic reward(novelty) + truncate-and-resume + state merging | (큐 대기) | paper 충실 |
+| `bfs-prover` | **BFS-Prover의 탐색만**(2502.03438). DPO/expert-iter 학습 미구현, 정책=Coq1.3B. length-normalized best-first: `score=Σlogp/L^α`, α=0.5, width2 | (큐 대기) | paper 충실 |
 
 ## 9. 기타
 | alias | 뭐하는가 | 결과 | 출처 |

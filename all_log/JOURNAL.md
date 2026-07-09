@@ -274,3 +274,7 @@ never-solved = [0,4,8,15,20,21,22,25]. 두 부류:
 - 증상: idx0에서 56분 CPU 97.9% 무한루프(0/20). 원인: state-merge가 그래프 사이클(A→B→…→A) 생성 → _select의 while 하강 무한루프(첫 fix는 self-loop만).
 - 수정: _select에 visited 사이클 가드 + 하강 depth bound. 검증: idx0이 90s내 42 step 처리 후 정상 종료(failed, hung 아님).
 - RMaxTS 완전 작동(idx6 품, idx0 정상 탐색). 재실행.
+
+### [정정] "논문 충실 재구현" → "탐색 알고리즘만 재구현" — 2026-07-09 09:xx
+- rmaxts/bfs-prover는 각 논문의 **탐색 알고리즘(RMaxTS / length-normalized BFS)만** 구현. **모델 학습(GRPO/RLPAF/SFT, DPO/expert-iter)은 미구현**, 정책 모델은 우리 Coq 1.3B.
+- 논문 성능은 학습모델+탐색 합작 → 우리는 탐색만+다른모델이라 **논문 재현 아님**. "충실 재구현"은 탐색 알고리즘 한정으로만 유효. 과장 표현 정정.
