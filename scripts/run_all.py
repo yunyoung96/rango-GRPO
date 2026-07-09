@@ -9,6 +9,8 @@ CompCert test 인덱스에 대해 run_thm.py를 실행하고 로그/요약을 �
 """
 
 import argparse
+import os
+import signal
 import json
 import re
 import subprocess
@@ -30,10 +32,24 @@ def get_compcert_indices() -> list[int]:
 
 def run_one(idx: int, log_file: Path, alias: str, timeout: int) -> dict:
     cmd = ["python3", SCRIPT, "run", alias, "test", str(idx), "--timeout", str(timeout)]
+    # 하드 timeout: 검색이 hang(무한루프/거대 goal)해도 강제 종료. 모델로드+정리 버퍼 +300s.
+    hard_timeout = timeout + 300
     t0 = time.time()
+    returncode = 0
     with log_file.open("w") as f:
         f.write(f"# cmd: {' '.join(cmd)}\n\n")
-        result = subprocess.run(cmd, stdout=f, stderr=f)
+        proc = subprocess.Popen(cmd, stdout=f, stderr=f, start_new_session=True)
+        try:
+            returncode = proc.wait(timeout=hard_timeout)
+        except subprocess.TimeoutExpired:
+            # 프로세스 그룹 통째로 SIGKILL (자식 서버/coqpyt까지)
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except Exception:
+                proc.kill()
+            proc.wait()
+            returncode = -9
+            f.write(f"\n[run_all] HARD TIMEOUT ({hard_timeout}s) — killed hung process group\n")
     elapsed = time.time() - t0
 
     # 성공 여부 + rango.json 기준 원래 성공 여부를 로그에서 파싱
@@ -54,7 +70,7 @@ def run_one(idx: int, log_file: Path, alias: str, timeout: int) -> dict:
         "timeout_sec": timeout,
         "success": success,
         "original_success": original_success,
-        "exit_code": result.returncode,
+        "exit_code": returncode,
         "elapsed_sec": round(elapsed, 2),
         "log": str(log_file),
     }
