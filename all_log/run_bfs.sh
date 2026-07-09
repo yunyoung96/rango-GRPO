@@ -3,7 +3,7 @@ cd /app/coq-modeling
 log(){ echo "[$(date -u +%H:%M:%S)] $*" >> all_log/bfs.log; }
 log "=== BFS-Prover 드라이버: rmaxts 및 앞선 실험 대기 ==="
 sleep 45
-while ps -eo args | grep -qE "[o]racle_ablation|[r]un_all.py --alias|[r]un_qed.sh|[r]un_6.7b_lean.sh|[r]un_rmaxts.sh|run rmaxts"; do sleep 120; done
+while ps -eo args | grep -qE "[o]racle_ablation|[r]un_all.py --alias|[r]un_qed.sh|[r]un_6.7b_lean.sh|[r]un_rmaxts.sh|[r]un rmaxts"; do sleep 120; done
 for p in $(pgrep -f tactic_gen_server); do kill "$p" 2>/dev/null; done; sleep 3
 log "▶ 스모크 bfs-prover idx6 @180"
 timeout 500 python3 scripts/run_thm.py run bfs-prover test 6 --timeout 180 > all_log/smoke_bfs.log 2>&1

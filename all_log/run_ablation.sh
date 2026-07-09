@@ -3,7 +3,7 @@ cd /app/coq-modeling
 log(){ echo "[$(date -u +%H:%M:%S)] $*" >> all_log/ablation.log; }
 log "=== ablation 드라이버: full rmaxts/bfs 및 앞선 실험 대기 ==="
 sleep 60
-while ps -eo args | grep -qE "[o]racle_ablation|[r]un_all.py --alias|[r]un_qed.sh|[r]un_6.7b_lean.sh|[r]un_rmaxts.sh|[r]un_bfs.sh|run rmaxts|run bfs"; do sleep 120; done
+while ps -eo args | grep -qE "[o]racle_ablation|[r]un_all.py --alias|[r]un_qed.sh|[r]un_6.7b_lean.sh|[r]un_rmaxts.sh|[r]un_bfs.sh|[r]un rmaxts|[r]un bfs"; do sleep 120; done
 # 5개 ablation 변형 (full은 rmaxts/bfs-prover가 이미 돌아 reference)
 for a in rmaxts-noreward rmaxts-nomerge rmaxts-nomcts bfs-a0 bfs-a1; do
   for p in $(pgrep -f tactic_gen_server); do kill "$p" 2>/dev/null; done; sleep 3
