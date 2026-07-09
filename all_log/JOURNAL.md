@@ -252,3 +252,8 @@ never-solved = [0,4,8,15,20,21,22,25]. 두 부류:
 - rango-vguided가 idx64에서 run_thm 1h49m hung(timeout 600s 무시 — 서버/coqpyt 하위 hang). 전체 파이프라인 블로킹.
 - vguided 37/60(unique 1 [27])로 충분+최약 기법이라 정리 → bigger 재실행 종료. A/B both로 진행.
 - bigger 재실행 최종 강점: portfolio net+2(unique3,회귀1) 최고. sauto unique3/회귀9, mem·search unique2/회귀8. **union(portfolio)만 net-양.**
+
+### [QED 결과] 충실 QEDCartographer = 8/20 (rango-mem과 동일) — 2026-07-09 06:xx
+- rango-qed(coq2vec value + product backup) 최종 8/20. baseline 11 대비 net−3.
+- **핵심: rango-mem(classical+memo)=8/20과 동일** → 논문 충실 value/critic를 얹어도 순수 classical 탐색 대비 개선 0. "RL value-guidance가 diverse-sampling baseline 못 넘음" 재확인(MR1 vguided 9/20와도 일관).
+- qed-hybrid(QED+retrieval 게이팅) 진행중.
