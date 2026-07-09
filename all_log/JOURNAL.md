@@ -291,3 +291,6 @@ never-solved = [0,4,8,15,20,21,22,25]. 두 부류:
 
 ### [ablation ①] RMax reward 제거 = 9/20 (KST 2026-07-10 01:37)
 - rmaxts full 8/20 vs rmaxts-noreward 9/20. **RMax intrinsic reward 제거해도 안 나빠짐(+1)** → novelty 보상은 우리 세팅서 핵심 아님(과탐색 손해 가능). 다음: nomerge, nomcts, bfs-a0(length-norm 검증).
+
+### [ablation ②] state-merge 제거 = 7/20 (KST 2026-07-10 03:57)
+- rmaxts full 8 vs noreward 9 vs nomerge 7. state-merging은 약간 도움(-1), RMax reward는 무의미(+1). **둘 다 ±1로 효과 작음** → 우리 세팅서 MCTS 세부는 성능 좌우 안 함. 다음: nomcts(DUCB vs random), ★bfs-a0(length-norm 검증).
