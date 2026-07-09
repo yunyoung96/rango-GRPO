@@ -278,3 +278,8 @@ never-solved = [0,4,8,15,20,21,22,25]. 두 부류:
 ### [정정] "논문 충실 재구현" → "탐색 알고리즘만 재구현" — 2026-07-09 09:xx
 - rmaxts/bfs-prover는 각 논문의 **탐색 알고리즘(RMaxTS / length-normalized BFS)만** 구현. **모델 학습(GRPO/RLPAF/SFT, DPO/expert-iter)은 미구현**, 정책 모델은 우리 Coq 1.3B.
 - 논문 성능은 학습모델+탐색 합작 → 우리는 탐색만+다른모델이라 **논문 재현 아님**. "충실 재구현"은 탐색 알고리즘 한정으로만 유효. 과장 표현 정정.
+
+### [논문-알고리즘 결과 ①] RMaxTS @20 = 8/20 (KST 2026-07-09 20:51)
+- rmaxts(RMaxTS 탐색만+Coq1.3B): 8/20, net−3, **unique 0**, 회귀 3(2,10,19). 푼:[5,6,9,11,12,26,28,29].
+- classical+memo(8)·rango-qed(8)와 동tier. MCTS 탐색 얹어도 baseline 못 넘음(학습 안 된 모델+diverse sampling 지배). 논문 63.5%는 GRPO 학습모델+RMaxTS 합작 → 우리는 탐색만이라 다름.
+- 다음: bfs-prover full → ablation(어떤 탐색 컴포넌트가 효과 있나).
