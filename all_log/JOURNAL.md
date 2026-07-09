@@ -257,3 +257,7 @@ never-solved = [0,4,8,15,20,21,22,25]. 두 부류:
 - rango-qed(coq2vec value + product backup) 최종 8/20. baseline 11 대비 net−3.
 - **핵심: rango-mem(classical+memo)=8/20과 동일** → 논문 충실 value/critic를 얹어도 순수 classical 탐색 대비 개선 0. "RL value-guidance가 diverse-sampling baseline 못 넘음" 재확인(MR1 vguided 9/20와도 일관).
 - qed-hybrid(QED+retrieval 게이팅) 진행중.
+
+### [QED-hybrid] = 8/20 (=qed) — 2026-07-09 06:35
+- rango-qed-hybrid(QED value + retrieval 확신 게이팅) 8/20 = rango-qed와 동일. 게이팅도 QED에 개선 0. RL/value 계열 전부 net−(vguided 9, qed 8, qed-hybrid 8) 확정.
+- 다음: lean raw-6.7b oracle(capacity) → rmaxts → bfs-prover → scaling.
