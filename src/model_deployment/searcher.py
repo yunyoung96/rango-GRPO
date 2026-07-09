@@ -29,18 +29,23 @@ from model_deployment.rmaxts_searcher import (
     RMaxTSSearchConf,
     RMaxTSSearcher,
 )
+from model_deployment.bfs_prover_searcher import (
+    BFSProverSearchConf,
+    BFSProverSearcher,
+)
 
 SuccessfulSearch = ClassicalSuccess | StraightLineSuccess | WholeProofSuccess
 FailedSearch = ClassicalFailure | StraightLineFailure | WholeProofFailure
 SearchResult = SuccessfulSearch | FailedSearch
 
-Searcher = ClassicalSearcher | StraightLineSearcher | WholeProofSearcher | PortfolioSearcher | RMaxTSSearcher
+Searcher = ClassicalSearcher | StraightLineSearcher | WholeProofSearcher | PortfolioSearcher | RMaxTSSearcher | BFSProverSearcher
 SearcherConf = (
     ClassicalSearchConf
     | StraightLineSearcherConf
     | WholeProofSearcherConf
     | PortfolioSearchConf
     | RMaxTSSearchConf
+    | BFSProverSearchConf
 )
 
 
@@ -57,6 +62,8 @@ def searcher_conf_from_yaml(yaml_data: Any) -> SearcherConf:
             return PortfolioSearchConf.from_yaml(yaml_data)
         case RMaxTSSearchConf.ALIAS:
             return RMaxTSSearchConf.from_yaml(yaml_data)
+        case BFSProverSearchConf.ALIAS:
+            return BFSProverSearchConf.from_yaml(yaml_data)
         case _:
             raise ValueError("Searcher not found.")
 
@@ -75,3 +82,5 @@ def searcher_from_conf(
             return PortfolioSearcher.from_conf(conf, tactic_gens, manager)
         case RMaxTSSearchConf():
             return RMaxTSSearcher.from_conf(conf, tactic_gens, manager)
+        case BFSProverSearchConf():
+            return BFSProverSearcher.from_conf(conf, tactic_gens, manager)
