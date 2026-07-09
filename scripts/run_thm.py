@@ -225,14 +225,21 @@ def get_searcher_conf(model_alias: str) -> SearcherConf:
             )
 
         case "rmaxts":
-            # DeepSeek-Prover-V1.5 (2408.08152)의 RMaxTS 충실 재구현 (rango 탐색과 안 섞음).
-            # DUCB + RMax intrinsic reward + truncate-and-resume + state merging.
+            # RMaxTS 탐색(full). DUCB + RMax reward + truncate-resume + state merging.
             return RMaxTSSearchConf(timeout=timeout, n_rollout_steps=8, print_proofs=True)
+        case "rmaxts-noreward":  # ablation: RMax intrinsic reward 제거
+            return RMaxTSSearchConf(timeout=timeout, print_proofs=True, use_reward=False)
+        case "rmaxts-nomerge":   # ablation: state-merging 제거(pure tree)
+            return RMaxTSSearchConf(timeout=timeout, print_proofs=True, use_merge=False)
+        case "rmaxts-nomcts":    # ablation: DUCB 제거(uniform 랜덤 선택)
+            return RMaxTSSearchConf(timeout=timeout, print_proofs=True, use_ducb=False)
 
-        case "bfs-prover":
-            # BFS-Prover (2502.03438) 충실 재구현: length-normalized best-first.
-            # score = Σlog p / L^α (α=0.5), expand width 2. rango 탐색과 안 섞음.
+        case "bfs-prover":       # BFS-Prover length-normalized best-first, α=0.5(논문)
             return BFSProverSearchConf(timeout=timeout, alpha=0.5, expand_width=2, print_proofs=True)
+        case "bfs-a0":           # ablation: length-norm 제거(α=0, 순수 누적 log-prob)
+            return BFSProverSearchConf(timeout=timeout, alpha=0.0, expand_width=2, print_proofs=True)
+        case "bfs-a1":           # ablation: full length-norm(α=1.0, per-tactic 평균)
+            return BFSProverSearchConf(timeout=timeout, alpha=1.0, expand_width=2, print_proofs=True)
 
         case "rango-qed":
             # QEDCartographer 충실 재구현: coq2vec value + product-over-subgoals backup으로
@@ -360,7 +367,7 @@ def get_tactic_confs(model_alias: str, split: Split) -> list[TacticGenConf]:
     )
 
     match model_alias:
-        case "rango" | "rango-best-beam" | "rango-best-rand" | "rango-mem" | "rango-mem-wide" | "rango-portfolio" | "rango-portfolio-08" | "rango-portfolio-06" | "rango-vlog" | "rango-vguided" | "rango-hybrid" | "rango-hybrid-v" | "rango-qed" | "rango-qed-hybrid" | "rmaxts" | "bfs-prover":
+        case "rango" | "rango-best-beam" | "rango-best-rand" | "rango-mem" | "rango-mem-wide" | "rango-portfolio" | "rango-portfolio-08" | "rango-portfolio-06" | "rango-vlog" | "rango-vguided" | "rango-hybrid" | "rango-hybrid-v" | "rango-qed" | "rango-qed-hybrid" | "rmaxts" | "rmaxts-noreward" | "rmaxts-nomerge" | "rmaxts-nomcts" | "bfs-prover" | "bfs-a0" | "bfs-a1":
             checkpoint = (
                 "models/deepseek-bm25-proof-tfidf-proj-thm-prem-final/checkpoint-54500"
             )

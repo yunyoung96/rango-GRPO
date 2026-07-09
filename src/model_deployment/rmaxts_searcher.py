@@ -36,6 +36,10 @@ class RMaxTSSearchConf:
     n_rollout_steps: int = 8        # truncate-and-resume 롤아웃 최대 tactic 수
     print_proofs: bool = True
     initial_proof: Optional[str] = None
+    # ── ablation 플래그(컴포넌트 하나씩 on/off) ──
+    use_reward: bool = True         # RMax intrinsic reward(novelty). False=보상 항상 0
+    use_merge: bool = True          # state-merging. False=pure tree(매 VALID 새 노드)
+    use_ducb: bool = True           # DUCB 선택. False=자식 중 uniform 랜덤 선택
     ALIAS = "rmaxts"
 
     @classmethod
@@ -45,6 +49,9 @@ class RMaxTSSearchConf:
             yaml_data.get("n_rollout_steps", 8),
             yaml_data.get("print_proofs", True),
             yaml_data.get("initial_proof", None),
+            yaml_data.get("use_reward", True),
+            yaml_data.get("use_merge", True),
+            yaml_data.get("use_ducb", True),
         )
 
 
@@ -70,12 +77,18 @@ class RMaxTSSearcher:
         n_rollout_steps: int = 8,
         print_proofs: bool = True,
         initial_proof: Optional[str] = None,
+        use_reward: bool = True,
+        use_merge: bool = True,
+        use_ducb: bool = True,
     ):
         self.tactic_clients = tactic_clients
         self.proof_manager = proof_manager
         self.timeout = timeout
         self.n_rollout_steps = n_rollout_steps
         self.print_proofs = print_proofs
+        self.use_reward = use_reward
+        self.use_merge = use_merge
+        self.use_ducb = use_ducb
         self.total_model_time = 0.0
 
         init_dset = proof_manager.get_initial_context()
@@ -95,6 +108,9 @@ class RMaxTSSearcher:
             getattr(conf, "n_rollout_steps", 8),
             getattr(conf, "print_proofs", True),
             getattr(conf, "initial_proof", None),
+            getattr(conf, "use_reward", True),
+            getattr(conf, "use_merge", True),
+            getattr(conf, "use_ducb", True),
         )
 
     def _goal_key(self, goals: list[Goal]) -> str:
@@ -113,7 +129,11 @@ class RMaxTSSearcher:
                 q = node.W.get(t, 0.0) / n
                 return q + math.sqrt(2.0 * math.log(total) / n)
 
-            best_t = max(node.tactics, key=ducb)
+            if self.use_ducb:
+                best_t = max(node.tactics, key=ducb)
+            else:
+                import random as _r  # ablation: DUCB 대신 uniform 랜덤 선택
+                best_t = _r.choice(node.tactics)
             child = node.children[best_t]
             if id(child) in visited:  # 사이클 → 여기서 확장(무한루프 차단)
                 break
@@ -161,8 +181,8 @@ class RMaxTSSearcher:
                 # goal 불변(Proof./bullet 등) → 트리 노드 안 만들고 script만 로컬 진행(self-loop 방지)
                 cur_check = res
                 continue
-            # goal 변경 → 노드 생성/병합(state merging)
-            if gk in self.nodes:
+            # goal 변경 → 노드 생성/병합(state merging). ablation: use_merge=False면 항상 새 노드(pure tree)
+            if self.use_merge and gk in self.nodes:
                 child = self.nodes[gk]
             else:
                 child = RMaxNode(res, gk)
@@ -193,7 +213,8 @@ class RMaxTSSearcher:
             client = self.tactic_clients[it % len(self.tactic_clients)]
             leaf, sel_path = self._select()
             success_proof, new_path, any_new = self._expand(leaf, client, start)
-            reward = 1.0 if any_new else 0.0   # RMax intrinsic
+            # RMax intrinsic reward. ablation: use_reward=False면 항상 0(novelty 신호 제거)
+            reward = (1.0 if any_new else 0.0) if self.use_reward else 0.0
             self._backprop(sel_path, new_path, reward)
             if success_proof is not None:
                 if self.print_proofs:
