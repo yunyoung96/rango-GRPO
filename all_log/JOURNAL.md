@@ -269,3 +269,8 @@ never-solved = [0,4,8,15,20,21,22,25]. 두 부류:
 ### [RMaxTS 수정 검증] Proof. 버그 fix 성공 — 2026-07-09 08:2x
 - 스모크: Proof.→VALID → 'destruct ob; simpl; auto.'→VALID → 'repeat destruct b; simpl; auto.'→COMPLETE(idx6 품). self-loop 해결, 실제 tactic 진전 확인.
 - rmaxts first-20 수정본으로 실행중. (BFS도 동일 fix 적용됨, rmaxts 뒤 실행 예정)
+
+### [RMaxTS 2번째 버그 fix] 사이클 무한루프 — 2026-07-09 09:2x
+- 증상: idx0에서 56분 CPU 97.9% 무한루프(0/20). 원인: state-merge가 그래프 사이클(A→B→…→A) 생성 → _select의 while 하강 무한루프(첫 fix는 self-loop만).
+- 수정: _select에 visited 사이클 가드 + 하강 depth bound. 검증: idx0이 90s내 42 step 처리 후 정상 종료(failed, hung 아님).
+- RMaxTS 완전 작동(idx6 품, idx0 정상 탐색). 재실행.
