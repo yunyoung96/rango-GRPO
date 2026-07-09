@@ -104,7 +104,8 @@ class RMaxTSSearcher:
     def _select(self) -> tuple[RMaxNode, list[tuple[RMaxNode, str]]]:
         node = self.root
         path: list[tuple[RMaxNode, str]] = []
-        while node.children and not node.terminal:
+        visited: set[int] = {id(node)}   # state-merge가 만든 사이클(A→B→…→A) 무한루프 방지
+        while node.children and not node.terminal and len(path) < 2 * self.n_rollout_steps + 50:
             total = sum(node.N.get(t, 0.0) for t in node.tactics) + 1e-9
 
             def ducb(t: str) -> float:
@@ -113,10 +114,11 @@ class RMaxTSSearcher:
                 return q + math.sqrt(2.0 * math.log(total) / n)
 
             best_t = max(node.tactics, key=ducb)
-            path.append((node, best_t))
             child = node.children[best_t]
-            if child is node:  # self-merge 방지
+            if id(child) in visited:  # 사이클 → 여기서 확장(무한루프 차단)
                 break
+            path.append((node, best_t))
+            visited.add(id(child))
             node = child
         return node, path
 
