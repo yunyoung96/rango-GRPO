@@ -288,3 +288,6 @@ never-solved = [0,4,8,15,20,21,22,25]. 두 부류:
 - bfs-prover(length-normalized best-first, Coq1.3B): 10/20, net−1, 회귀 1(idx10), unique 0. 푼:[2,5,6,9,11,12,19,26,28,29].
 - **search 기반 최고**: rmaxts/classical/qed(전부 8) 대비 +2, baseline(11) 근접. 유력원인=length-norm(score=Σlogp/L^α, α=.5)이 누적-logprob 짧은증명 편향 교정 → 깊은 증명 탐색. **BFS-Prover 논문 핵심주장이 우리 세팅서도 재현.**
 - ablation bfs-a0(α=0)이 ~8로 떨어지면 length-norm 원인 확정 예정.
+
+### [ablation ①] RMax reward 제거 = 9/20 (KST 2026-07-10 01:37)
+- rmaxts full 8/20 vs rmaxts-noreward 9/20. **RMax intrinsic reward 제거해도 안 나빠짐(+1)** → novelty 보상은 우리 세팅서 핵심 아님(과탐색 손해 가능). 다음: nomerge, nomcts, bfs-a0(length-norm 검증).
