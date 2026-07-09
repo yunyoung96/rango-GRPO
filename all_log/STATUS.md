@@ -10,7 +10,7 @@
 2. **A/B both**: rango 동일스텝 A(normal) vs B(gold lemma) → retrieval vs capacity 깨끗한 delta.
 3. **lean raw-6.7b oracle**: 15파일, 사용자 요청 capacity 수치(가벼운 재실행).
 4. **QED**: value 학습 → `rango-qed` + `rango-qed-hybrid`(QED+retrieval 혼용) 평가.
-5. **6.7B 파인튜닝**: on-the-fly LmDataset(rango 레시피) QLoRA 20k step → **fine-tuned 6.7b oracle**(진짜 capacity 판정).
+5. ~~6.7B 파인튜닝~~ → **device2(GPU2)로 이전**. 이 세션(GPU3)에선 4번(QED)까지만. device2에서 `bash all_log/run_ft6.7b_device2.sh` 실행.
 
 
 ## ★핵심 긍정 결과 (2026-07-08)
