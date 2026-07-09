@@ -294,3 +294,9 @@ never-solved = [0,4,8,15,20,21,22,25]. 두 부류:
 
 ### [ablation ②] state-merge 제거 = 7/20 (KST 2026-07-10 03:57)
 - rmaxts full 8 vs noreward 9 vs nomerge 7. state-merging은 약간 도움(-1), RMax reward는 무의미(+1). **둘 다 ±1로 효과 작음** → 우리 세팅서 MCTS 세부는 성능 좌우 안 함. 다음: nomcts(DUCB vs random), ★bfs-a0(length-norm 검증).
+
+### [ablation ③ + RMaxTS ablation 완결] DUCB 제거 = 8/20 (=full) (KST 2026-07-10 06:10)
+- RMaxTS 컴포넌트 완성표: full 8, −reward 9, −merge 7, −DUCB(random) 8.
+- **★핵심: DUCB→랜덤이 8/20으로 동일** = MCTS 선택이 랜덤보다 안 나음. intrinsic reward도 무의미. state-merge만 미미(+1).
+- **결론: RMaxTS의 MCTS 정교함(DUCB/RMax reward)은 우리 세팅서 성능 기여 0. "모델로 트리탐색"일 뿐, 상한 8/20은 학습 안 된 모델 탓.** → 논문 성능은 MCTS가 아니라 GRPO 학습모델에서 나온다는 방증. 이게 "GRPO가 최종 목표"의 근거.
+- 다음: ★bfs-a0(length-norm 제거) — BFS의 +2가 length-norm 덕인지 확정.
