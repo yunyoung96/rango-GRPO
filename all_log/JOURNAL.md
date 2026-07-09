@@ -265,3 +265,7 @@ never-solved = [0,4,8,15,20,21,22,25]. 두 부류:
 ### [6.7b oracle + RMaxTS 버그] — 2026-07-09 08:2x
 - lean raw-6.7b oracle: top-1 0/524, top-8 0/524 = **0%**. raw 6.7b는 teacher-forcing서도 gold 재현 0 → 포맷 드리프트가 전부(capacity 아님). 순수 capacity=device2 fine-tuned 6.7b.
 - **RMaxTS 버그 발견**: "Proof."(goal 불변)가 state-merge로 root와 병합→self-loop→진전 못함(194회 반복, 0/20). 수정: goal 안 바뀌는 tactic은 tree 노드 만들지 말고 롤아웃 내 script만 진행(goal 바뀔 때만 노드/병합).
+
+### [RMaxTS 수정 검증] Proof. 버그 fix 성공 — 2026-07-09 08:2x
+- 스모크: Proof.→VALID → 'destruct ob; simpl; auto.'→VALID → 'repeat destruct b; simpl; auto.'→COMPLETE(idx6 품). self-loop 해결, 실제 tactic 진전 확인.
+- rmaxts first-20 수정본으로 실행중. (BFS도 동일 fix 적용됨, rmaxts 뒤 실행 예정)
