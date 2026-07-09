@@ -121,11 +121,8 @@ class BFSProverSearcher:
             new_proof = node.check_result.new_proof
             if new_proof is None:
                 continue
-            gk = self._goal_key(node.check_result.current_goals)
-            if gk in self.seen:
-                continue
-            self.seen.add(gk)
-
+            # BFS-Prover는 pure best-first tree(논문). goal_key 병합/스킵 안 함
+            # ("Proof." 같은 goal-불변 tactic이 스킵돼 진전 막히는 것 방지). max_depth로 bound.
             dset = self.proof_manager.build_dset_file(new_proof)
             proof = dset.proofs[-1]
             script = proof.proof_prefix_to_string(proof.steps[-1], include_theorem=False)

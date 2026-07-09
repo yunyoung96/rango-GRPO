@@ -17,6 +17,8 @@
 | `rango-apply-sl` | 9/20 | 300 | **1** | 27 | 3 | 20260705-203453 |
 | `rango-vguided` | 9/20 | 600 | **1** | 27 | 3 | 20260707-114603 |
 | `rango-apply` | 8/20 | 300 | **1** | 27 | 4 | 20260705-154028 |
+| `rango-qed` | 8/20 | 600 | **1** | 27 | 4 | 20260709-041225 |
+| `rango-qed-hybrid` | 8/20 | 600 | **1** | 27 | 4 | 20260709-052409 |
 | `rango-hybrid` | 2/20 | 600 | **1** | 27 | 10 | 20260707-222538 |
 | `rango-hybrid-v` | 2/20 | 600 | **1** | 27 | 10 | 20260707-231803 |
 | `rango-vlog` | 19/100 | 150 | **0** | - | 15 | 20260707-083505 |
@@ -32,7 +34,7 @@
 
 | idx | 푼 기법들 |
 |---|---|
-| 27 | rango-mem, rango-apply, rango-alignapply, rango-mem-wide, rango-apply-sl, rango-portfolio, rango-sauto, rango-search, rango-psauto, rango-vguided, rango-hybrid, rango-hybrid-v |
+| 27 | rango-mem, rango-apply, rango-alignapply, rango-mem-wide, rango-apply-sl, rango-portfolio, rango-sauto, rango-search, rango-psauto, rango-vguided, rango-hybrid, rango-hybrid-v, rango-qed, rango-qed-hybrid |
 | 43 | rango-mem, rango-portfolio, rango-sauto, rango-search |
 | 55 | rango-portfolio |
 | 76 | rango-sauto |

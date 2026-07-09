@@ -122,13 +122,15 @@ class RMaxTSSearcher:
 
     # ── expansion: truncate-and-resume 롤아웃 ────────────────────────
     def _expand(self, leaf: RMaxNode, client: TacticGenClient, start: float):
-        cur = leaf
+        cur_node = leaf                     # 트리 노드(goal 바뀔 때만 전진)
+        cur_check = leaf.check_result       # 로컬 진행 상태(script는 매 tactic 성장)
+        cur_gk = leaf.goal_key
         new_path: list[tuple[RMaxNode, str]] = []
         any_new = False
         for _ in range(self.n_rollout_steps):
             if time.time() - start >= self.timeout:
                 break
-            new_proof = cur.check_result.new_proof
+            new_proof = cur_check.new_proof
             if new_proof is None:
                 break
             dset = self.proof_manager.build_dset_file(new_proof)
@@ -147,25 +149,32 @@ class RMaxTSSearcher:
             if self.print_proofs:
                 print(f"  [RMaxTS] tactic={tactic.strip()!r} → {res.tactic_result.name}")
             if res.tactic_result == TacticResult.COMPLETE:
-                new_path.append((cur, tactic))
+                new_path.append((cur_node, tactic))
                 return res.new_proof, new_path, True   # 증명 성공
             if res.tactic_result == TacticResult.INVALID:
                 break                                    # truncate at first error
-            # VALID: 노드 병합(state 동일하면 기존 노드 재사용 = 동치 tactic 추가)
+            # VALID:
             gk = self._goal_key(res.current_goals)
+            if gk == cur_gk:
+                # goal 불변(Proof./bullet 등) → 트리 노드 안 만들고 script만 로컬 진행(self-loop 방지)
+                cur_check = res
+                continue
+            # goal 변경 → 노드 생성/병합(state merging)
             if gk in self.nodes:
                 child = self.nodes[gk]
             else:
                 child = RMaxNode(res, gk)
                 self.nodes[gk] = child
                 any_new = True
-            if tactic not in cur.children:
-                cur.children[tactic] = child
-                cur.tactics.append(tactic)
-                cur.N[tactic] = 0.0
-                cur.W[tactic] = 0.0
-            new_path.append((cur, tactic))
-            cur = child
+            if tactic not in cur_node.children:
+                cur_node.children[tactic] = child
+                cur_node.tactics.append(tactic)
+                cur_node.N[tactic] = 0.0
+                cur_node.W[tactic] = 0.0
+            new_path.append((cur_node, tactic))
+            cur_node = child
+            cur_check = res
+            cur_gk = gk
         return None, new_path, any_new
 
     # ── backprop: 할인 누적 ──────────────────────────────────────────
