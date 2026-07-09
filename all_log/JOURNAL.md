@@ -261,3 +261,7 @@ never-solved = [0,4,8,15,20,21,22,25]. 두 부류:
 ### [QED-hybrid] = 8/20 (=qed) — 2026-07-09 06:35
 - rango-qed-hybrid(QED value + retrieval 확신 게이팅) 8/20 = rango-qed와 동일. 게이팅도 QED에 개선 0. RL/value 계열 전부 net−(vguided 9, qed 8, qed-hybrid 8) 확정.
 - 다음: lean raw-6.7b oracle(capacity) → rmaxts → bfs-prover → scaling.
+
+### [6.7b oracle + RMaxTS 버그] — 2026-07-09 08:2x
+- lean raw-6.7b oracle: top-1 0/524, top-8 0/524 = **0%**. raw 6.7b는 teacher-forcing서도 gold 재현 0 → 포맷 드리프트가 전부(capacity 아님). 순수 capacity=device2 fine-tuned 6.7b.
+- **RMaxTS 버그 발견**: "Proof."(goal 불변)가 state-merge로 root와 병합→self-loop→진전 못함(194회 반복, 0/20). 수정: goal 안 바뀌는 tactic은 tree 노드 만들지 말고 롤아웃 내 script만 진행(goal 바뀔 때만 노드/병합).
