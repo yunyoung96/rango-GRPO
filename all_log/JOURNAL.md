@@ -247,3 +247,8 @@ never-solved = [0,4,8,15,20,21,22,25]. 두 부류:
 - **이전 "portfolio=노이즈(@40 −1)" 결론 정밀화**: portfolio 강점(straight-line 다양성 + classical/sauto 자동화 unique)은 **자동화형 정리가 충분히 든 큰 세트에서만 드러남**. 작은 세트(20)=노이즈, 60=modest 진짜 win.
 - 핵심 교훈: **baseline 대체가 아니라 union(portfolio)** 이어야 함. sauto 단독=net−6(회귀9), portfolio=net+2(회귀1) — straight-line phase가 timeout-민감을 지키고 classical phase가 unique를 더함.
 - 주의: baseline600은 단일 run(sampling 변동). +2는 modest지만 unique 3개(자동화형)는 구조적이라 신뢰도 높음.
+
+### [운영] vguided hang 정리 — 2026-07-09 04:xx
+- rango-vguided가 idx64에서 run_thm 1h49m hung(timeout 600s 무시 — 서버/coqpyt 하위 hang). 전체 파이프라인 블로킹.
+- vguided 37/60(unique 1 [27])로 충분+최약 기법이라 정리 → bigger 재실행 종료. A/B both로 진행.
+- bigger 재실행 최종 강점: portfolio net+2(unique3,회귀1) 최고. sauto unique3/회귀9, mem·search unique2/회귀8. **union(portfolio)만 net-양.**

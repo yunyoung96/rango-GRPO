@@ -7,16 +7,16 @@
 
 | 기법 | 성공 | timeout | **unique** | unique idx | 회귀 | dir |
 |---|---|---|---|---|---|---|
-| `rango-portfolio` | 26/57 | 600 | **3** | 27,43,55 | 1 | 20260708-080851 |
+| `rango-portfolio` | 27/60 | 600 | **3** | 27,43,55 | 1 | 20260708-080851 |
 | `rango-sauto` | 19/60 | 600 | **3** | 27,43,76 | 9 | 20260708-045704 |
+| `rango-mem` | 19/60 | 600 | **2** | 27,43 | 8 | 20260708-154414 |
+| `rango-search` | 19/60 | 600 | **2** | 27,43 | 8 | 20260708-195649 |
 | `rango-mem-wide` | 10/20 | 300 | **1** | 27 | 2 | 20260705-175027 |
 | `rango-psauto` | 10/20 | 600 | **1** | 27 | 2 | 20260707-032044 |
 | `rango-alignapply` | 9/20 | 300 | **1** | 27 | 3 | 20260705-162547 |
 | `rango-apply-sl` | 9/20 | 300 | **1** | 27 | 3 | 20260705-203453 |
 | `rango-vguided` | 9/20 | 600 | **1** | 27 | 3 | 20260707-114603 |
-| `rango-mem` | 8/20 | 600 | **1** | 27 | 4 | 20260705-082853 |
 | `rango-apply` | 8/20 | 300 | **1** | 27 | 4 | 20260705-154028 |
-| `rango-search` | 7/20 | 600 | **1** | 27 | 5 | 20260707-021008 |
 | `rango-hybrid` | 2/20 | 600 | **1** | 27 | 10 | 20260707-222538 |
 | `rango-hybrid-v` | 2/20 | 600 | **1** | 27 | 10 | 20260707-231803 |
 | `rango-vlog` | 19/100 | 150 | **0** | - | 15 | 20260707-083505 |
@@ -33,7 +33,7 @@
 | idx | 푼 기법들 |
 |---|---|
 | 27 | rango-mem, rango-apply, rango-alignapply, rango-mem-wide, rango-apply-sl, rango-portfolio, rango-sauto, rango-search, rango-psauto, rango-vguided, rango-hybrid, rango-hybrid-v |
-| 43 | rango-portfolio, rango-sauto |
+| 43 | rango-mem, rango-portfolio, rango-sauto, rango-search |
 | 55 | rango-portfolio |
 | 76 | rango-sauto |
 
