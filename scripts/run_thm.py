@@ -24,6 +24,7 @@ from model_deployment.searcher import (
     ClassicalSearchConf,
 )
 from model_deployment.portfolio_searcher import PortfolioSearchConf
+from model_deployment.rmaxts_searcher import RMaxTSSearchConf
 from model_deployment.run_proof import TestProofConf
 
 from model_deployment.classical_searcher import ClassicalSuccess, ClassicalFailure
@@ -222,6 +223,11 @@ def get_searcher_conf(model_alias: str) -> SearcherConf:
                 timeout=timeout, straight_frac=0.8,
             )
 
+        case "rmaxts":
+            # DeepSeek-Prover-V1.5 (2408.08152)의 RMaxTS 충실 재구현 (rango 탐색과 안 섞음).
+            # DUCB + RMax intrinsic reward + truncate-and-resume + state merging.
+            return RMaxTSSearchConf(timeout=timeout, n_rollout_steps=8, print_proofs=True)
+
         case "rango-qed":
             # QEDCartographer 충실 재구현: coq2vec value + product-over-subgoals backup으로
             # best-first 우선순위 유도(value-first). value_weight>0로 블렌드 활성.
@@ -348,7 +354,7 @@ def get_tactic_confs(model_alias: str, split: Split) -> list[TacticGenConf]:
     )
 
     match model_alias:
-        case "rango" | "rango-best-beam" | "rango-best-rand" | "rango-mem" | "rango-mem-wide" | "rango-portfolio" | "rango-portfolio-08" | "rango-portfolio-06" | "rango-vlog" | "rango-vguided" | "rango-hybrid" | "rango-hybrid-v" | "rango-qed" | "rango-qed-hybrid":
+        case "rango" | "rango-best-beam" | "rango-best-rand" | "rango-mem" | "rango-mem-wide" | "rango-portfolio" | "rango-portfolio-08" | "rango-portfolio-06" | "rango-vlog" | "rango-vguided" | "rango-hybrid" | "rango-hybrid-v" | "rango-qed" | "rango-qed-hybrid" | "rmaxts":
             checkpoint = (
                 "models/deepseek-bm25-proof-tfidf-proj-thm-prem-final/checkpoint-54500"
             )
