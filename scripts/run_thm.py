@@ -371,6 +371,17 @@ def get_tactic_confs(model_alias: str, split: Split) -> list[TacticGenConf]:
             )
             return [DecoderTacticGenConf(Path("models/rango-6.7b/base"), [formatter])]
 
+        case "rango-6.7b-ft":
+            # 헤비 레버 2: Rango 데이터로 QLoRA 파인튜닝한 6.7B (device2에서 학습).
+            # 순수 capacity 판정용(포맷 학습됨 + 큰 용량). ckpt=models/rango-6.7b-ft/final(심링크).
+            formatter = GeneralFormatterConf(
+                premise_client_conf=tfidf_premise_conf,
+                proof_retriever_conf=bm25_proof_conf,
+                num_premises=50,
+                num_proofs=20,
+            )
+            return [DecoderTacticGenConf(Path("models/rango-6.7b-ft/final"), [formatter])]
+
         case "rango-divsample":
             # (A1 개선) 같은 강한 rango 모델에서 retrieval on/off 토글(ensemble의
             # 약한 2nd모델 문제 회피). straight-line이 두 client(동일 checkpoint,
