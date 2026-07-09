@@ -1,7 +1,7 @@
 # 기법(alias) 총정리 — 각 방법이 뭔지·결과·출처
 
 > 실행: `python3 scripts/run_thm.py run <alias> test <idx>` 또는 `run_all.py --alias <alias>`.
-> 출처: **rango**=원본 코드, **mine**=내가 추가, **paper**=논문 충실 재구현.
+> 출처: **rango**=원본 코드, **mine**=내가 추가, **paper**=논문의 **탐색 알고리즘만** 재구현(모델 학습 부분 미구현, 정책=우리 Coq 1.3B).
 > 결과는 first-20 @600 기준(baseline=11/20). "unique"=baseline이 못 푸는데 이 기법이 푼 정리.
 
 ## 0. 기준선
@@ -59,7 +59,7 @@
 | `rango-hybrid` | retrieval 확신(top log-prob)↑→greedy width, ↓→classical 탐색 (adaptive-width) | 2/20 (단일체인 약점) | mine |
 | `rango-hybrid-v` | hybrid + value 블렌드 | 2/20 | mine |
 
-## 8. 논문 알고리즘 충실 재구현 (rango 탐색과 안 섞음, 정책 모델만 Coq 1.3B)
+## 8. 논문의 탐색 알고리즘만 재구현 (모델 학습 GRPO/DPO/SFT 미구현, 정책=Coq 1.3B, rango 탐색과 안 섞음)
 | alias | 뭐하는가 | 결과 | 출처 |
 |-------|---------|------|------|
 | `rmaxts` | **DeepSeek-Prover-V1.5의 RMaxTS 탐색만**(2408.08152). GRPO/RLPAF/SFT 모델학습 미구현, 정책=Coq1.3B. DUCB MCTS(γ=.99) + RMax intrinsic reward(novelty) + truncate-and-resume + state merging | (큐 대기) | paper 충실 |
@@ -75,4 +75,4 @@
 - **baseline(11) 넘은 건 portfolio(12@20, +2@60)뿐** — 그것도 큰 세트에서만. 나머지 전부 ≤ baseline.
 - **unique 강점**(baseline 구조적으로 못 풂): idx 27,43,55,76 — sauto/classical 자동화·백트랙 계열이 품.
 - **RL/value(vguided/qed): 학습은 되나 탐색 못 살림 → net−.**
-- **논문 재구현(rmaxts/bfs-prover): 실행 대기 중** — 우리 세팅(Coq 1.3B)에서 어떻게 되는지 실측 예정.
+- **논문의 탐색 알고리즘만 재구현(rmaxts/bfs-prover)**: 모델 학습(GRPO/DPO 등) 미구현이라 논문 재현 아님. 우리 Coq 1.3B 정책으로 그 탐색이 어떤지 실측 예정.
