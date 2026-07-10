@@ -143,3 +143,9 @@ ablation study가 확인: 탐색 컴포넌트는 성능 상한 8~10/20, **논문
 ### 핵심: 1·2는 "성공증명으로 정책 재학습"이라 대부분 겹침
 공통 인프라(성공증명 수집→preference/reward→재학습)를 GRPO로 먼저 구축 → BFS-full/QED-full은 그 변형.
 데이터: collect_successes.py(수정필요) + 우리 실험들의 성공 증명 재활용.
+
+## [최종 작업] Quarry (Planning to Hammer, 2606.17981) — FULL 구현 (ablation 없이)
+사용자 지시: 맨 마지막, ablation 없이 full, 하나도 안 빠뜨림. 상세=QUARRY_PLAN.md.
+★Rocq(Coq) 네이티브 — CoqHammer+LLM+coqpyt 다 우리 있음. Lean 논문들과 달리 성능 기대 높음.
+= LLM 분해(sublemma) + 난이도모델 랭킹 + 재귀 CoqHammer 실행. 전체 6컴포넌트(A~F) 다 구현.
+순서: 40-round → GRPO → BFS-full → QED-full → **Quarry full**.
