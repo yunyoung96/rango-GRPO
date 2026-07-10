@@ -29,6 +29,7 @@ class ClassicalSearchConf:
     hybrid_conf: bool = False
     conf_threshold: float = -0.05
     qed_ckpt: Optional[str] = None  # QEDCartographer: coq2vec value + product-over-subgoals backup
+    qed_backup: str = "product"     # ablation: 다중 subgoal 상태값 backup(product=논문/sum/min)
     ALIAS = "classical"
 
     @classmethod
@@ -48,6 +49,7 @@ class ClassicalSearchConf:
             yaml_data.get("hybrid_conf", False),
             yaml_data.get("conf_threshold", -0.05),
             yaml_data.get("qed_ckpt", None),
+            yaml_data.get("qed_backup", "product"),
         )
 
 
@@ -119,10 +121,12 @@ class ClassicalSearcher:
         hybrid_conf: bool = False,
         conf_threshold: float = -0.05,
         qed_ckpt: Optional[str] = None,
+        qed_backup: str = "product",
     ):
         self.hybrid_conf = hybrid_conf
         self.conf_threshold = conf_threshold
         self.qed_ckpt = qed_ckpt
+        self.qed_backup = qed_backup
         self._qed_model = None
         self.tactic_client = tactic_client
         self.proof_manager = proof_manager
@@ -187,6 +191,7 @@ class ClassicalSearcher:
             getattr(conf, "hybrid_conf", False),
             getattr(conf, "conf_threshold", -0.05),
             getattr(conf, "qed_ckpt", None),
+            getattr(conf, "qed_backup", "product"),
         )
 
     def search(
@@ -232,9 +237,13 @@ class ClassicalSearcher:
         label=0: subtree 전멸(예산 내 미완). value model이 P(solvable)를 학습하도록."""
         import os, json
         records: list[dict] = []
+        self._dump_counter = 0
 
-        def visit(node: "Candidate") -> tuple[bool, int]:
+        def visit(node: "Candidate") -> tuple[bool, int, int]:
+            my_id = self._dump_counter
+            self._dump_counter += 1
             child_res = [visit(c) for c in node.children]
+            child_ids = [r[2] for r in child_res]
             solved_below = node.solved or any(r[0] for r in child_res)
             if node.solved:
                 dist = 0
@@ -251,8 +260,12 @@ class ClassicalSearcher:
                     "cum_score": node.score,
                     "tactic_score": node.tactic_score,
                     "tactic": node.tactic.strip()[:200],
+                    # value-iteration(부트스트랩)용 AND-OR 엣지 구조(하위호환 추가 필드):
+                    "node_id": my_id,
+                    "children": child_ids,
+                    "solved": bool(node.solved),
                 })
-            return (solved_below, dist)
+            return (solved_below, dist, my_id)
 
         try:
             visit(self.root_candidate)
@@ -306,7 +319,7 @@ class ClassicalSearcher:
         if self.qed_ckpt is not None:
             if self._qed_model is None:
                 from model_deployment.qed_cartographer import QEDValuePredictor
-                self._qed_model = QEDValuePredictor(self.qed_ckpt)
+                self._qed_model = QEDValuePredictor(self.qed_ckpt, backup=self.qed_backup)
             subgoals = [g for g in cand.goal_text.split("\n===\n") if g.strip()]
             return self._qed_model.value_state(subgoals)
         if self._value_model is None:

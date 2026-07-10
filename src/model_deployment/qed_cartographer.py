@@ -75,7 +75,7 @@ class QEDValue(nn.Module):
 class QEDValuePredictor:
     """학습된 QEDValue 로드 + 추론(캐시). 탐색기에서 product-over-subgoals에 사용."""
 
-    def __init__(self, ckpt: str, device: Optional[str] = None):
+    def __init__(self, ckpt: str, device: Optional[str] = None, backup: str = "product"):
         blob = torch.load(ckpt, map_location="cpu")
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         enc = Coq2Vec(**blob["enc_args"])
@@ -83,6 +83,9 @@ class QEDValuePredictor:
         self.model.load_state_dict(blob["state_dict"])
         self.model.eval()
         self._cache: dict[str, float] = {}
+        # ablation: 다중 subgoal 상태값 backup 방식. product=논문(AND), sum/min=대조군.
+        assert backup in ("product", "sum", "min", "mean"), backup
+        self.backup = backup
 
     @torch.no_grad()
     def value_goal(self, goal: str) -> float:
@@ -94,10 +97,18 @@ class QEDValuePredictor:
         return v
 
     def value_state(self, goals: list[str]) -> float:
-        """**AND product backup**: 상태(여러 subgoal)의 값 = ∏ V(subgoal). (QED 구조)"""
+        """상태(여러 subgoal)의 값 backup. 논문=product(AND: 전부 닫아야 QED).
+        ablation: sum/min/mean 대조군."""
         if not goals:
             return 1.0
-        p = 1.0
-        for g in goals:
-            p *= self.value_goal(g)
-        return p
+        vs = [self.value_goal(g) for g in goals]
+        if self.backup == "product":
+            p = 1.0
+            for v in vs:
+                p *= v
+            return p
+        if self.backup == "sum":
+            return sum(vs) / len(vs) if False else sum(vs)  # 정규화 없는 합(대조)
+        if self.backup == "min":
+            return min(vs)
+        return sum(vs) / len(vs)  # mean

@@ -15,35 +15,14 @@ import torch.nn as nn
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from model_deployment.qed_cartographer import Coq2Vec, QEDValue, GAMMA
+from model_deployment.qed_value_iter import build_targets
 
 
-def load(vocab):
-    goals, tgts, seen = [], [], {}
-    for fp in glob.glob("data/vguided_trees/*.jsonl"):
-        for line in open(fp, errors="replace"):
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                r = json.loads(line)
-            except Exception:
-                continue
-            state = r.get("goal", "")
-            dist = r.get("dist", -1)
-            lbl = int(r.get("label", 0))
-            tgt = (GAMMA ** dist) if (lbl == 1 and dist >= 0) else 0.0
-            # 다중 subgoal 상태를 per-goal로 분해(=== 구분) → 각 subgoal에 동일 타깃(product backup 학습)
-            for g in state.split("\n===\n"):
-                g = g.strip()
-                if not g:
-                    continue
-                if g in seen:
-                    if tgt > seen[g]:
-                        seen[g] = tgt
-                    continue
-                seen[g] = tgt
-    for g, t in seen.items():
-        goals.append(g); tgts.append(t)
+def load(mode, gamma, backup):
+    """ablation: mode(closed-form/bootstrap) · gamma · backup(product/sum/min)."""
+    tgt_map = build_targets("data/vguided_trees/*.jsonl", gamma, mode, backup)
+    goals = list(tgt_map.keys())
+    tgts = [tgt_map[g] for g in goals]
     return goals, tgts
 
 
@@ -54,9 +33,14 @@ def main():
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--bs", type=int, default=128)
     ap.add_argument("--out", default="models/qed_value/qed.pt")
+    # ablation 축
+    ap.add_argument("--mode", default="closed-form", choices=["closed-form", "bootstrap"])
+    ap.add_argument("--gamma", type=float, default=GAMMA)
+    ap.add_argument("--backup", default="product", choices=["product", "sum", "min"])
     args = ap.parse_args()
 
-    goals, tgts = load(args.vocab)
+    print(f"[qed-train] mode={args.mode} gamma={args.gamma} backup={args.backup}")
+    goals, tgts = load(args.mode, args.gamma, args.backup)
     if not goals:
         print("데이터 없음: data/vguided_trees/*.jsonl 필요(rango-vlog).")
         return

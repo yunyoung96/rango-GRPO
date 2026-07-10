@@ -278,6 +278,16 @@ def get_searcher_conf(model_alias: str) -> SearcherConf:
                 qed_ckpt="models/qed_value/qed.pt",
             )
 
+        case "rango-qed-sum" | "rango-qed-min":
+            # QED ablation: AND backup을 product 대신 sum/min으로 (effectiveness study).
+            return ClassicalSearchConf(
+                max_branch=8, max_search_steps=1000000, depth_limit=30,
+                timeout=timeout, beam_decode=True, initial_proof=None,
+                use_memo=True, value_weight=1.0,
+                qed_ckpt="models/qed_value/qed.pt",
+                qed_backup="sum" if model_alias == "rango-qed-sum" else "min",
+            )
+
         case "rango-qed-hybrid":
             # 사용자 요청: QEDCartographer 탐색 + retrieval 확신 높으면 rango greedy 혼용.
             #   qed value(product backup)로 순서화 + 확신 스텝은 boost로 depth-first commit.
