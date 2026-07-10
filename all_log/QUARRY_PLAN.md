@@ -62,3 +62,7 @@ SolveGoal(G, budget):
 
 ## 순위: 로드맵 최종 (40-round → GRPO → BFS-full → QED-full → **Quarry full**)
 단, Quarry는 Coq-native라 성능 기대 높음 — 필요시 우선순위 조정 가능(사용자 확인).
+
+## ★제약 (사용자): OCaml 버전 변경 금지
+opam switch(coqstoq: Coq8.18/coq-hammer-tactics1.3.2/OCaml4.14) 절대 안 건드림.
+→ SerAPI(X) → coqpyt(O), full-hammer+외부ATP(X) → 기존 sauto/hauto(O). 신규는 전부 Python 레벨.
