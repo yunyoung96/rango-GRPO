@@ -127,3 +127,19 @@ STRATEGY_DIVERGE 36.2% · SEARCH_THRASH 47.0% · NO_RETRIEVAL 5.6% · LLM_INVALI
   3. **BFS 스케일링**: 컴퓨트↑에 best-first가 잘 scale(우리 baseline은 straight-line이라 비교 의미).
 - 우리 맥락 실험안: (a) ClassicalSearcher에 length-norm 스코어 옵션(`rango-lnbfs`), (b) MR1 value + length-norm 결합, (c) expert-iter를 DPO로.
 - 정직한 리스크: 우리 발견상 best-first(classical)가 straight-line baseline에 이미 -3. length-norm이 그걸 뒤집을지는 실측 필요. BFS-Prover 이득은 Lean/miniF2F에서였음.
+
+## [학습(training) 로드맵] full 재현 — ablation study 방식 (2026-07-10 사용자 지시)
+현재까지: 논문들의 **탐색 알고리즘만** 구현(rmaxts/bfs-prover/rango-qed). 학습부는 전부 미구현.
+ablation study가 확인: 탐색 컴포넌트는 성능 상한 8~10/20, **논문 SOTA는 학습된 모델에서 나옴** → 학습이 진짜 레버.
+
+### 순서 (전부 "테크닉 하나씩 켜며" ablation)
+1. **GRPO (DeepSeek-Prover-V1.5 full)** ← 최종 목표 1순위
+   - Coq 증명 성공/실패 → reward. 우리 정책 모델 GRPO 재학습. ablation: reward설계/KL/group size.
+2. **BFS-Prover full** = 탐색(done) + **expert-iteration + DPO**
+   - 성공 tactic=chosen, 실패=rejected preference. ablation: expert-iter만 vs +DPO, 데이터필터.
+3. **QEDCartographer full (후순위)** = 탐색(done) + **value iteration(reward-free RL) + coq2vec 사전학습**
+   - 현재 rango-qed는 1-pass γ^dist 회귀(단순화). full=반복 Bellman value iteration + online expert-iter. ablation: iteration 수, coq2vec 유무.
+
+### 핵심: 1·2는 "성공증명으로 정책 재학습"이라 대부분 겹침
+공통 인프라(성공증명 수집→preference/reward→재학습)를 GRPO로 먼저 구축 → BFS-full/QED-full은 그 변형.
+데이터: collect_successes.py(수정필요) + 우리 실험들의 성공 증명 재활용.
