@@ -305,3 +305,9 @@ never-solved = [0,4,8,15,20,21,22,25]. 두 부류:
 - bfs-a0(α=0) 7/20 vs bfs-prover(α=0.5) 10/20 → **length-norm이 +3**. α=0은 순수 누적 log-prob=classical/rmaxts(8) 수준으로 하락.
 - **확정: BFS +2~3의 동력 = length-normalization**(짧은증명 편향 교정→깊은 증명 탐색). BFS-Prover 논문 핵심주장 우리 세팅 재현.
 - **effectiveness study 대조: RMaxTS MCTS 정교함=효과0, BFS length-norm=+3.** 논문 탐색 컴포넌트 중 실효 있는 건 length-norm 하나. 다음: bfs-a1(α=1) 완료 후 20 효과표 자동생성 → 40 라운드.
+
+### [★Effectiveness Study 완결 @20] (KST 2026-07-10 09:0x)
+- RMaxTS: full 8, −reward 9, −merge 7, −DUCB(random) 8. → MCTS 정교함(DUCB/reward) 효과0.
+- BFS α: 0→7, 0.5→10, 1.0→~8. → α=0.5 sweet spot, length-norm이 유일한 실효 컴포넌트.
+- **종합: 논문 탐색 컴포넌트 중 length-norm만 효과(+3). MCTS는 랜덤과 동일.** → 논문 SOTA는 탐색이 아니라 GRPO 학습모델에서 나옴. GRPO가 진짜 레버 (ablation 뒷받침).
+- 다음: 40-theorem 라운드(7세팅)로 큰 세트 재확인 → 이후 GRPO 설계.
