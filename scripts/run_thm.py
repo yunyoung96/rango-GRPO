@@ -237,6 +237,11 @@ def get_searcher_conf(model_alias: str) -> SearcherConf:
 
         case "bfs-prover":       # BFS-Prover length-normalized best-first, α=0.5(논문)
             return BFSProverSearchConf(timeout=timeout, alpha=0.5, expand_width=2, print_proofs=True)
+        case "bfs-prover-trace":  # BFS-Prover + 트리 덤프(expert-iter/DPO 학습 데이터 수집)
+            return BFSProverSearchConf(
+                timeout=timeout, alpha=0.5, expand_width=2, print_proofs=True,
+                trace_out="data/bfs_trees/trees.jsonl",
+            )
         case "bfs-a0":           # ablation: length-norm 제거(α=0, 순수 누적 log-prob)
             return BFSProverSearchConf(timeout=timeout, alpha=0.0, expand_width=2, print_proofs=True)
         case "bfs-a1":           # ablation: full length-norm(α=1.0, per-tactic 평균)

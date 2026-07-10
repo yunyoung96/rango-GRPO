@@ -36,6 +36,7 @@ class BFSProverSearchConf:
     max_depth: int = 50
     print_proofs: bool = True
     initial_proof: Optional[str] = None
+    trace_out: Optional[str] = None   # expert-iter/DPO용 트리 덤프 jsonl 경로(None=끔)
     ALIAS = "bfs_prover"
 
     @classmethod
@@ -47,6 +48,7 @@ class BFSProverSearchConf:
             yaml_data.get("max_depth", 50),
             yaml_data.get("print_proofs", True),
             yaml_data.get("initial_proof", None),
+            yaml_data.get("trace_out", None),
         )
 
 
@@ -57,6 +59,7 @@ class _QNode:
     check_result: Any = field(compare=False)  # ProofCheckResult
     cum_logprob: float = field(compare=False)
     depth: int = field(compare=False)          # L (tactic 수)
+    node_id: int = field(compare=False, default=0)
 
 
 class BFSProverSearcher:
@@ -70,6 +73,7 @@ class BFSProverSearcher:
         max_depth: int = 50,
         print_proofs: bool = True,
         initial_proof: Optional[str] = None,
+        trace_out: Optional[str] = None,
     ):
         self.tactic_clients = tactic_clients
         self.proof_manager = proof_manager
@@ -78,7 +82,11 @@ class BFSProverSearcher:
         self.expand_width = expand_width
         self.max_depth = max_depth
         self.print_proofs = print_proofs
+        self.trace_out = trace_out
         self.total_model_time = 0.0
+        # 트리 덤프용: node_id -> record{state_example, tactics[]}, 그리고 부모 링크.
+        self.trace_records: dict[int, dict] = {}
+        self.node_parent: dict[int, tuple[int, str]] = {}  # node_id -> (parent_id, tactic)
 
         init_dset = proof_manager.get_initial_context()
         if init_dset is None:
@@ -96,6 +104,7 @@ class BFSProverSearcher:
             getattr(conf, "alpha", 0.5), getattr(conf, "expand_width", 2),
             getattr(conf, "max_depth", 50), getattr(conf, "print_proofs", True),
             getattr(conf, "initial_proof", None),
+            getattr(conf, "trace_out", None),
         )
 
     def _goal_key(self, goals: list[Goal]) -> str:
@@ -110,8 +119,8 @@ class BFSProverSearcher:
         start = time.time()
         frontier: list[_QNode] = []
         seq = 0
-        # root: depth 0, cum_logprob 0 → score 0
-        heapq.heappush(frontier, _QNode(-0.0, seq, self.init_check, 0.0, 0))
+        # root: depth 0, cum_logprob 0 → score 0, node_id 0
+        heapq.heappush(frontier, _QNode(-0.0, seq, self.init_check, 0.0, 0, 0))
         client = self.tactic_clients[0]
 
         while frontier and time.time() - start < self.timeout:
@@ -126,6 +135,7 @@ class BFSProverSearcher:
             dset = self.proof_manager.build_dset_file(new_proof)
             proof = dset.proofs[-1]
             script = proof.proof_prefix_to_string(proof.steps[-1], include_theorem=False)
+            self._record_state(node.node_id, proof, dset, client)
             t0 = time.time()
             recs = client.get_recs(  # E개 샘플 (beam=False → temperature 샘플링)
                 len(proof.steps) - 1, proof, dset, self.expand_width,
@@ -137,9 +147,12 @@ class BFSProverSearcher:
                 res = self.proof_manager.check_proof(script + tactic, new_proof.theorem)
                 if self.print_proofs:
                     print(f"  [BFS-Prover d={node.depth+1}] {tactic.strip()!r} → {res.tactic_result.name}")
+                self._record_tactic(node.node_id, tactic, res.tactic_result.name)
                 if res.tactic_result == TacticResult.COMPLETE:
                     if self.print_proofs:
                         print(f"[BFS-Prover] 성공 (탐색노드 {len(self.seen)})")
+                    self._mark_success_path(node.node_id, tactic)
+                    self._dump_trace()
                     return StraightLineSuccess(
                         time.time() - start, self.total_model_time, res.new_proof, [],
                     )
@@ -148,6 +161,58 @@ class BFSProverSearcher:
                     depth = node.depth + 1
                     score = self._score(cum, depth)         # / L^α
                     seq += 1
-                    heapq.heappush(frontier, _QNode(-score, seq, res, cum, depth))
+                    child_id = seq
+                    self.node_parent[child_id] = (node.node_id, tactic)
+                    heapq.heappush(frontier, _QNode(-score, seq, res, cum, depth, child_id))
                 # INVALID → terminal, 버림
+        self._dump_trace()
         return StraightLineFailure(time.time() - start, self.total_model_time, [])
+
+    # ── 트리 덤프(expert-iter/DPO 데이터) ──────────────────────────────
+    def _record_state(self, node_id: int, proof, dset, client) -> None:
+        if not self.trace_out or node_id in self.trace_records:
+            return
+        try:
+            fmt = client.formatters[0]
+            example = fmt.example_from_step(len(proof.steps) - 1, proof.proof_idx, dset)
+            state = example.to_json()
+        except Exception:
+            state = None
+        self.trace_records[node_id] = {"state_example": state, "tactics": []}
+
+    def _record_tactic(self, node_id: int, tactic: str, result: str) -> None:
+        if not self.trace_out:
+            return
+        rec = self.trace_records.get(node_id)
+        if rec is not None:
+            rec["tactics"].append({
+                "tactic": tactic, "result": result,
+                "leads_to_success": (result == "COMPLETE"),
+            })
+
+    def _mark_success_path(self, node_id: int, tactic: str) -> None:
+        """COMPLETE 낸 (node,tactic)부터 root까지 부모 tactic들을 성공경로로 표시."""
+        if not self.trace_out:
+            return
+        cur, tac = node_id, tactic
+        while True:
+            rec = self.trace_records.get(cur)
+            if rec is not None:
+                for t in rec["tactics"]:
+                    if t["tactic"] == tac:
+                        t["leads_to_success"] = True
+            if cur not in self.node_parent:
+                break
+            cur, tac = self.node_parent[cur]
+
+    def _dump_trace(self) -> None:
+        if not self.trace_out or not self.trace_records:
+            return
+        import json
+        from pathlib import Path
+        p = Path(self.trace_out)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with p.open("a") as f:
+            for rec in self.trace_records.values():
+                if rec.get("state_example") is not None:
+                    f.write(json.dumps(rec, ensure_ascii=False) + "\n")
