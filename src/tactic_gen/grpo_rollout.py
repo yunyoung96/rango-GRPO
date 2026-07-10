@@ -1,0 +1,114 @@
+#!/usr/bin/env python3
+"""GRPO rollout 수집기 — 정책 π_old로 정리마다 G개 증명 시도 생성 + Coq 검증 → 그룹 jsonl.
+
+각 시도(attempt): 현재 상태에서 next-tactic 1개 샘플(temperature) → check_proof 적용,
+COMPLETE(보상1)/INVALID·max_steps(보상0)까지 반복. step마다 (LmExample, tactic) 기록
+(서버가 하던 collation을 학습 때 동일 재현하려 example_json 저장).
+
+출력 jsonl(줄=그룹):
+  {"theorem": <idx>, "attempts": [{"steps":[{"example":<json>,"tactic":str}], "reward":0/1}, ...]}
+
+rollout은 서버(retrieval)+Coq이 필요 → 평가/실행 단계에서 구동. grpo_train.py가 소비.
+★OCaml 무관.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+from typing import Any, Optional
+
+from model_deployment.proof_manager import ProofManager, TacticResult
+from model_deployment.tactic_gen_client import TacticGenClient
+
+
+def rollout_attempt(
+    tactic_client: TacticGenClient,
+    proof_manager: ProofManager,
+    theorem: Any,
+    initial_proof: str,
+    max_steps: int,
+    temperature_seed: Optional[int] = None,
+) -> dict:
+    """한 증명 시도. 반환 {"steps":[{example,tactic}], "reward":0/1}."""
+    if temperature_seed is not None and hasattr(tactic_client, "set_seed"):
+        tactic_client.set_seed(temperature_seed)
+    steps: list[dict] = []
+    check = proof_manager.check_proof(initial_proof, theorem)
+    if check.tactic_result != TacticResult.VALID or check.new_proof is None:
+        return {"steps": [], "reward": 0}
+    script = initial_proof
+    reward = 0
+    for _ in range(max_steps):
+        new_proof = check.new_proof
+        if new_proof is None:
+            break
+        dset = proof_manager.build_dset_file(new_proof)
+        proof = dset.proofs[-1]
+        # 서버가 만들 example 재현: 현재 step 기준 formatter example.
+        fmt = tactic_client.formatters[0]
+        example = fmt.example_from_step(len(proof.steps) - 1, proof.proof_idx, dset)
+        prefix = proof.proof_prefix_to_string(proof.steps[-1], include_theorem=False)
+        recs = tactic_client.get_recs(
+            len(proof.steps) - 1, proof, dset, 1,
+            beam=False, file_prefix=proof_manager.file_prefix,
+        )
+        if not recs.next_tactic_list:
+            break
+        tactic = recs.next_tactic_list[0]
+        steps.append({"example": example.to_json(), "tactic": tactic})
+        check = proof_manager.check_proof(prefix + tactic, new_proof.theorem)
+        if check.tactic_result == TacticResult.COMPLETE:
+            reward = 1
+            break
+        if check.tactic_result == TacticResult.INVALID:
+            break
+        script = prefix + tactic
+    return {"steps": steps, "reward": reward}
+
+
+def collect_group(
+    tactic_client: TacticGenClient,
+    proof_manager: ProofManager,
+    theorem: Any,
+    theorem_id: int,
+    group_size: int,
+    max_steps: int,
+    initial_proof: str = "",
+) -> dict:
+    """정리 하나에 대해 G개 시도 → 그룹."""
+    attempts = []
+    for g in range(group_size):
+        att = rollout_attempt(
+            tactic_client, proof_manager, theorem, initial_proof, max_steps,
+            temperature_seed=g + 1,
+        )
+        attempts.append(att)
+    n_succ = sum(a["reward"] for a in attempts)
+    print(f"  [rollout] thm {theorem_id}: {n_succ}/{group_size} 성공, "
+          f"평균 step {sum(len(a['steps']) for a in attempts)/max(group_size,1):.1f}")
+    return {"theorem": theorem_id, "attempts": attempts}
+
+
+def append_group(out_path: Path, group: dict) -> None:
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with out_path.open("a") as f:
+        f.write(json.dumps(group, ensure_ascii=False) + "\n")
+
+
+def main():
+    ap = argparse.ArgumentParser(description="GRPO rollout 수집(run_thm 인프라 필요)")
+    ap.add_argument("--group_size", type=int, default=8)
+    ap.add_argument("--max_steps", type=int, default=20)
+    ap.add_argument("--out", default="data/grpo_rollouts/rollouts.jsonl")
+    ap.add_argument("--num", type=int, default=40, help="정리 수(train split)")
+    ap.add_argument("--start", type=int, default=200, help="eval셋과 분리 오프셋")
+    args = ap.parse_args()
+    # 실제 구동은 run_thm의 서버/proof_manager 셋업을 재사용하는 드라이버에서 호출.
+    # (여기서는 단독 실행 대신 collect_group을 라이브러리로 호출하는 것을 권장.)
+    print("grpo_rollout: collect_group()을 run_thm 셋업과 함께 호출하세요.")
+    print(f"  설정: group={args.group_size} max_steps={args.max_steps} out={args.out}")
+
+
+if __name__ == "__main__":
+    main()
