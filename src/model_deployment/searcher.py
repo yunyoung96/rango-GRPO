@@ -33,12 +33,16 @@ from model_deployment.bfs_prover_searcher import (
     BFSProverSearchConf,
     BFSProverSearcher,
 )
+from model_deployment.quarry_searcher import (
+    QuarrySearchConf,
+    QuarrySearcher,
+)
 
 SuccessfulSearch = ClassicalSuccess | StraightLineSuccess | WholeProofSuccess
 FailedSearch = ClassicalFailure | StraightLineFailure | WholeProofFailure
 SearchResult = SuccessfulSearch | FailedSearch
 
-Searcher = ClassicalSearcher | StraightLineSearcher | WholeProofSearcher | PortfolioSearcher | RMaxTSSearcher | BFSProverSearcher
+Searcher = ClassicalSearcher | StraightLineSearcher | WholeProofSearcher | PortfolioSearcher | RMaxTSSearcher | BFSProverSearcher | QuarrySearcher
 SearcherConf = (
     ClassicalSearchConf
     | StraightLineSearcherConf
@@ -46,6 +50,7 @@ SearcherConf = (
     | PortfolioSearchConf
     | RMaxTSSearchConf
     | BFSProverSearchConf
+    | QuarrySearchConf
 )
 
 
@@ -64,6 +69,8 @@ def searcher_conf_from_yaml(yaml_data: Any) -> SearcherConf:
             return RMaxTSSearchConf.from_yaml(yaml_data)
         case BFSProverSearchConf.ALIAS:
             return BFSProverSearchConf.from_yaml(yaml_data)
+        case QuarrySearchConf.ALIAS:
+            return QuarrySearchConf.from_yaml(yaml_data)
         case _:
             raise ValueError("Searcher not found.")
 
@@ -84,3 +91,5 @@ def searcher_from_conf(
             return RMaxTSSearcher.from_conf(conf, tactic_gens, manager)
         case BFSProverSearchConf():
             return BFSProverSearcher.from_conf(conf, tactic_gens, manager)
+        case QuarrySearchConf():
+            return QuarrySearcher.from_conf(conf, tactic_gens, manager)

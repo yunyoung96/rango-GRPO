@@ -1,5 +1,18 @@
 # Quarry (Planning to Hammer, 2606.17981) — FULL 구현 계획 (최종 작업)
 
+> **[구현 완료 2026-07-10 KST]** 아래 6개 컴포넌트 전부 코드화. 평가(실험)만 마지막에 실행 예정.
+> 구현 파일:
+> - `src/model_deployment/quarry_features.py` — φ 28차원 (C, 텍스트 레벨 intro 시뮬)
+> - `src/model_deployment/quarry_difficulty.py` — 선형 난이도 모델 + pairwise 학습 (C, F)
+> - `src/model_deployment/quarry_searcher.py` — 분해생성/파서/검증/hammer/재귀 SolveGoal (A,B,D,E)
+> - `scripts/train_quarry_difficulty.py` — Algorithm 2 오프라인 학습 (F)
+> - raw 생성 경로: `model_wrapper.generate_raw` → server `generate_raw` RPC → client `generate_raw`
+> - alias: `quarry`(학습 θ), `quarry-heur`(heuristic θ), `quarry-trace`(trace 수집)
+> **핵심 환경 대체**: check_proof가 "admit."/"Lemma" 문자열을 차단 → admit 기반 type-check 불가.
+> 대신 `assert (ℓ) as H.` 서브골을 **재귀로 실제 증명**해 스플라이스(admit 없이 동등 검증, Qed 확인).
+> 순수-로직(특징/난이도/파서) 단위테스트 통과. OCaml/opam 불변.
+
+
 > 사용자 지시: **맨 마지막에 ablation 없이 full 구현, 하나도 빠뜨리지 말 것.**
 > ★우리 환경에 이상적: **Rocq(Coq) 네이티브** + CoqHammer(설치됨) + LLM(rango 1.3B) + coqpyt(=SerAPI 역할).
 > Lean 논문들(rmaxts/bfs)과 달리 모델 핸디캡 적음 — 제대로 성능 날 여지.

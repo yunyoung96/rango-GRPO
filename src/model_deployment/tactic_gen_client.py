@@ -496,6 +496,24 @@ class LocalTacticGenClient:
         chosen_url = random.choice(self.urls)
         self.session.post(chosen_url, json=request_data)
 
+    def generate_raw(
+        self,
+        prompt: str,
+        n: int = 8,
+        max_new_tokens: int = 256,
+        temperature: float = 1.0,
+    ) -> list[str]:
+        """자유형 생성(Quarry 분해). 서버 generate_raw RPC 호출."""
+        request_data = {
+            "method": "generate_raw",
+            "params": [prompt, n, max_new_tokens, temperature],
+            "jsonrpc": "2.0",
+            "id": hash((prompt, n, max_new_tokens)) & 0x7FFFFFFF,
+        }
+        chosen_url = random.choice(self.urls)
+        response = self.session.post(chosen_url, json=request_data).json()
+        return response["result"]
+
     @classmethod
     def from_conf(cls, conf: LocalTacticGenClientConf) -> TacticGenClient:
         return cls(

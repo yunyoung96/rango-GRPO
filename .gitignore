@@ -56,3 +56,4 @@ all_log/*.log
 # heavy model downloads / generated RL data
 models_dl/
 data/vguided_trees/
+data/quarry_traces/

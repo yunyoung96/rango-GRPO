@@ -45,6 +45,17 @@ def get_recs(
 
 
 @dispatcher.add_method
+def generate_raw(
+    prompt: str,
+    n: int = 8,
+    max_new_tokens: int = 256,
+    temperature: float = 1.0,
+) -> list[str]:
+    """자유형 생성 RPC (Quarry 분해). collator 우회, prompt 그대로."""
+    return wrapper.generate_raw(prompt, n, max_new_tokens, temperature)
+
+
+@dispatcher.add_method
 def set_model_seed(seed: int) -> None:
     set_seed(seed)
 

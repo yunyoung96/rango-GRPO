@@ -207,6 +207,40 @@ class DecoderLocalWrapper:
                 )
                 return ModelResult(tactics, scores, lengths)
 
+    def generate_raw(
+        self,
+        prompt: str,
+        n: int = 8,
+        max_new_tokens: int = 256,
+        temperature: float = 1.0,
+    ) -> list[str]:
+        """자유형(free-form) 생성. collator/next-tactic 포맷을 우회하고 prompt를 그대로
+        토크나이즈해 샘플링한다. Quarry 분해 생성(=[LEMMA]/[TARGET] 블록)에 사용."""
+        inputs = self.tokenizer(
+            prompt,
+            max_length=self.hard_seq_len,
+            truncation=True,
+            return_tensors="pt",
+        )
+        generate_kwargs = dict(
+            max_new_tokens=max_new_tokens,
+            do_sample=temperature > 0,
+            num_return_sequences=n,
+            num_beams=1,
+            attention_mask=inputs["attention_mask"].cuda(),
+            pad_token_id=self.tokenizer.eos_token_id,
+        )
+        if temperature > 0:
+            generate_kwargs["temperature"] = temperature
+        with torch.no_grad():
+            outputs = self.model.generate(
+                inputs["input_ids"].cuda(),
+                **generate_kwargs,
+            )
+        input_num_tokens = inputs["input_ids"].shape[1]
+        generated_seqs = outputs[:, input_num_tokens:]
+        return self.tokenizer.batch_decode(generated_seqs, skip_special_tokens=True)
+
     @classmethod
     def get_training_conf(cls, checkpoint_loc: Path) -> Any:
         training_conf_loc = checkpoint_loc.parent / TRAINING_CONF_NAME
@@ -244,6 +278,15 @@ class StubWrapper:
         token_mask: Optional[str],
     ) -> ModelResult:
         return ModelResult([], [], [])
+
+    def generate_raw(
+        self,
+        prompt: str,
+        n: int = 8,
+        max_new_tokens: int = 256,
+        temperature: float = 1.0,
+    ) -> list[str]:
+        return []
 
 
 ModelWrapper = DecoderLocalWrapper | StubWrapper

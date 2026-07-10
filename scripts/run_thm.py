@@ -26,6 +26,7 @@ from model_deployment.searcher import (
 from model_deployment.portfolio_searcher import PortfolioSearchConf
 from model_deployment.rmaxts_searcher import RMaxTSSearchConf
 from model_deployment.bfs_prover_searcher import BFSProverSearchConf
+from model_deployment.quarry_searcher import QuarrySearchConf
 from model_deployment.run_proof import TestProofConf
 
 from model_deployment.classical_searcher import ClassicalSuccess, ClassicalFailure
@@ -240,6 +241,27 @@ def get_searcher_conf(model_alias: str) -> SearcherConf:
             return BFSProverSearchConf(timeout=timeout, alpha=0.0, expand_width=2, print_proofs=True)
         case "bfs-a1":           # ablation: full length-norm(α=1.0, per-tactic 평균)
             return BFSProverSearchConf(timeout=timeout, alpha=1.0, expand_width=2, print_proofs=True)
+
+        case "quarry":
+            # Quarry(Planning to Hammer, 2606.17981) FULL: LLM 분해 + CoqHammer 재귀 + 난이도 랭킹.
+            return QuarrySearchConf(
+                timeout=timeout, k=8, branch=1, max_depth=5,
+                max_llm_calls=60, print_proofs=True,
+                difficulty_ckpt="models/quarry_difficulty/difficulty.json",
+            )
+        case "quarry-heur":
+            # Quarry, 난이도 모델 = heuristic θ(학습 전). ablation 아님, 학습X 버전.
+            return QuarrySearchConf(
+                timeout=timeout, k=8, branch=1, max_depth=5,
+                max_llm_calls=60, print_proofs=True, difficulty_ckpt=None,
+            )
+        case "quarry-trace":
+            # trace 수집용(Algorithm 2 학습 데이터). difficulty=heuristic, trace 저장.
+            return QuarrySearchConf(
+                timeout=timeout, k=8, branch=2, max_depth=5,
+                max_llm_calls=80, print_proofs=True, difficulty_ckpt=None,
+                trace_out="data/quarry_traces/traces.jsonl",
+            )
 
         case "rango-qed":
             # QEDCartographer 충실 재구현: coq2vec value + product-over-subgoals backup으로
