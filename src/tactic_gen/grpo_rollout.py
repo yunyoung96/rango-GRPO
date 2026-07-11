@@ -15,11 +15,16 @@ from __future__ import annotations
 
 import argparse
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
 from model_deployment.proof_manager import ProofManager, TacticResult
 from model_deployment.tactic_gen_client import TacticGenClient
+from model_deployment.straight_line_searcher import (
+    StraightLineSuccess,
+    StraightLineFailure,
+)
 
 
 def rollout_attempt(
@@ -94,6 +99,64 @@ def append_group(out_path: Path, group: dict) -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with out_path.open("a") as f:
         f.write(json.dumps(group, ensure_ascii=False) + "\n")
+
+
+@dataclass
+class GRPORolloutSearchConf:
+    """run_thm 인프라 재사용을 위한 '탐색기' 형태의 rollout 수집기 설정.
+    .search()가 정리에 G개 시도를 생성·검증해 그룹 jsonl에 append."""
+    timeout: int
+    group_size: int = 8
+    max_steps: int = 20
+    out: str = "data/grpo_rollouts/rollouts.jsonl"
+    initial_proof: Optional[str] = None
+    print_proofs: bool = True
+    ALIAS = "grpo_rollout"
+
+    @classmethod
+    def from_yaml(cls, yaml_data: Any) -> "GRPORolloutSearchConf":
+        return cls(
+            yaml_data["timeout"],
+            yaml_data.get("group_size", 8),
+            yaml_data.get("max_steps", 20),
+            yaml_data.get("out", "data/grpo_rollouts/rollouts.jsonl"),
+            yaml_data.get("initial_proof", None),
+            yaml_data.get("print_proofs", True),
+        )
+
+
+class GRPORolloutSearcher:
+    def __init__(self, tactic_clients, proof_manager, conf: GRPORolloutSearchConf):
+        self.tactic_clients = tactic_clients
+        self.proof_manager = proof_manager
+        self.conf = conf
+        self.total_model_time = 0.0
+        init_dset = proof_manager.get_initial_context()
+        if init_dset is None:
+            raise ValueError("Could not get initial datasetfile")
+        self.theorem = init_dset.proofs[-1].theorem
+
+    @classmethod
+    def from_conf(cls, conf, tactic_clients, proof_manager):
+        return cls(tactic_clients, proof_manager, conf)
+
+    def search(self, **kwargs):
+        import time
+        start = time.time()
+        thm_text = self.theorem.term.text if hasattr(self.theorem, "term") else str(self.theorem)
+        thm_id = abs(hash(thm_text)) % (10 ** 12)
+        group = collect_group(
+            self.tactic_clients[0], self.proof_manager, self.theorem, thm_id,
+            self.conf.group_size, self.conf.max_steps, self.conf.initial_proof or "",
+        )
+        append_group(Path(self.conf.out), group)
+        n_succ = sum(a["reward"] for a in group["attempts"])
+        elapsed = time.time() - start
+        # rollout은 데이터 수집이 목적 → 항상 Failure 반환(run_all 성공집계 무의미).
+        # 그룹 통계는 로그로. (성공 시도가 있으면 advantage 신호가 생김)
+        print(f"[GRPO-ROLLOUT] thm={thm_id} {n_succ}/{self.conf.group_size} 성공 "
+              f"→ {self.conf.out} ({elapsed:.1f}s)")
+        return StraightLineFailure(elapsed, self.total_model_time, [])
 
 
 def main():

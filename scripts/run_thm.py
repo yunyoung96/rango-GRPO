@@ -27,6 +27,7 @@ from model_deployment.portfolio_searcher import PortfolioSearchConf
 from model_deployment.rmaxts_searcher import RMaxTSSearchConf
 from model_deployment.bfs_prover_searcher import BFSProverSearchConf
 from model_deployment.quarry_searcher import QuarrySearchConf
+from tactic_gen.grpo_rollout import GRPORolloutSearchConf
 from model_deployment.run_proof import TestProofConf
 
 from model_deployment.classical_searcher import ClassicalSuccess, ClassicalFailure
@@ -247,6 +248,12 @@ def get_searcher_conf(model_alias: str) -> SearcherConf:
         case "bfs-a1":           # ablation: full length-norm(α=1.0, per-tactic 평균)
             return BFSProverSearchConf(timeout=timeout, alpha=1.0, expand_width=2, print_proofs=True)
 
+        case "grpo-rollout":
+            # GRPO rollout 수집: 정리당 G개 증명 시도 생성·검증 → 그룹 jsonl(학습 데이터).
+            return GRPORolloutSearchConf(
+                timeout=timeout, group_size=8, max_steps=20,
+                out="data/grpo_rollouts/rollouts.jsonl",
+            )
         case "quarry":
             # Quarry(Planning to Hammer, 2606.17981) FULL: LLM 분해 + CoqHammer 재귀 + 난이도 랭킹.
             return QuarrySearchConf(
@@ -404,7 +411,7 @@ def get_tactic_confs(model_alias: str, split: Split) -> list[TacticGenConf]:
     )
 
     match model_alias:
-        case "rango" | "rango-best-beam" | "rango-best-rand" | "rango-mem" | "rango-mem-wide" | "rango-portfolio" | "rango-portfolio-08" | "rango-portfolio-06" | "rango-vlog" | "rango-vguided" | "rango-hybrid" | "rango-hybrid-v" | "rango-qed" | "rango-qed-hybrid" | "rmaxts" | "rmaxts-noreward" | "rmaxts-nomerge" | "rmaxts-nomcts" | "bfs-prover" | "bfs-a0" | "bfs-a1":
+        case "rango" | "rango-best-beam" | "rango-best-rand" | "rango-mem" | "rango-mem-wide" | "rango-portfolio" | "rango-portfolio-08" | "rango-portfolio-06" | "rango-vlog" | "rango-vguided" | "rango-hybrid" | "rango-hybrid-v" | "rango-qed" | "rango-qed-hybrid" | "rango-qed-sum" | "rango-qed-min" | "rmaxts" | "rmaxts-noreward" | "rmaxts-nomerge" | "rmaxts-nomcts" | "bfs-prover" | "bfs-a0" | "bfs-a1" | "bfs-prover-trace" | "grpo-rollout" | "quarry" | "quarry-heur" | "quarry-trace":
             checkpoint = (
                 "models/deepseek-bm25-proof-tfidf-proj-thm-prem-final/checkpoint-54500"
             )
