@@ -21,3 +21,8 @@
 - GRPO는 단순 straight-line 탐색 + RL 학습된 정책만으로 최고 탐색법과 동일 성능, regress 0(더 깨끗).
 - 탐색 정교화(RMaxTS MCTS/reward/merge)는 40-라운드에서 전부 무효였으나 모델 학습은 즉시 +4.
 - 극소량 학습(39그룹/2epoch)으로도 baseline 완전 지배 → "진짜 레버는 모델 학습" 가설 실증.
+
+## BFS-full (expert-iter + DPO) 결과 @40
+- 13/40 (+1 vs baseline 12), unique [2,11,55], regress [5,41].
+- untrained BFS-Prover@40(13)와 동수 — DPO 학습 약함(35쌍,acc0.58) → 순증 없이 이동만.
+- 대조: GRPO는 +4 clean. DPO는 선호쌍 부족으로 효과 미미(정직한 결과).
