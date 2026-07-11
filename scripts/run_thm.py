@@ -423,6 +423,16 @@ def get_tactic_confs(model_alias: str, split: Split) -> list[TacticGenConf]:
             )
             return [DecoderTacticGenConf(Path(checkpoint), [formatter])]
 
+        case "rango-grpo":
+            # GRPO(DeepSeek-Prover-V1.5)로 RL fine-tune한 rango adapter + 동일 retrieval 프롬프트.
+            formatter = GeneralFormatterConf(
+                premise_client_conf=tfidf_premise_conf,
+                proof_retriever_conf=bm25_proof_conf,
+                num_premises=50,
+                num_proofs=20,
+            )
+            return [DecoderTacticGenConf(Path("models/rango-grpo/adapter"), [formatter])]
+
         case "rango-6.7b":
             # 헤비 레버 1: raw DeepSeek-Coder-6.7B-instruct(LoRA 미적용) + 동일 Rango 프롬프트.
             # 모델 용량이 진짜 레버인지 검증(구조형 하드코어 겨냥).
