@@ -236,7 +236,7 @@ def get_searcher_conf(model_alias: str) -> SearcherConf:
         case "rmaxts-nomcts":    # ablation: DUCB 제거(uniform 랜덤 선택)
             return RMaxTSSearchConf(timeout=timeout, print_proofs=True, use_ducb=False)
 
-        case "bfs-prover":       # BFS-Prover length-normalized best-first, α=0.5(논문)
+        case "bfs-prover" | "bfs-dpo":  # BFS-Prover length-normalized best-first, α=0.5(논문)
             return BFSProverSearchConf(timeout=timeout, alpha=0.5, expand_width=2, print_proofs=True)
         case "bfs-prover-trace":  # BFS-Prover + 트리 덤프(expert-iter/DPO 학습 데이터 수집)
             return BFSProverSearchConf(
@@ -432,6 +432,16 @@ def get_tactic_confs(model_alias: str, split: Split) -> list[TacticGenConf]:
                 num_proofs=20,
             )
             return [DecoderTacticGenConf(Path("models/rango-grpo/adapter"), [formatter])]
+
+        case "bfs-dpo":
+            # BFS-Prover full: DPO(+expert-iter)로 학습한 adapter + BFS-Prover 탐색.
+            formatter = GeneralFormatterConf(
+                premise_client_conf=tfidf_premise_conf,
+                proof_retriever_conf=bm25_proof_conf,
+                num_premises=50,
+                num_proofs=20,
+            )
+            return [DecoderTacticGenConf(Path("models/bfs-dpo/adapter"), [formatter])]
 
         case "rango-6.7b":
             # 헤비 레버 1: raw DeepSeek-Coder-6.7B-instruct(LoRA 미적용) + 동일 Rango 프롬프트.
