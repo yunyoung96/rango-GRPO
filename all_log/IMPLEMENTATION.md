@@ -13,6 +13,262 @@
 
 ---
 
+# 코드 단위 딥다이브 — search & 학습이 정확히 어떻게 도는가
+
+> 실제 소스를 **줄 단위로** 따라간다. 각 `▶` 제목 클릭 시 펼쳐짐(GitHub/VSCode 토글). 코드는 **실제 소스 그대로**.
+
+## PART A · SEARCH — 증명 하나를 어떻게 찾는가 (BFS 예시)
+
+> 🟦 **개념 · 한 줄 요약**: "지금 goal → 모델에게 다음 tactic 후보 요청 → Coq에 넣어봄 → VALID면 계속, COMPLETE면 끝, INVALID면 버림"을 **우선순위 큐**로 반복.
+
+<details>
+<summary><b>▶ A-1. 준비: root 노드를 큐에 넣는다</b></summary>
+
+```python
+def search(self, **kwargs) -> StraightLineSuccess | StraightLineFailure:
+    start = time.time()
+    frontier: list[_QNode] = []           # ① 우선순위 큐(heap). 제일 유망한 노드부터 꺼냄
+    seq = 0
+    heapq.heappush(frontier, _QNode(-0.0, seq, self.init_check, 0.0, 0, 0))  # ② root(빈 증명) 삽입
+    client = self.tactic_clients[0]       # ③ 정책 모델(retrieval 포함) 핸들
+```
+- **①** `frontier` = min-heap. `neg_score`가 작을수록 먼저 꺼내짐 → **score 큰(유망한) 노드 우선**.
+- **②** `_QNode(neg_score=-0.0, seq, check_result=init_check, cum_logprob=0.0, depth=0, node_id=0)`. `init_check` = 빈 증명 check_proof 결과(= 정리 시작 goal).
+- **③** `client.get_recs`가 실제 모델 호출. 입력엔 **BM25 이웃 증명 + TF-IDF premise가 이미 붙어있다**.
+</details>
+
+<details>
+<summary><b>▶ A-2. 메인 루프: 가장 유망한 노드를 꺼내 tactic 후보를 받는다</b></summary>
+
+```python
+    while frontier and time.time() - start < self.timeout:
+        node = heapq.heappop(frontier)              # ① 제일 유망한 노드 pop
+        if node.depth >= self.max_depth: continue   # ② 너무 깊으면 버림(max_depth=50)
+        new_proof = node.check_result.new_proof
+        dset = self.proof_manager.build_dset_file(new_proof)   # ③ 현재상태 → retrieval용 DatasetFile
+        proof = dset.proofs[-1]
+        script = proof.proof_prefix_to_string(proof.steps[-1], include_theorem=False)  # ④ 여기까지 증명 텍스트
+        recs = client.get_recs(                     # ⑤ 모델에게 tactic E=2개 요청(temperature 샘플)
+            len(proof.steps) - 1, proof, dset, self.expand_width,
+            beam=False, file_prefix=self.proof_manager.file_prefix,
+        )
+```
+- **①** pop = 지금까지 score(길이정규화 누적 log-prob) 최고인 부분증명.
+- **③** `build_dset_file`: 현재 상태를 모델 입력 포맷으로. **여기서 retrieval이 현재 goal에 맞는 이웃 증명을 붙인다.**
+- **④** `script` = root부터 지금까지의 tactic 텍스트(다음 check_proof에 prefix).
+- **⑤** `get_recs(n=2, beam=False)` → temperature 샘플로 다른 tactic 2개 + 각 `score`(=Σ token log-prob).
+</details>
+
+<details>
+<summary><b>▶ A-3. 각 후보를 Coq에 실제로 넣어보고 분기한다</b></summary>
+
+```python
+        for tactic, tac_logprob in zip(recs.next_tactic_list, recs.score_list):
+            res = self.proof_manager.check_proof(script + tactic, new_proof.theorem)  # ① Coq 검증!
+            if res.tactic_result == TacticResult.COMPLETE:          # ② 증명 끝!
+                return StraightLineSuccess(..., res.new_proof, [])
+            if res.tactic_result == TacticResult.VALID:             # ③ 유효 → 자식으로 큐에 추가
+                cum = node.cum_logprob + tac_logprob                #    누적 log-prob 갱신
+                depth = node.depth + 1
+                score = self._score(cum, depth)                     #    score = cum / depth^α
+                heapq.heappush(frontier, _QNode(-score, seq, res, cum, depth, child_id))
+            # INVALID → 그 가지 버림
+```
+- **①** `check_proof(script + tactic)` = 지금까지 증명 + 이 tactic을 **Coq이 실제 실행**해 판정: COMPLETE / VALID / INVALID.
+- **③** `_score`:
+  ```python
+  def _score(self, cum_logprob, depth):
+      L = max(1, depth)
+      return cum_logprob / (L ** self.alpha)   # α=0.5. 긴 증명 페널티 완화(길이 정규화)
+  ```
+  이 score로 heap 우선순위 결정.
+
+> 🟦 **개념 · 왜 길이로 나누나**: tactic을 곱해갈수록 log 합이 계속 작아진다. 안 나누면 짧은 증명만 유리 → 깊은 증명을 못 판다. `÷L^α`로 공정하게.
+> 🟥 **결과**: α=0 → 12, α=0.5 → 13, **α=1.0 → 16** (@40, baseline 12).
+</details>
+
+<details>
+<summary><b>▶ A-4. (참고) RMaxTS는 여기에 트리 선택(DUCB)이 추가된다</b></summary>
+
+BFS는 "score 큰 것부터"가 전부지만, RMaxTS는 **어느 노드를 확장할지 DUCB로 선택**:
+```python
+def ducb(t):                                    # 노드에서 tactic t의 점수
+    n = node.N.get(t, 0.0) + 1e-9
+    q = node.W.get(t, 0.0) / n                  # 평균 가치(활용)
+    return q + math.sqrt(2.0 * math.log(total) / n)   # + 탐험 보너스(덜 가본 것)
+best_t = max(node.tactics, key=ducb)
+```
+롤아웃 후 `reward = 1[새 노드 생김]`을 backprop: `N←γN+1, W←γW+R` (γ=0.99).
+> 🟥 결과: DUCB/reward/merge **다 뗄수록** 좋아짐(full 11 → −reward 14). 미학습 1.3B엔 이 정교함이 무효.
+</details>
+
+## PART B · 학습 (GRPO) — 정책을 어떻게 강화하는가
+
+> 🟦 **개념 · 3단계**: ① **rollout**(정리마다 8번 시도, 성공/실패 기록) → ② **advantage**(그룹 안 성공+/실패−) → ③ **update**(성공 궤적 tactic 확률↑, 실패↓, 단 조금씩).
+
+### B-1. rollout — 학습 데이터(성공/실패 궤적) 모으기
+
+<details>
+<summary><b>▶ 한 번의 증명 시도(attempt) — search와 거의 같지만 "기록"이 목적</b></summary>
+
+```python
+def rollout_attempt(tactic_client, proof_manager, theorem, initial_proof, max_steps,
+                    temperature_seed=None, value_fn=None, shaping_coef=0.3):
+    tactic_client.set_seed(temperature_seed)          # ① 시도마다 다른 seed → 다양한 궤적
+    steps = []
+    check = proof_manager.check_proof(initial_proof, theorem)
+    reward = 0.0
+    for _ in range(max_steps):                        # ② 최대 20스텝까지 tactic 이어감
+        dset = proof_manager.build_dset_file(check.new_proof)
+        proof = dset.proofs[-1]
+        example = tactic_client.formatters[0].example_from_step(...)   # ③ 모델이 본 입력(retrieval 포함)
+        prefix = proof.proof_prefix_to_string(proof.steps[-1], include_theorem=False)
+        recs = tactic_client.get_recs(..., 1, beam=False, ...)         # ④ tactic 1개 샘플
+        tactic = recs.next_tactic_list[0]
+        steps.append({"example": example.to_json(), "tactic": tactic}) # ⑤ (상태, tactic) 기록!
+        check = proof_manager.check_proof(prefix + tactic, ...)
+        if check.tactic_result == COMPLETE: reward = 1.0; break         # ⑥ 성공 → 보상 1
+        if check.tactic_result == INVALID:  break                      #    사망
+    return {"steps": steps, "reward": reward}
+```
+- **①** `set_seed(g)` — 8번 시도(`g=1..8`)가 서로 다르게 샘플되도록.
+- **③⑤** search와 결정적 차이: **매 스텝의 `example`(모델 입력)과 고른 `tactic`을 저장**. 나중에 이 (입력,출력)으로 확률을 재계산해 학습.
+- **⑥** 보상 **binary**: 완결=1, 아니면 0. (E2 dense면 미완에 QED value 부분보상)
+</details>
+
+<details>
+<summary><b>▶ 그룹 = 정리 하나에 8번 → 성공/실패 섞인 8개 (rollouts.jsonl 한 줄)</b></summary>
+
+```python
+def collect_group(..., group_size, ...):
+    attempts = [rollout_attempt(..., temperature_seed=g+1, ...) for g in range(group_size)]  # G=8
+    return {"theorem": theorem_id, "attempts": attempts}
+```
+```json
+{"theorem": 779038374015,
+ "attempts": [ {"steps":[{example,tactic}, ...], "reward": 1},   ← 성공
+               {"steps":[...], "reward": 0},                     ← 실패
+               ... 8개 ... ]}
+```
+> 🟨 **함정 · 성긴 신호**: 8개가 **다 실패(전부 0)**면 우열 없어 학습 신호 0 → 정리 버려짐. 실제 39그룹 중 **신호 있는 건 11개**뿐. (GRPO 최대 병목)
+</details>
+
+### B-2. advantage — 그룹 안에서 상대평가
+
+<details>
+<summary><b>▶ 실제 코드 (grpo.py) — 성공은 +, 실패는 −</b></summary>
+
+```python
+def group_advantages(rewards):                 # rewards = [1,0,0,1,0,0,0,0]
+    r = rewards.float()
+    mean = r.mean()                             # 0.25
+    std = r.std(unbiased=False)                 # 0.43
+    if std < EPS_STD:                           # 전부 같으면(다 0 or 다 1)
+        return torch.zeros_like(r)              #   → advantage 0 (학습 안 함)
+    return (r - mean) / (std + EPS_STD)         # 성공→+1.7, 실패→−0.58
+```
+그리고 시도의 advantage를 그 시도의 **모든 (state,tactic) 스텝**에 부여(`flatten_group`):
+```python
+for i, a in enumerate(attempts):
+    for st in a["steps"]:
+        prompts.append(collate(st["example"]))   # 모델 입력(prompt)
+        comps.append(st["tactic"])               # 그때 고른 tactic(completion)
+        advs.append(float(adv[i]))               # 이 시도의 advantage
+```
+> 🟦 **개념**: "성공 시도의 모든 tactic은 좋았다고 보고 +, 실패 시도는 −." 어느 tactic이 결정적인지는 몰라도 많은 시도를 평균내면 신호가 잡힌다(credit assignment).
+</details>
+
+### B-3. 확률 재계산 — logprob
+
+<details>
+<summary><b>▶ 모델 통과시켜 "지금 정책이 그 tactic을 낼 확률"을 구한다</b></summary>
+
+```python
+def sequence_token_logprobs(model, input_ids, attn):
+    out = model(input_ids=input_ids, attention_mask=attn)
+    logits = out.logits[:, :-1, :]                  # ① 위치 t의 출력은 토큰 t+1 예측
+    logp = torch.log_softmax(logits.float(), dim=-1)
+    tgt = input_ids[:, 1:]                           # ② 실제 다음 토큰들
+    tok_logp = logp.gather(-1, tgt.unsqueeze(-1)).squeeze(-1)   # ③ 그 토큰의 log 확률
+    pad = torch.zeros((input_ids.shape[0], 1), ...)
+    return torch.cat([pad, tok_logp], dim=1)         # (B,T): 위치 t = logp(token_t)
+```
+이걸 **세 번** 계산: `logp_new`(현재 정책 π_θ, grad O) · `logp_ref`(시작정책 동결본, grad X) · `logp_old`(온폴리시 1라운드라 = logp_ref).
+> 🟨 **함정 · 마스크**: prompt/completion을 따로 토크나이즈해 이어붙여야(`build_completion_batch`) 어느 토큰이 "생성한 tactic"(학습 대상)인지 마스크가 정확.
+</details>
+
+### B-4. 손실 & 업데이트 — 확률을 밀고 당긴다
+
+<details>
+<summary><b>▶ GRPO 손실 (grpo.py) — 실제 코드</b></summary>
+
+```python
+def grpo_batch_loss(logp_new, logp_old, logp_ref, advantages, mask, clip_eps=0.2, kl_beta=0.04):
+    ratio = torch.exp(logp_new - logp_old)          # ① ρ = 새확률/옛확률
+    adv = advantages.unsqueeze(1)
+    unclipped = ratio * adv
+    clipped = torch.clamp(ratio, 1-clip_eps, 1+clip_eps) * adv   # ② 0.8~1.2로 자름
+    surrogate = torch.minimum(unclipped, clipped)   # ③ 더 보수적인 쪽(폭주 방지)
+    kl = torch.exp(Δ) - Δ - 1                        # ④ 시작정책서 멀어진 정도(≥0)
+    per_tok = surrogate - kl_beta * kl              # ⑤ 목적 = 이득 − β·KL
+    ... loss = −(완성토큰 평균) ...
+    return loss, kl
+```
+- **①** `ratio`>1 = 지금 정책이 그 tactic을 더 잘 냄. advantage(+)면 더 키우려는 방향.
+- **②③ clip**: 한 번에 너무 키우면 위험 → 1.2배 이상 잘라 **조금씩만** 올림.
+- **④⑤ KL**: 정책이 시작점에서 너무 벗어나면 페널티 → retrieval 등 원래 실력을 안 잃게 붙잡음.
+</details>
+
+<details>
+<summary><b>▶ 학습 루프 (grpo_train.py) — 그룹마다 gradient step</b></summary>
+
+```python
+for group in groups:
+    prompts, comps, advs = flatten_group(group, collate_fn)
+    if all(abs(a) < 1e-8 for a in advs):
+        continue                                   # ① 신호 없는 그룹(다 성공/다 실패) skip
+    for s in range(0, len(prompts), micro_bsz):    # ② micro-batch
+        ids, attn, cmask = build_completion_batch(tokenizer, bp, bc, max_len, device)
+        with torch.no_grad():
+            logp_ref = sequence_token_logprobs(ref_model, ids, attn)  # ③ 레퍼런스(동결)
+            logp_old = logp_ref
+        logp_new = sequence_token_logprobs(model, ids, attn)          # ④ 현재정책(grad O)
+        loss, kl = grpo_batch_loss(logp_new, logp_old, logp_ref, ba, cmask, ...)
+        opt.zero_grad(); loss.backward()           # ⑤ 역전파
+        torch.nn.utils.clip_grad_norm_(..., 1.0)   # ⑥ gradient도 clip(안정)
+        opt.step()                                 # ⑦ LoRA 가중치만 업데이트
+```
+- **⑦** `opt`는 **LoRA 파라미터만** 대상. base 1.3B 동결, 작은 adapter만 움직임 → 값싼 학습.
+- 실제: 39그룹 × 2 epoch = **208 step**, lr=1e-6, KL≈0.01. adapter → `models/rango-grpo/adapter`.
+</details>
+
+### B-5. 결과 — 실제로 학습이 통했나
+
+> 🟥 **결과 · @40**: GRPO **16/40** (published Rango 12 대비 +4, 우리 rango 대비 +1 = idx 55만 진짜 유일).
+
+<details>
+<summary><b>▶ idx 55 agree_exten — rango는 실패, GRPO는 완주 (실제 로그)</b></summary>
+
+**rango(학습 전)** — 오프닝을 매번 바꾸며 2~3스텝 뒤 사망, 수십 번 리셋:
+```
+induction 1; simpl; intuition; eauto.   → VALID
+  intro r.                              → INVALID  ✗
+intros. inv H. split. auto. auto. intro r.        (6스텝! 거의 정답길)
+  apply H0, (agree_mregs0 (preg_of r)). → INVALID  ✗ 마지막 한 수 실패
+... valid-but-stuck, COMPLETE 미도달
+```
+**GRPO(학습 후)** — 한 궤적으로 완주(95초) → COMPLETE → Qed:
+```
+induction 1; intros; auto; try tauto.
+constructor. elim agree_sp0. auto. auto.
+intros. specialize (agree_mregs0 r). rewrite H. auto.
+eapply preg_of_data.        ← 마지막 goal 닫힘 → Qed
+```
+> 🟦 **해석**: GRPO는 새 정리를 "찾은" 게 아니다. **성공 궤적의 마무리 수순(위 4줄)에 확률을 몰아줘서**, rango가 반복해 틀리던 마지막 수(`eapply preg_of_data` 계열)를 **고르게 만든 것**. B-1~B-4가 이 한 줄을 강화한 결과.
+</details>
+
+---
+
 ## 0. 공통 인프라 (모든 searcher가 쓰는 인터페이스)
 
 > 🟦 **개념 · 이 시스템이 하는 일**
