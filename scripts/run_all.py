@@ -92,14 +92,23 @@ def main():
                         help="이 아키텍처가 어떤 아이디어로 개선한 것인지 짧은 설명 (summary.json에 기록)")
     parser.add_argument("--out", type=str, default=None, metavar="DIR",
                         help="기존 결과 디렉토리 재사용(resume). 이미 완료된 idx는 건너뜀.")
+    parser.add_argument("--idx-file", dest="idx_file", type=str, default=None, metavar="FILE",
+                        help="명시적 인덱스 리스트 파일(커리큘럼용). 지정시 --start 무시.")
     args = parser.parse_args()
 
     # compcert 인덱스 결정
-    indices = get_compcert_indices()
-    if args.start:
-        indices = indices[args.start:]
-    if args.num is not None:
-        indices = indices[: args.num]
+    if args.idx_file:
+        # (E3 커리큘럼) 명시적 인덱스 리스트 파일(한 줄에 하나) — sibling-rich 정리 등.
+        text = Path(args.idx_file).read_text().split()
+        indices = [int(x) for x in text]
+        if args.num is not None:
+            indices = indices[: args.num]
+    else:
+        indices = get_compcert_indices()
+        if args.start:
+            indices = indices[args.start:]
+        if args.num is not None:
+            indices = indices[: args.num]
 
     # 출력 디렉토리 (--out 이면 resume)
     if args.out is not None:

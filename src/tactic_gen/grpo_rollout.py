@@ -34,16 +34,20 @@ def rollout_attempt(
     initial_proof: str,
     max_steps: int,
     temperature_seed: Optional[int] = None,
+    value_fn=None,           # (E2 dense reward) goals:list[str]->float ∈(0,1). None=binary.
+    shaping_coef: float = 0.3,
 ) -> dict:
-    """한 증명 시도. 반환 {"steps":[{example,tactic}], "reward":0/1}."""
+    """한 증명 시도. 반환 {"steps":[{example,tactic}], "reward":float}.
+    binary: COMPLETE=1 else 0. dense(value_fn): 미완이면 마지막 valid 상태의 QED value×coef."""
     if temperature_seed is not None and hasattr(tactic_client, "set_seed"):
         tactic_client.set_seed(temperature_seed)
     steps: list[dict] = []
     check = proof_manager.check_proof(initial_proof, theorem)
     if check.tactic_result != TacticResult.VALID or check.new_proof is None:
-        return {"steps": [], "reward": 0}
+        return {"steps": [], "reward": 0.0}
     script = initial_proof
-    reward = 0
+    reward = 0.0
+    last_valid_goals = _goals_str(check)  # dense reward용 마지막 valid 상태 goal들
     for _ in range(max_steps):
         new_proof = check.new_proof
         if new_proof is None:
@@ -63,13 +67,35 @@ def rollout_attempt(
         tactic = recs.next_tactic_list[0]
         steps.append({"example": example.to_json(), "tactic": tactic})
         check = proof_manager.check_proof(prefix + tactic, new_proof.theorem)
+        if check.tactic_result == TacticResult.VALID:
+            last_valid_goals = _goals_str(check)
         if check.tactic_result == TacticResult.COMPLETE:
-            reward = 1
+            reward = 1.0
             break
         if check.tactic_result == TacticResult.INVALID:
             break
         script = prefix + tactic
+    # dense reward: 미완(reward=0)이고 value_fn 있으면 마지막 valid 상태의 QED value로 부분보상.
+    if reward == 0.0 and value_fn is not None and steps:
+        try:
+            reward = float(shaping_coef) * float(value_fn(last_valid_goals))
+        except Exception:
+            reward = 0.0
     return {"steps": steps, "reward": reward}
+
+
+def _goals_str(check) -> list[str]:
+    """ProofCheckResult.current_goals → goal 문자열 리스트(QED value 입력)."""
+    gs = getattr(check, "current_goals", None)
+    if not gs:
+        return []
+    out = []
+    for g in gs:
+        try:
+            out.append(repr(g))
+        except Exception:
+            pass
+    return out
 
 
 def collect_group(
@@ -80,18 +106,20 @@ def collect_group(
     group_size: int,
     max_steps: int,
     initial_proof: str = "",
+    value_fn=None,
+    shaping_coef: float = 0.3,
 ) -> dict:
     """정리 하나에 대해 G개 시도 → 그룹."""
     attempts = []
     for g in range(group_size):
         att = rollout_attempt(
             tactic_client, proof_manager, theorem, initial_proof, max_steps,
-            temperature_seed=g + 1,
+            temperature_seed=g + 1, value_fn=value_fn, shaping_coef=shaping_coef,
         )
         attempts.append(att)
-    n_succ = sum(a["reward"] for a in attempts)
-    print(f"  [rollout] thm {theorem_id}: {n_succ}/{group_size} 성공, "
-          f"평균 step {sum(len(a['steps']) for a in attempts)/max(group_size,1):.1f}")
+    n_solved = sum(1 for a in attempts if a["reward"] >= 1.0)
+    print(f"  [rollout] thm {theorem_id}: 완결 {n_solved}/{group_size}, "
+          f"보상 {[round(a['reward'],2) for a in attempts]}")
     return {"theorem": theorem_id, "attempts": attempts}
 
 
@@ -111,6 +139,8 @@ class GRPORolloutSearchConf:
     out: str = "data/grpo_rollouts/rollouts.jsonl"
     initial_proof: Optional[str] = None
     print_proofs: bool = True
+    qed_ckpt: Optional[str] = None      # (E2) dense reward용 QED value 체크포인트. None=binary.
+    shaping_coef: float = 0.3
     ALIAS = "grpo_rollout"
 
     @classmethod
@@ -122,6 +152,8 @@ class GRPORolloutSearchConf:
             yaml_data.get("out", "data/grpo_rollouts/rollouts.jsonl"),
             yaml_data.get("initial_proof", None),
             yaml_data.get("print_proofs", True),
+            yaml_data.get("qed_ckpt", None),
+            yaml_data.get("shaping_coef", 0.3),
         )
 
 
@@ -135,6 +167,12 @@ class GRPORolloutSearcher:
         if init_dset is None:
             raise ValueError("Could not get initial datasetfile")
         self.theorem = init_dset.proofs[-1].theorem
+        # (E2) dense reward: QED value 모델 로드 → value_fn(goals)->float
+        self.value_fn = None
+        if getattr(conf, "qed_ckpt", None):
+            from model_deployment.qed_cartographer import QEDValuePredictor
+            vp = QEDValuePredictor(conf.qed_ckpt)
+            self.value_fn = lambda goals: vp.value_state(goals) if goals else 0.0
 
     @classmethod
     def from_conf(cls, conf, tactic_clients, proof_manager):
@@ -148,13 +186,13 @@ class GRPORolloutSearcher:
         group = collect_group(
             self.tactic_clients[0], self.proof_manager, self.theorem, thm_id,
             self.conf.group_size, self.conf.max_steps, self.conf.initial_proof or "",
+            value_fn=self.value_fn, shaping_coef=getattr(self.conf, "shaping_coef", 0.3),
         )
         append_group(Path(self.conf.out), group)
-        n_succ = sum(a["reward"] for a in group["attempts"])
+        n_solved = sum(1 for a in group["attempts"] if a["reward"] >= 1.0)
         elapsed = time.time() - start
         # rollout은 데이터 수집이 목적 → 항상 Failure 반환(run_all 성공집계 무의미).
-        # 그룹 통계는 로그로. (성공 시도가 있으면 advantage 신호가 생김)
-        print(f"[GRPO-ROLLOUT] thm={thm_id} {n_succ}/{self.conf.group_size} 성공 "
+        print(f"[GRPO-ROLLOUT] thm={thm_id} 완결 {n_solved}/{self.conf.group_size} "
               f"→ {self.conf.out} ({elapsed:.1f}s)")
         return StraightLineFailure(elapsed, self.total_model_time, [])
 

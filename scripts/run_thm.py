@@ -250,8 +250,27 @@ def get_searcher_conf(model_alias: str) -> SearcherConf:
             # rango-grpo-bfs = GRPO 학습 정책 + 최고 탐색(BFS α=1.0) 결합.
             return BFSProverSearchConf(timeout=timeout, alpha=1.0, expand_width=2, print_proofs=True)
 
-        case "grpo-rollout":
-            # GRPO rollout 수집: 정리당 G개 증명 시도 생성·검증 → 그룹 jsonl(학습 데이터).
+        case "grpo-rollout" | "grpo-rollout-cur":
+            # GRPO rollout 수집(binary reward). cur=커리큘럼(run_all --idx-file로 정리 선택).
+            return GRPORolloutSearchConf(
+                timeout=timeout, group_size=8, max_steps=20,
+                out="data/grpo_rollouts/rollouts.jsonl",
+            )
+        case "grpo-rollout-dense":
+            # (E2) dense reward: 미완 시도에 QED value 부분보상 → 성긴 신호 완화.
+            return GRPORolloutSearchConf(
+                timeout=timeout, group_size=8, max_steps=20,
+                out="data/grpo_rollouts/rollouts.jsonl",
+                qed_ckpt="models/qed_value/qed.pt", shaping_coef=0.3,
+            )
+        case "grpo-rollout-g16":
+            # (E4) scale: G=16 샘플 → 신호 절대량↑.
+            return GRPORolloutSearchConf(
+                timeout=timeout, group_size=16, max_steps=20,
+                out="data/grpo_rollouts/rollouts.jsonl",
+            )
+        case "grpo-rollout-r2":
+            # (E1) expert-iteration: round-1 GRPO adapter 정책으로 재-rollout.
             return GRPORolloutSearchConf(
                 timeout=timeout, group_size=8, max_steps=20,
                 out="data/grpo_rollouts/rollouts.jsonl",
@@ -413,7 +432,7 @@ def get_tactic_confs(model_alias: str, split: Split) -> list[TacticGenConf]:
     )
 
     match model_alias:
-        case "rango" | "rango-best-beam" | "rango-best-rand" | "rango-mem" | "rango-mem-wide" | "rango-portfolio" | "rango-portfolio-08" | "rango-portfolio-06" | "rango-vlog" | "rango-vguided" | "rango-hybrid" | "rango-hybrid-v" | "rango-qed" | "rango-qed-hybrid" | "rango-qed-sum" | "rango-qed-min" | "rmaxts" | "rmaxts-noreward" | "rmaxts-nomerge" | "rmaxts-nomcts" | "bfs-prover" | "bfs-a0" | "bfs-a1" | "bfs-prover-trace" | "grpo-rollout" | "quarry" | "quarry-heur" | "quarry-trace":
+        case "rango" | "rango-best-beam" | "rango-best-rand" | "rango-mem" | "rango-mem-wide" | "rango-portfolio" | "rango-portfolio-08" | "rango-portfolio-06" | "rango-vlog" | "rango-vguided" | "rango-hybrid" | "rango-hybrid-v" | "rango-qed" | "rango-qed-hybrid" | "rango-qed-sum" | "rango-qed-min" | "rmaxts" | "rmaxts-noreward" | "rmaxts-nomerge" | "rmaxts-nomcts" | "bfs-prover" | "bfs-a0" | "bfs-a1" | "bfs-prover-trace" | "grpo-rollout" | "grpo-rollout-cur" | "grpo-rollout-dense" | "grpo-rollout-g16" | "quarry" | "quarry-heur" | "quarry-trace":
             checkpoint = (
                 "models/deepseek-bm25-proof-tfidf-proj-thm-prem-final/checkpoint-54500"
             )
@@ -444,6 +463,23 @@ def get_tactic_confs(model_alias: str, split: Split) -> list[TacticGenConf]:
                 num_proofs=20,
             )
             return [DecoderTacticGenConf(Path("models/bfs-dpo/adapter"), [formatter])]
+
+        case "grpo-rollout-r2" | "rango-grpo-e1" | "rango-grpo-e2" | "rango-grpo-e3" | "rango-grpo-e4":
+            # effectiveness study: 각 GRPO 변형 adapter로 rollout(r2)/평가(e1-e4). 동일 retrieval 프롬프트.
+            adapter = {
+                "grpo-rollout-r2": "models/rango-grpo/adapter",   # E1 rollout은 round-1 정책
+                "rango-grpo-e1": "models/rango-grpo-e1/adapter",
+                "rango-grpo-e2": "models/rango-grpo-e2/adapter",
+                "rango-grpo-e3": "models/rango-grpo-e3/adapter",
+                "rango-grpo-e4": "models/rango-grpo-e4/adapter",
+            }[model_alias]
+            formatter = GeneralFormatterConf(
+                premise_client_conf=tfidf_premise_conf,
+                proof_retriever_conf=bm25_proof_conf,
+                num_premises=50,
+                num_proofs=20,
+            )
+            return [DecoderTacticGenConf(Path(adapter), [formatter])]
 
         case "rango-grpo-rmaxts" | "rango-grpo-bfs":
             # 학습×탐색 교차 ablation: GRPO 학습 adapter + RMaxTS/BFS 탐색.
