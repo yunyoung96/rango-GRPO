@@ -30,3 +30,10 @@
 ## QED-full (value iteration) backup ablation @40
 - product(논문/AND backup): 11/40, sum: 10/40, min: 11/40.
 - 전부 baseline(12) 이하 → value-guided 탐색 효과 없음. product>sum(논문 주장과 일치).
+
+## Quarry (Planning to Hammer) full 평가 @40
+- 0/40. 근본 원인(버그 아님, 환경·모델 불일치):
+  1. rango 1.3B는 next-tactic 생성기 → [LEMMA]/[TARGET] 분해 형식 못 만듦(tactic만 출력).
+     (generate_raw/파서는 정상 작동 확인. 모델이 분해를 못 하는 것.)
+  2. CoqHammer(sauto/hauto)가 CoqStoq 대상 파일에 import 안 됨 → fast-path 무력.
+- Quarry는 "분해 잘하는 대형 LLM + CoqHammer" 전제. 구현·단위테스트는 충실하나 환경이 전제 미충족.
