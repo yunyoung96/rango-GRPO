@@ -70,3 +70,28 @@ inference-time 소진 후 "진짜 레버"(학습/큰모델/RL)로 전환. 진행
 - 코드: 모든 방법이 alias로 `run_thm.py`에 (rango-best-beam/mem/align/apply/apply-sl/ensemble/divsample/sauto/portfolio…). classical searcher memo, portfolio searcher, sauto 통합(coq-hammer-tactics), 공정 baseline 자동선택 등.
 - 인프라: run_all(resume/description/original_success), make_report(공정 비교), overnight 드라이버, collect_successes(MR2용).
 - 문서: JOURNAL(반복 저널), ROADMAP(설계), LITERATURE/LITERATURE2/RL_LITERATURE(논문조사), analysis.md(방법별).
+
+---
+
+# [업데이트 2026-07-12 KST] 학습 실험 완료 — 최종 종합
+
+논문 4편 구현 + 실제 학습·평가 전부 완료. eval셋 40정리, baseline=published Rango 12/40.
+
+## 전체 종합 @40
+
+| 방법 | 성공 | vs base | unique | regress |
+|---|---|---|---|---|
+| baseline(Rango) | 12 | — | — | — |
+| portfolio | 15 | +3 | 3 [2,27,55] | 0 |
+| RMaxTS full | 11 | −1 | 3 | 4 |
+| BFS α=1.0 | 16 | +4 | 5 | 1 |
+| **GRPO(RL)** | **16** | **+4** | 4 [2,10,11,55] | **0** |
+| BFS-full(DPO) | 13 | +1 | 3 | 2 |
+| QED product | 11 | −1 | 2 | 3 |
+| Quarry | 0 | −12 | 0 | 12 |
+
+## 결론
+1. 모델 학습이 진짜 레버 — GRPO가 straight-line 탐색만으로 최고 탐색법 동급(16), regress 0. 극소량 RL로 baseline 완전 지배.
+2. 탐색 정교화(RMaxTS MCTS/reward/merge)는 무효~유해. length-norm/union만 효과.
+3. BFS-full DPO(+1, 선호쌍 35개로 신호 부족), QED value(−1, 약함), Quarry(0, 1.3B 분해불가+CoqHammer 부재)는 데이터·전제 미충족.
+- 상세: all_log/GRPO_RESULT.md
