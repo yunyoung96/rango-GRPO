@@ -107,7 +107,9 @@ def main():
         timestamp = out_dir.name
     else:
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        out_dir = Path("all_results") / timestamp
+        # 디렉토리 이름에 옵션(alias) 부착: 20260712-055144_rango-grpo-rmaxts
+        safe_alias = re.sub(r"[^A-Za-z0-9._-]", "-", str(args.alias))
+        out_dir = Path("all_results") / f"{timestamp}_{safe_alias}"
     log_dir = out_dir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     summary_path = out_dir / "summary.json"
