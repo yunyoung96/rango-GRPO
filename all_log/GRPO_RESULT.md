@@ -26,3 +26,7 @@
 - 13/40 (+1 vs baseline 12), unique [2,11,55], regress [5,41].
 - untrained BFS-Prover@40(13)와 동수 — DPO 학습 약함(35쌍,acc0.58) → 순증 없이 이동만.
 - 대조: GRPO는 +4 clean. DPO는 선호쌍 부족으로 효과 미미(정직한 결과).
+
+## QED-full (value iteration) backup ablation @40
+- product(논문/AND backup): 11/40, sum: 10/40, min: 11/40.
+- 전부 baseline(12) 이하 → value-guided 탐색 효과 없음. product>sum(논문 주장과 일치).
