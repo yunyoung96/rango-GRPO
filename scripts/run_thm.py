@@ -226,8 +226,9 @@ def get_searcher_conf(model_alias: str) -> SearcherConf:
                 timeout=timeout, straight_frac=0.8,
             )
 
-        case "rmaxts":
+        case "rmaxts" | "rango-grpo-rmaxts":
             # RMaxTS 탐색(full). DUCB + RMax reward + truncate-resume + state merging.
+            # rango-grpo-rmaxts = GRPO 학습 정책 + RMaxTS(DeepSeek-Prover-V1.5 정식 full 구성).
             return RMaxTSSearchConf(timeout=timeout, n_rollout_steps=8, print_proofs=True)
         case "rmaxts-noreward":  # ablation: RMax intrinsic reward 제거
             return RMaxTSSearchConf(timeout=timeout, print_proofs=True, use_reward=False)
@@ -245,7 +246,8 @@ def get_searcher_conf(model_alias: str) -> SearcherConf:
             )
         case "bfs-a0":           # ablation: length-norm 제거(α=0, 순수 누적 log-prob)
             return BFSProverSearchConf(timeout=timeout, alpha=0.0, expand_width=2, print_proofs=True)
-        case "bfs-a1":           # ablation: full length-norm(α=1.0, per-tactic 평균)
+        case "bfs-a1" | "rango-grpo-bfs":  # ablation: full length-norm(α=1.0, per-tactic 평균)
+            # rango-grpo-bfs = GRPO 학습 정책 + 최고 탐색(BFS α=1.0) 결합.
             return BFSProverSearchConf(timeout=timeout, alpha=1.0, expand_width=2, print_proofs=True)
 
         case "grpo-rollout":
@@ -442,6 +444,16 @@ def get_tactic_confs(model_alias: str, split: Split) -> list[TacticGenConf]:
                 num_proofs=20,
             )
             return [DecoderTacticGenConf(Path("models/bfs-dpo/adapter"), [formatter])]
+
+        case "rango-grpo-rmaxts" | "rango-grpo-bfs":
+            # 학습×탐색 교차 ablation: GRPO 학습 adapter + RMaxTS/BFS 탐색.
+            formatter = GeneralFormatterConf(
+                premise_client_conf=tfidf_premise_conf,
+                proof_retriever_conf=bm25_proof_conf,
+                num_premises=50,
+                num_proofs=20,
+            )
+            return [DecoderTacticGenConf(Path("models/rango-grpo/adapter"), [formatter])]
 
         case "rango-6.7b":
             # 헤비 레버 1: raw DeepSeek-Coder-6.7B-instruct(LoRA 미적용) + 동일 Rango 프롬프트.
