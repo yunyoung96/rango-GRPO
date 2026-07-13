@@ -149,3 +149,27 @@ ablation study가 확인: 탐색 컴포넌트는 성능 상한 8~10/20, **논문
 ★Rocq(Coq) 네이티브 — CoqHammer+LLM+coqpyt 다 우리 있음. Lean 논문들과 달리 성능 기대 높음.
 = LLM 분해(sublemma) + 난이도모델 랭킹 + 재귀 CoqHammer 실행. 전체 6컴포넌트(A~F) 다 구현.
 순서: 40-round → GRPO → BFS-full → QED-full → **Quarry full**.
+
+---
+
+## [추가 로드맵 · 2026-07-13] GRPO 개선 & DeepSeek-Prover 원본 충실 구현
+
+> 배경: DeepSeek-Prover 계열은 전부 **whole-proof** 생성(V1.5=truncate-resume, V2=subgoal 분해).
+> next-tactic 버전 없음(그건 HTPS 계보). 우리 GRPO는 whole-proof RL을 **next-tactic으로 적응**시킨 것.
+
+### (우선순위 중) GRPO per-step credit 개선  — 지금 effstudy(E1~E4) 이후
+- **현재**: proof 성공/실패 보상을 그 시도의 **모든 (state,tactic) 스텝에 균등 부여**(가장 단순).
+- **개선안**:
+  - (a) HTPS식 트리 credit — 성공경로 상의 스텝에 더 큰 credit.
+  - (b) QED-value 기반 per-step 보상 — 각 스텝의 상태 value로 credit 차등(E2 dense의 확장).
+  - (c) length/timing 정규화된 credit.
+- ablation: 균등(baseline) vs (a) vs (b). "whole-proof RL → step-level 이식"의 credit assignment가 살짝 novel.
+
+### (가장 후순위 실험) DeepSeek-Prover-V1.5를 "그대로" = whole-proof + GRPO 충실 구현
+> 지금까지의 rango-GRPO는 next-tactic 적응. 이건 **논문 원본 방식 그대로** 재구현(최후순위).
+- **whole-proof 생성 모드**: 정리 statement → `generate_raw`로 **증명 전체를 한 번에** 생성(우리 인프라에 generate_raw 있음).
+- **truncate-and-resume**: 생성 증명을 check_proof로 검증 → 첫 에러에서 자르고 유효 prefix에서 재생성(RMaxTS와 결합).
+- **GRPO (whole-proof)**: 보상 = 전체 증명 Coq 통과(binary), advantage=그룹상대. **시퀀스=증명 전체**(스텝 분해 없이 whole-proof 토큰에 직접).
+- 차이점: 우리 rango는 next-tactic 학습된 모델이라 whole-proof 생성이 약할 수 있음 → 성능은 기대 낮으나 **"원본 재현" 비교군**으로 가치.
+- 구현요소: whole-proof searcher(generate_raw+truncate-resume) + whole-proof GRPO(기존 grpo.py 재사용, 시퀀스 단위만 변경).
+- 순위: **effstudy(E1~E4) → per-step credit 개선 → (최후) whole-proof 원본 재현.**
