@@ -249,6 +249,31 @@ tok_logp = logp.gather(-1, ids[:, 1:])       # ③ 그 분포에서 '실제 생�
 </details>
 
 <details>
+<summary><b>▶ 0-3.6. 모델 아키텍처 & softmax 코드 확인 (어디서 보나)</b></summary>
+
+**모델 아키텍처**: base = DeepSeek-Coder (**`LlamaForCausalLM`** 계열, decoder-only transformer). 우리가 새로 정의 안 하고 HuggingFace 것 사용. + LoRA 어댑터.
+
+| 요소 | 파일:라인 | 코드 |
+|---|---|---|
+| base 모델 로드 | `train_decoder.py:92` `get_model` | `AutoModelForCausalLM.from_pretrained(model_name, 4bit)` |
+| LoRA 설정 | `train_decoder.py:80` `get_lora_conf` | `LoraConfig(r=64, target_modules="all-linear")` |
+| LoRA 적용 | `train_decoder.py:166` | `get_peft_model(raw_model, lora_config)` |
+| 래퍼(생성) | `model_wrapper.py:125` `DecoderLocalWrapper` | `self.model`, `self.tokenizer`, `self.collator` |
+
+아키텍처 스펙(6.7B 예; 1.3B는 더 작음): `LlamaForCausalLM`, hidden 4096, layers 32, heads 32, **vocab 32256**, ctx 16384. (`config.json`에서 확인)
+런타임 확인: `print(model)` 하면 layer 구조가 다 보임.
+
+**softmax 쓰는 곳 (rango도 GRPO도 전부 softmax)**:
+| 용도 | 파일:라인 | 코드 |
+|---|---|---|
+| GRPO 학습 확률 | `grpo_train.py:77` | `torch.log_softmax(logits, dim=-1)` |
+| rango 생성(샘플) | `model_wrapper.py:177` | `do_sample=True` (softmax 분포에서 샘플) |
+| rango score(탐색 logπ) | `model_wrapper.py:198` | `compute_transition_scores(..., normalize_logits=True)` ← log_softmax |
+
+> 🟨 **softmax가 tactic 개수를 제한하나? → 아니요.** softmax는 **어휘 32256 토큰**에 대해 돎(=tactic 목록 아님). tactic은 **토큰 하나씩 생성** → 가능한 tactic = 사실상 무제한(임의 문자열). "고정 tactic N개 분류"였다면 N으로 제한되지만, 우리는 **생성형(token-by-token)**이라 제한 없음.
+</details>
+
+<details>
 <summary><b>▶ 0-4. 기대값 E, argmax, gradient(경사) — 기호 3개</b></summary>
 
 - **E[X]** (기대값, Expectation) = "평균적으로 X가 얼마". `E[reward]` = "평균 보상". 우리는 이걸 **크게** 하고 싶다.
