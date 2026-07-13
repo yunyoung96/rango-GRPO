@@ -13,6 +13,191 @@
 
 ---
 
+# 이론편 · GRPO를 밑바닥부터 (수식 → 코드 대응)
+
+> 이 절은 ML/RL을 **전혀 모른다고 가정**하고, 필요한 개념·기호·수식을 하나씩 쌓아 GRPO까지 간다.
+> 마지막에 **각 수식이 코드의 어느 줄인지** 표로 매핑한다. 수학 기호도 처음 나올 때 풀어 설명한다.
+
+## 0. 먼저 알아야 할 5개 개념
+
+<details open>
+<summary><b>▶ 0-1. 정책(policy) π — "상태를 보고 행동의 확률을 뱉는 함수"</b></summary>
+
+- **상태(state) s** = 지금 Coq goal(증명해야 할 명제 + 가설들).
+- **행동(action) a** = 다음에 칠 tactic 한 줄 (예: `induction 1.`).
+- **정책 π(a | s)** = "상태 s에서 행동 a를 낼 **확률**". 우리 모델(rango 1.3B)이 바로 이 π다.
+  - 기호 `π(a|s)` 읽는 법: "s가 **주어졌을 때(|)** a의 확률". `|`는 조건(given).
+- 정책은 파라미터 θ(theta, 모델 가중치)로 정해진다 → `π_θ`. **학습 = θ를 바꿔 π를 개선하는 것.**
+
+> 🟦 tactic은 사실 여러 **토큰**(단어 조각)의 나열이다. `induction 1.` = [`ind`,`uction`,` 1`,`.`] 같은 식.
+> 그래서 tactic 하나의 확률 = 그 토큰들 확률의 **곱**: `π(tactic|s) = ∏_t p(token_t | 앞토큰들, s)`.
+</details>
+
+<details>
+<summary><b>▶ 0-2. 확률의 곱을 왜 log로 바꾸나 (log-prob)</b></summary>
+
+- 토큰이 30개면 확률 30개를 곱한다 → `0.1 × 0.2 × ...` = 아주 작은 수(0에 가까움) → 컴퓨터에서 **언더플로우**(0으로 뭉개짐).
+- 해결: **log(로그)**를 씌운다. 곱이 **합**으로 바뀐다: `log(ab) = log a + log b`.
+  - `log(∏ p_t) = Σ log p_t` — 기호 `Σ`(시그마) = "다 더해라", `∏`(파이) = "다 곱해라".
+- 그래서 코드는 항상 **log-probability(log-prob)**를 다룬다. `get_recs`의 `score` = `Σ log p(token)` = tactic 하나의 log 확률.
+- log 확률은 항상 ≤ 0 (확률이 0~1이니 log는 음수). **0에 가까울수록(덜 음수) 확신이 큼.**
+</details>
+
+<details>
+<summary><b>▶ 0-3. softmax — "점수를 확률로 바꾸는 마지막 층"</b></summary>
+
+모델은 각 토큰 후보에 **점수(logit)** z를 매긴다. 이걸 확률로 바꾸는 게 softmax:
+```
+p(token_i) = exp(z_i) / Σ_j exp(z_j)      # 다 양수로 만들고(exp), 합이 1이 되게 나눔
+```
+- `exp(x)` = e^x, 항상 양수. 큰 점수는 더 크게 벌어진다.
+- log를 씌우면 `log softmax`. 코드의 `torch.log_softmax(logits)`가 이것 = 각 토큰의 log 확률.
+</details>
+
+<details>
+<summary><b>▶ 0-4. 기대값 E, argmax, gradient(경사) — 기호 3개</b></summary>
+
+- **E[X]** (기대값, Expectation) = "평균적으로 X가 얼마". `E[reward]` = "평균 보상". 우리는 이걸 **크게** 하고 싶다.
+- **argmax_a f(a)** = "f를 가장 크게 만드는 a". (max는 값, argmax는 그 값을 주는 입력.)
+- **∇θ J** (그래디언트, gradient) = "J를 θ로 미분한 것" = **θ를 어느 방향으로 조금 옮기면 J가 커지는지 알려주는 화살표(벡터)**.
+  - 기호 `∇`(나블라) = 미분(기울기). **학습 = 이 화살표 방향으로 θ를 조금씩 이동**(gradient ascent).
+</details>
+
+<details>
+<summary><b>▶ 0-5. SFT vs RL — 무엇으로 배우나</b></summary>
+
+- **SFT(지도학습)**: "정답 증명"을 주고 그대로 따라 쓰게 함. 정답이 필요.
+- **RL(강화학습)**: 정답 없이, 모델이 **직접 시도**하고 **결과(성공/실패)**로 배움.
+  성공한 행동의 확률을 올리고 실패는 내린다. GRPO는 RL 방법.
+
+> 왜 RL이 필요? 어떤 정리는 정답 증명이 코퍼스에 없거나(idx 55), 있어도 모델이 그 스타일을 못 따라 한다.
+> "직접 풀어보고 되는 방향으로 스스로 조정"하는 게 RL의 힘.
+</details>
+
+## 1. 목표를 수식으로 — 우리가 최대화하려는 것
+
+우리는 "정책이 증명에 **성공할 확률**"을 높이고 싶다. 성공하면 보상 `R=1`, 실패면 `R=0`.
+정책 π_θ가 만드는 증명 시도 τ(tau, trajectory=궤적)의 **평균 보상**을 목적함수 J로 둔다:
+
+```
+J(θ)  =  E_{τ ~ π_θ} [ R(τ) ]        # π_θ로 궤적을 뽑았을 때, 보상의 평균(기대값)
+```
+- 읽기: "θ의 정책으로 증명을 뽑으면(`τ ~ π_θ`), 그 보상 R의 평균."
+- **우리가 할 일**: `θ ← θ + η·∇θ J` (η=학습률). 즉 **J를 키우는 방향(∇θ J)으로 θ를 조금씩 이동.**
+
+## 2. ∇θ J 를 어떻게 구하나 — Policy Gradient (REINFORCE)
+
+문제: R은 "Coq이 통과/실패"라는 **미분 불가능**한 결과다. θ로 직접 미분 못 한다.
+해결(정책경사 정리): 로그 미분 트릭으로 아래가 성립한다.
+
+```
+∇θ J  =  E[ R(τ) · ∇θ log π_θ(τ) ]              # (REINFORCE)
+```
+- **직관**: `∇θ log π_θ(a)` = "a의 확률을 올리는 θ 방향". 거기에 **R을 곱한다**.
+  - 성공(R=1) → 그 행동들의 확률을 **올리는** 방향으로 θ 이동.
+  - 실패(R=0) → 곱이 0 → 안 건드림.
+- 한 줄 요약: **"성공한 시도에서 한 행동들의 확률을 높여라."**
+
+> 🟨 문제: R을 그냥 쓰면 **분산이 크다**(운으로 성공/실패한 것도 그대로 반영) → 학습이 불안정. (§3에서 해결)
+
+## 3. baseline 빼기 → advantage, 그리고 GRPO의 핵심
+
+분산을 줄이려고 **기준선(baseline) b**를 빼도 수학적으로 결과가 안 변한다:
+```
+∇θ J  =  E[ (R − b) · ∇θ log π_θ ]              # (R−b) = advantage A
+```
+- **advantage A = R − b** = "평균(b)보다 **얼마나 잘했나**". 평균보다 나으면 +, 못하면 −.
+- b를 뭘로? 보통 **value network**(상태 가치 추정 신경망)를 따로 학습해서 씀 → 복잡·비쌈.
+
+**GRPO의 아이디어(핵심):** value network 없이, **같은 정리를 여러 번 풀어 그 그룹의 평균을 baseline으로.**
+정리 하나에 G번(=8) 시도 → 보상 `{r_1..r_G}` → 그룹 안에서 표준화:
+```
+Â_i  =  (r_i − mean(r)) / (std(r) + ε)          # group-relative advantage
+```
+- `mean(r)` = 그룹 평균(=baseline b), `std(r)` = 표준편차(스케일 정규화), `ε`(엡실론)=아주 작은 수(0 나눗셈 방지).
+- 예: `r=[1,0,0,1,0,0,0,0]` → mean 0.25, std 0.43 → 성공 `Â=+1.7`, 실패 `Â=−0.58`.
+- **8개 다 실패면 std≈0 → Â=0 → 학습 신호 없음** (성긴 신호 문제).
+
+> 🟩 **여기가 "Group Relative"의 뜻**: advantage를 **그룹 내 상대 순위**로 정한다. value network가 필요 없어 가볍다.
+
+## 4. 안정화 — PPO의 clip 과 KL (importance ratio)
+
+RL은 한 번에 정책을 크게 바꾸면 망가진다(폭주). PPO가 도입한 두 장치:
+
+**(a) importance ratio ρ** — "샘플은 옛 정책 π_old로 뽑았는데, 지금 정책 π_θ로 학습". 이 차이를 보정:
+```
+ρ_t  =  π_θ(a_t | s_t) / π_old(a_t | s_t)  =  exp( logπ_new − logπ_old )
+```
+- ρ>1 = 지금 정책이 그 행동을 옛날보다 더 잘 냄. (log 차이의 exp = 비율.)
+
+**(b) clipped surrogate** — ρ가 너무 커지지 않게 **자른다(clip)**:
+```
+L_clip  =  min( ρ·Â ,  clip(ρ, 1−ε, 1+ε)·Â )    # ε=0.2 → ρ를 0.8~1.2로 제한
+```
+- `min(...)` = 둘 중 **보수적인(작은)** 쪽 선택 → "너무 많이 올리려 하면 그 지점에서 멈춤".
+
+**(c) KL 페널티** — 정책이 시작점(레퍼런스 π_ref)에서 **너무 멀어지지 않게** 당김:
+```
+KL ≈ exp(logπ_ref − logπ) − (logπ_ref − logπ) − 1  ≥ 0    # DeepSeek unbiased estimator
+```
+- 항상 ≥0, 두 분포가 같으면 0. 이걸 손실에 β배(=0.04) 더해서 "원래 실력(retrieval 등)을 잃지 마" 규제.
+
+## 5. 최종 목적함수 (전부 합침)
+
+```
+J_GRPO(θ) = E[ (1/|o|) Σ_t  min(ρ_t·Â, clip(ρ_t,1±ε)·Â)  −  β·KL_t ]
+            └──────────────────┬──────────────────┘     └──┬──┘
+                  이득: 성공행동↑ 실패행동↓(안전하게)         원래서 안 멀어지게
+```
+- `(1/|o|) Σ_t` = 생성한 tactic 토큰들에 대해 평균(|o|=완성 토큰 수).
+- **손실 = −J** (최대화를 최소화로 뒤집어 `loss.backward()`).
+
+## 6. 알고리즘 → 코드 대응표
+
+| 알고리즘 단계 (수식) | 코드 위치 | 코드 |
+|---|---|---|
+| ① 궤적 뽑기 `τ ~ π_θ` (rollout) | `grpo_rollout.py` · `rollout_attempt` | `tactic = get_recs(n=1, beam=False)` |
+| ② 보상 `R` (성공=1) | 〃 | `if COMPLETE: reward = 1.0` |
+| ③ 그룹상대 advantage `Â=(r−mean)/std` | `grpo.py` · `group_advantages` | `return (r - r.mean())/(r.std()+EPS_STD)` |
+| ④ Â를 시도의 모든 스텝에 부여 | `grpo_train.py` · `flatten_group` | `advs.append(float(adv[i]))` |
+| ⑤ logπ 계산 (softmax·log·gather) | `grpo_train.py` · `sequence_token_logprobs` | `logp = log_softmax(logits); logp.gather(-1, tgt)` |
+| ⑥ 비율 `ρ = exp(logπ_new−logπ_old)` | `grpo.py` · `grpo_batch_loss` | `ratio = torch.exp(logp_new - logp_old)` |
+| ⑦ clip `min(ρÂ, clip(ρ)Â)` | 〃 | `surrogate = minimum(ratio*adv, clamp(ratio,1±ε)*adv)` |
+| ⑧ KL 페널티 | 〃 | `kl = exp(Δ)-Δ-1;  per_tok = surrogate - β*kl` |
+| ⑨ 완성토큰 평균 → 손실 | 〃 | `(per_tok*mask).sum()/denom;  loss = −obj` |
+| ⑩ θ 업데이트(LoRA만) | `grpo_train.py` train 루프 | `loss.backward(); opt.step()` |
+
+<details>
+<summary><b>▶ ⑥⑦⑧⑨가 한 함수에 다 있는 실제 코드 (grpo.py)</b></summary>
+
+```python
+def grpo_batch_loss(logp_new, logp_old, logp_ref, advantages, mask, clip_eps=0.2, kl_beta=0.04):
+    ratio = torch.exp(logp_new - logp_old)              # ⑥ ρ = π_new/π_old
+    adv = advantages.unsqueeze(1)                       #    Â (시퀀스별)
+    unclipped = ratio * adv
+    clipped = torch.clamp(ratio, 1-clip_eps, 1+clip_eps) * adv   # ⑦ ρ를 0.8~1.2로 자름
+    surrogate = torch.minimum(unclipped, clipped)      # ⑦ 보수적인 쪽
+    kl = kl_unbiased(logp_new, logp_ref)               # ⑧ KL = exp(Δ)-Δ-1
+    per_tok = surrogate - kl_beta * kl                 # ⑧ 이득 − β·KL
+    m = mask.float()
+    denom = m.sum(dim=1).clamp(min=1.0)
+    seq_obj = (per_tok * m).sum(dim=1) / denom         # ⑨ 완성토큰만 평균
+    return -seq_obj.mean(), ...                        # ⑨ loss = −목적
+```
+수식 `J = E[ min(ρÂ, clip(ρ)Â) − β·KL ]` 와 **한 줄씩** 대응한다.
+</details>
+
+> 🟦 **한 문장 요약**: GRPO = "정리마다 8번 풀어보고(①②), 그룹 안에서 잘한 시도는 +·못한 건 −로 점수 매긴 뒤(③④), 그 점수 방향으로 tactic 확률을 **조금씩(clip)·원래 실력 유지하며(KL)** 옮긴다(⑤~⑩)."
+
+## 7. (참고) search 쪽 이론 — best-first & UCB 한 줄씩
+
+- **best-first(BFS-Prover)**: `score = (Σ log p) / L^α`. 분자=지금까지 확신(log-prob 합), `÷L^α`=길이 페널티 완화.
+  → heap에서 score 큰 것부터 확장. `α`가 클수록 깊은(긴) 증명을 더 탐색.
+- **UCB(RMaxTS)**: `Q = W/N + √(2 ln ΣN / N)`. 앞항=평균 가치(활용), 뒤항=덜 가본 곳 보너스(탐험). γ로 할인.
+  → "좋았던 곳 + 안 가본 곳"을 균형 있게. (미학습 1.3B엔 이 정교함이 오히려 무효 → §2 결과.)
+
+---
+
 # 코드 단위 딥다이브 — search & 학습이 정확히 어떻게 도는가
 
 > 실제 소스를 **줄 단위로** 따라간다. 각 `▶` 제목 클릭 시 펼쳐짐(GitHub/VSCode 토글). 코드는 **실제 소스 그대로**.
