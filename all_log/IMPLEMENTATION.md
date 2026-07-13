@@ -229,6 +229,26 @@ p(token_i) = exp(z_i) / Σ_j exp(z_j)      # 다 양수로 만들고(exp), 합�
 </details>
 
 <details>
+<summary><b>▶ 0-3.5. ★확률분포는 어디서 오나 — LLM 자체가 π(a|s)다</b></summary>
+
+> "GRPO 학습엔 확률분포가 필요한데 그건 어떻게 계산?" → **따로 안 만든다. LLM이 매 토큰마다 이미 확률분포를 뱉는다.**
+
+```
+입력(지금까지 토큰) → 모델 → logits (어휘 V≈32000개 점수) → softmax → 확률분포 = π(다음토큰|지금까지)
+```
+- LLM의 마지막 층 = **어휘 전체에 대한 점수(logits)**. softmax 씌우면 "다음 토큰 확률분포". **이게 곧 정책 π.**
+- 코드 (`grpo_train.py:70 sequence_token_logprobs`):
+```python
+logits = model(ids).logits[:, :-1, :]        # ① (B,T-1,V) 위치마다 어휘 V개 점수
+logp   = torch.log_softmax(logits, dim=-1)   # ② ← 여기가 '확률분포 계산' (V개, 합=1)
+tok_logp = logp.gather(-1, ids[:, 1:])       # ③ 그 분포에서 '실제 생성한 토큰'의 logπ만 뽑음
+```
+- **②**가 확률분포 계산 지점. **③**은 그중 rollout에서 실제 고른 토큰의 log 확률만 읽음.
+- GRPO는 이 logπ를 **세 정책**(π_new 현재 / π_ref 시작 / π_old=ref)에 대해 계산 → `ρ = exp(logπ_new − logπ_old)`.
+- **한 줄**: LLM은 태생이 "다음 토큰 확률분포 계산기"라, π(a|s)를 따로 안 만들고 **softmax(logits)를 읽으면 된다.** tactic 하나의 확률 = 그 토큰들 logπ의 합(=Σ, §0-2).
+</details>
+
+<details>
 <summary><b>▶ 0-4. 기대값 E, argmax, gradient(경사) — 기호 3개</b></summary>
 
 - **E[X]** (기대값, Expectation) = "평균적으로 X가 얼마". `E[reward]` = "평균 보상". 우리는 이걸 **크게** 하고 싶다.
