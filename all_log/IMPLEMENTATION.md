@@ -51,6 +51,11 @@ case "rmaxts" | "rango-grpo-rmaxts":
     return RMaxTSSearchConf(timeout=timeout, n_rollout_steps=8, ...)                # ← ① 탐색
 ```
 → **GRPO로 다듬은 정책이 RMaxTS 롤아웃의 tactic을 생성**한다 = 논문의 정식 full 구성.
+
+> 🟨 **논문 전체 파이프라인 vs 우리**: DeepSeek-Prover-V1.5 = ① pretrain → ② **SFT**(형식증명 지도학습) → ③ **GRPO**(RLPAF) + 추론 **RMaxTS**.
+> **①② 는 rango가 이미 그 역할**(rango = DeepSeek-Coder-1.3B + LoRA로 Coq 증명 SFT된 모델) → 우리는 **③(GRPO+RMaxTS)만 얹음.** 즉 "SFT를 빠뜨린 게 아니라 rango가 SFT."
+> 다만 rango SFT는 **next-tactic** 포맷(논문은 whole-proof), SFT↔RL 사이 **데이터 확장(expert-iter)** 루프는 GRPO엔 미적용.
+
 > 🟥 실행: `rango-grpo-rmaxts` @40 = **12** (GRPO+straight-line 16 > GRPO+BFS 15 > GRPO+RMaxTS 12 → 학습 정책에도 RMaxTS는 해로움).
 </details>
 
@@ -458,6 +463,17 @@ a/b = exp(ln a − ln b)   →   π_θ/π_old = exp(logπ_new − logπ_old)
 ### (바) clip `min(ρA, clip(ρ,1±ε)A)` — 왜 min·clip
 - ρ가 1.2를 넘어도(정책이 그 행동을 크게 키우려 해도) `clip`이 잘라 **한 번에 못 바꾸게**.
 - `min(비클립, 클립)` = **보수적인 쪽** 선택 → surrogate가 진짜 개선의 **하한**이 되어 "과장된 개선"을 방지. (PPO, Schulman+ 2017)
+
+### (사) KL estimator `exp(Δ)−Δ−1` 은 왜 이 형태인가 (Schulman k3)
+`Δ = logπ_ref − logπ`, `r = π_ref/π = exp(Δ)`. 목표: `KL(π‖π_ref) = E_π[log(π/π_ref)]` 를 샘플로 추정.
+- **순진한 추정** `−Δ = log(π/π_ref)`: 불편이나 **분산 크고 음수도 나옴**(KL은 ≥0인데) → 나쁨.
+- **Schulman 트릭**: 기대값 0인 항 `(r−1)`을 더함 → `KL_est = (r−1) − log r = exp(Δ) − Δ − 1`.
+```
+① 불편: E_π[r−1] = ∫π·(π_ref/π) − 1 = ∫π_ref − 1 = 0   →  E[KL_est] = KL + 0 = KL ✓
+② ≥0 : f(r)=r−1−log r ≥ 0 (∵ log r ≤ r−1, r=1서 등호)   →  매 샘플 음수 안 됨 ✓
+③ 저분산: (r−1)이 −log r 과 상관 → control variate 로 분산↓ ✓
+```
+→ "순진한 `−Δ`에 기대값 0인 `(r−1)`을 더해 **불편 유지 + 항상 ≥0 + 저분산**"으로 만든 것. (Schulman "Approximating KL")
 
 ## 5. 최종 목적함수 (전부 합침)
 
