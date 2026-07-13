@@ -113,6 +113,75 @@ case "quarry":
 
 ---
 
+# 전체 variation 성과 요약 (full 여부 · baseline 대비 +/−)
+
+> 구현한 **모든 변형**을 성과·full여부·baseline 대비(+개선 / −회귀)로 정리.
+> baseline = published Rango (@40=12/40, @20=8/20). **−는 baseline보다 나쁨(regression)**. 대부분 최고 성능은 @40에서 측정.
+
+## A. 논문 full 구현 (탐색부 + 학습부 결합)
+
+| 논문 | 구성(결합) | full? | @40 | vs base |
+|---|---|---|---|---|
+| **DeepSeek-Prover-V1.5** | GRPO 정책 + RMaxTS 탐색 (`rango-grpo-rmaxts`) | ✅ full | 12 | **0** |
+| ↳ (참고) GRPO 정책 + straight-line | `rango-grpo` | ✅ 학습부 | **16** | **+4** ⭐ |
+| ↳ (참고) GRPO 정책 + BFS α=1.0 | `rango-grpo-bfs` | ✅ 결합 | 15 | +3 |
+| **BFS-Prover** | DPO 정책 + BFS 탐색 (`bfs-dpo`) | ✅ full | 13 | +1 |
+| **QEDCartographer** | value-iteration + value-guided 탐색 (`rango-qed`) | ✅ full | 11 | **−1** ⚠️ |
+| **Quarry** | 분해+CoqHammer 재귀 (`quarry`) | ✅ full | 0 | **−12** ⚠️(환경 미충족) |
+
+## B. 논문 탐색부만 (학습 없음 = NOT full)
+
+| 방법 | full? | @40 | vs base |
+|---|---|---|---|
+| RMaxTS (`rmaxts`) | ❌ 탐색만 | 11 | **−1** ⚠️ |
+| BFS-Prover (`bfs-prover`) | ❌ 탐색만 | 13 | +1 |
+
+## C. 탐색 컴포넌트 ablation (NOT full · 컴포넌트 분석용)
+
+| 세팅 | full? | @40 | vs base |
+|---|---|---|---|
+| RMaxTS −reward (`rmaxts-noreward`) | ❌ ablation | 14 | +2 |
+| RMaxTS −merge (`rmaxts-nomerge`) | ❌ | 13 | +1 |
+| RMaxTS −DUCB (`rmaxts-nomcts`) | ❌ | 12 | 0 |
+| BFS α=0 (`bfs-a0`) | ❌ | 12 | 0 |
+| **BFS α=1.0 (`bfs-a1`)** | ❌ | **16** | **+4** ⭐ |
+| QED backup=sum (`rango-qed-sum`) | ❌ | 10 | **−2** ⚠️ |
+| QED backup=min (`rango-qed-min`) | ❌ | 11 | −1 ⚠️ |
+
+## D. 내가 만든 창작 variation (논문 아님 · NOT full)
+
+> rango 위에 얹은 inference-time 기법들. 대부분 @20에서 탐색(baseline @20=8).
+
+| 방법 | 아이디어 | @ | 성공 | vs base |
+|---|---|---|---|---|
+| **portfolio** (`rango-portfolio`) | straight-line ∪ classical-mem union | 40 | **15** | **+3** ⭐ (regress 0) |
+| portfolio | 〃 | 20 | 12 | +4 |
+| mem-wide (`rango-mem-wide`) | transposition table + branch16 | 20 | 10 | +2 |
+| psauto (`rango-psauto`) | portfolio + sauto | 20 | 10 | +2 |
+| divsample (`rango-divsample`) | retrieval on/off 토글 앙상블 | 20 | 10 | +2 |
+| ensemble (`rango-ensemble`) | retrieval/no-retrieval 모델 교대 | 20 | 10 | +2 |
+| sauto (`rango-sauto`) | retrieval premise → `sauto use:` | 20 | 9 | +1 |
+| align/alignapply | AlphaGoal 정렬 비교 | 20 | 9 | +1 |
+| apply-sl (`rango-apply-sl`) | straight-line + forced apply | 20 | 9 | +1 |
+| vguided (`rango-vguided`) | 학습 value head로 frontier 블렌드 | 20 | 9 | +1 |
+| mem (`rango-mem`) | best-first + memo | 20 | 8 | 0 |
+| apply/best-beam/hprobe | 각종 M4/beam/probe | 20 | 8 | 0 |
+| qed-hybrid (`rango-qed-hybrid`) | QED value + 확신스텝 greedy | 20 | 8 | 0 |
+| search (`rango-search`) | 조합 탐색 | 20 | 7 | **−1** ⚠️ |
+| **hybrid** (`rango-hybrid`) | retrieval 신뢰도 게이팅 | 20 | **2** | **−6** ⚠️⚠️ |
+| **hybrid-v** (`rango-hybrid-v`) | hybrid + value | 20 | **2** | **−6** ⚠️⚠️ |
+
+## 핵심 관찰 (성과 관점)
+
+- **+ (개선)**: portfolio(+3, regress 0) · GRPO(+4) · BFS α=1.0(+4) — union·학습·length-norm만 확실히 개선.
+- **0 (무효)**: 대부분의 탐색 정교화(RMaxTS full/−DUCB, mem, apply, beam)는 baseline과 동급.
+- **− (regression)**: RMaxTS full(−1), QED(−1~−2), 특히 **hybrid(−6)·Quarry(−12)** 는 크게 나쁨.
+  - hybrid: retrieval 신뢰도 게이팅이 오히려 탐색을 망침(2/20).
+  - Quarry: 환경(1.3B 분해불가+CoqHammer 부재)으로 0.
+- 정직: **우리 자체 rango(@20=10, @40 재현 강함) 대비로는 순이득이 대부분 작다.** 확실한 순증은 portfolio·GRPO 정도.
+
+---
+
 # 이론편 · GRPO를 밑바닥부터 (수식 → 코드 대응)
 
 > 이 절은 ML/RL을 **전혀 모른다고 가정**하고, 필요한 개념·기호·수식을 하나씩 쌓아 GRPO까지 간다.
