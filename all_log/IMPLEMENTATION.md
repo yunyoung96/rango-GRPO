@@ -13,6 +13,106 @@
 
 ---
 
+# 논문별 "full 구현" 여부 & 결합 방법
+
+> ❓ 질문: 논문들을 **full로** 구현했나? → **네, 4개 다 "탐색부 + 학습부"를 구현하고 하나로 결합해 실행했다.**
+> 단, 정직한 캐비어트가 있다(모델 대체·학습 스케일). 아래에서 구분해서 보여준다.
+
+## 요약 표 — 무엇이 full이고 무엇이 결합됐나
+
+| 논문 | ① 탐색부 | ② 학습부 | full = ①+② 결합 | 실행 alias | @40 | 정직 캐비어트 |
+|---|---|---|---|---|---|---|
+| **DeepSeek-Prover-V1.5** | RMaxTS ✅ | **GRPO** ✅(실학습) | ✅ 결합·실행 | `rango-grpo-rmaxts` | 12 | 알고리즘 충실하나 **7B Lean→1.3B Coq 대체**, 학습 소규모(39그룹/2ep) |
+| **BFS-Prover** | length-norm BFS ✅ | **DPO+expert-iter** ✅ | ✅ 결합·실행 | `bfs-dpo` | 13 | DPO 쌍 35개로 학습 약함 |
+| **QEDCartographer** | value-guided 탐색 ✅ | **value iteration** ✅ | ✅ 결합·실행 | `rango-qed` | 11 | closed-form=bootstrap(OR-트리) |
+| **Quarry** | 재귀 SolveGoal ✅ | 난이도 pairwise ✅ | ✅ 결합·실행 | `quarry` | 0 | **환경 미충족**(1.3B 분해불가+CoqHammer 부재) |
+
+> 🟨 **"full의 정의"**: 이 논문들은 전부 **"탐색 알고리즘 + 그 정책을 학습시키는 방법"** 두 축으로 되어 있다.
+> 처음엔 **탐색부만**(search-only) 재구현했고(→ ablation), 나중에 **학습부까지** 구현해 **둘을 결합**하면 논문의 full 파이프라인이 된다.
+> "full = 학습된 정책을 탐색에 실제로 얹은 것." 아래가 그 결합 방법이다.
+
+## 결합 방법 — "어떤 요소를 어떻게 묶으면 full이 되나"
+
+<details open>
+<summary><b>▶ DeepSeek-Prover-V1.5 = RMaxTS 탐색 + GRPO 학습 정책</b></summary>
+
+**두 요소:**
+- ① 탐색: `src/model_deployment/rmaxts_searcher.py` (DUCB MCTS + RMax reward + truncate-resume)
+- ② 학습: `grpo.py`+`grpo_rollout.py`+`grpo_train.py` → **학습 산출물** `models/rango-grpo/adapter`
+
+**결합(코드로):** `run_thm.py`에서 alias `rango-grpo-rmaxts`가 둘을 묶는다:
+```python
+# get_tactic_confs: 정책 = GRPO로 학습한 adapter
+case "rango-grpo-rmaxts":
+    return [DecoderTacticGenConf(Path("models/rango-grpo/adapter"), [formatter])]  # ← ② 학습정책
+
+# get_searcher_conf: 탐색 = RMaxTS
+case "rmaxts" | "rango-grpo-rmaxts":
+    return RMaxTSSearchConf(timeout=timeout, n_rollout_steps=8, ...)                # ← ① 탐색
+```
+→ **GRPO로 다듬은 정책이 RMaxTS 롤아웃의 tactic을 생성**한다 = 논문의 정식 full 구성.
+> 🟥 실행: `rango-grpo-rmaxts` @40 = **12** (GRPO+straight-line 16 > GRPO+BFS 15 > GRPO+RMaxTS 12 → 학습 정책에도 RMaxTS는 해로움).
+</details>
+
+<details>
+<summary><b>▶ BFS-Prover = length-norm BFS 탐색 + DPO/expert-iteration 학습</b></summary>
+
+**두 요소:**
+- ① 탐색: `bfs_prover_searcher.py` (score=Σlogp/L^α). 학습데이터용 **트리 덤프**(성공경로 backprop) 포함.
+- ② 학습: 트리 덤프 → `bfs_dpo_data.py`(SFT/DPO쌍 추출) → `dpo_train.py`(선호학습) + `bfs_expert_iter.py`(라운드 반복) → `models/bfs-dpo/adapter`
+
+**결합:** alias `bfs-dpo` = DPO adapter + BFS 탐색:
+```python
+case "bfs-dpo":  return [DecoderTacticGenConf(Path("models/bfs-dpo/adapter"), [formatter])]  # ② 학습정책
+case "bfs-prover" | "bfs-dpo":  return BFSProverSearchConf(alpha=0.5, ...)                    # ① 탐색
+```
+> 🟥 실행: `bfs-dpo` @40 = **13** (untrained BFS와 동수 — DPO 쌍 35개로 학습이 약해서).
+</details>
+
+<details>
+<summary><b>▶ QEDCartographer = value iteration 학습 + value-guided 탐색</b></summary>
+
+**두 요소:**
+- ② 학습: `qed_value_iter.py`+`train_qed_value.py` (coq2vec value를 γ^dist에 회귀, value iteration) → `models/qed_value/qed.pt`
+- ① 탐색: `classical_searcher.py`의 `_value_of`가 **학습된 value로 frontier 정렬**(product-over-subgoals backup).
+
+**결합:** alias `rango-qed` = classical 탐색 + value 체크포인트:
+```python
+case "rango-qed":
+    return ClassicalSearchConf(..., value_weight=1.0,
+                               qed_ckpt="models/qed_value/qed.pt")  # ① 탐색이 ② 학습 value를 사용
+```
+→ 학습된 value가 "어느 상태부터 팔지"를 정한다 = value iteration + value-guided search의 결합.
+> 🟥 실행: `rango-qed` @40 = **11** (value guidance 이 세팅에선 효과 없음).
+</details>
+
+<details>
+<summary><b>▶ Quarry = 재귀 분해+CoqHammer 탐색 + 난이도 pairwise 학습 (6컴포넌트 전부)</b></summary>
+
+**요소(6개 A~F, 하나의 searcher 안에서 결합):**
+- A 분해생성(`generate_raw`) · B 검증(assert+재귀) · C 28차원 난이도특징 · D 재귀 SolveGoal · E CoqHammer fast-path · F 오프라인 pairwise 학습(`train_quarry_difficulty.py` → `models/quarry_difficulty/difficulty.json`)
+
+**결합:** alias `quarry` — SolveGoal이 A~F를 한 재귀 안에서 호출(하나의 알고리즘이라 별도 정책+탐색 분리 없음):
+```python
+case "quarry":
+    return QuarrySearchConf(k=8, branch=1, max_depth=5,
+                            difficulty_ckpt="models/quarry_difficulty/difficulty.json")  # F 학습난이도
+```
+> 🟥 실행: `quarry` @40 = **0** — 구현은 full(6컴포넌트 전부)이나 **환경이 전제를 안 충족**:
+> ① rango 1.3B는 next-tactic 모델이라 `[LEMMA]/[TARGET]` 분해를 못 함, ② CoqStoq에 CoqHammer 미import.
+</details>
+
+## 정직한 결론 — "full 맞나?"
+
+- **알고리즘 관점: 예, 4개 다 full.** 각 논문의 탐색부 + 학습부를 구현하고 **결합해 실제 실행**했다(위 alias들).
+- **재현 관점: 아니오, 논문 그대로는 아니다.** ⓐ 모델 대체(특히 DeepSeek-Prover는 7B Lean whole-proof → 우리 1.3B Coq next-tactic),
+  ⓑ 학습 스케일이 소규모(GRPO 39그룹/2ep, DPO 35쌍), ⓒ Quarry는 환경 미충족으로 0.
+- 즉 **"논문의 알고리즘 구조를 full로 구현·결합했다"**가 정확한 표현이고, **"논문 결과를 재현했다"는 아니다.**
+
+> 🟦 한 줄: **full = 학습부(GRPO/DPO/value-iter/difficulty) 산출물을 탐색부(RMaxTS/BFS/value-guided/SolveGoal)에 얹어 하나의 alias로 실행한 것.** 그 결합 코드가 위 4개 case 블록이다.
+
+---
+
 # 이론편 · GRPO를 밑바닥부터 (수식 → 코드 대응)
 
 > 이 절은 ML/RL을 **전혀 모른다고 가정**하고, 필요한 개념·기호·수식을 하나씩 쌓아 GRPO까지 간다.
