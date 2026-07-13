@@ -1,0 +1,85 @@
+{
+  "commit": "c8958f3",
+  "refs": {
+    "check_proof": {
+      "file": "src/model_deployment/proof_manager.py",
+      "line": 249
+    },
+    "admit 차단": {
+      "file": "src/model_deployment/proof_manager.py",
+      "line": 262
+    },
+    "get_recs(client)": {
+      "file": "src/model_deployment/tactic_gen_client.py",
+      "line": 186
+    },
+    "BFS.search": {
+      "file": "src/model_deployment/bfs_prover_searcher.py",
+      "line": 118
+    },
+    "BFS._score": {
+      "file": "src/model_deployment/bfs_prover_searcher.py",
+      "line": 113
+    },
+    "RMaxTS.ducb": {
+      "file": "src/model_deployment/rmaxts_searcher.py",
+      "line": 127
+    },
+    "RMaxTS._expand": {
+      "file": "src/model_deployment/rmaxts_searcher.py",
+      "line": 146
+    },
+    "group_advantages": {
+      "file": "src/tactic_gen/grpo.py",
+      "line": 21
+    },
+    "kl_unbiased": {
+      "file": "src/tactic_gen/grpo.py",
+      "line": 32
+    },
+    "grpo_batch_loss": {
+      "file": "src/tactic_gen/grpo.py",
+      "line": 62
+    },
+    "rollout_attempt": {
+      "file": "src/tactic_gen/grpo_rollout.py",
+      "line": 30
+    },
+    "collect_group": {
+      "file": "src/tactic_gen/grpo_rollout.py",
+      "line": 101
+    },
+    "sequence_token_logprobs": {
+      "file": "src/tactic_gen/grpo_train.py",
+      "line": 70
+    },
+    "flatten_group": {
+      "file": "src/tactic_gen/grpo_train.py",
+      "line": 94
+    },
+    "train(GRPO 루프)": {
+      "file": "src/tactic_gen/grpo_train.py",
+      "line": 114
+    },
+    "dpo_loss": {
+      "file": "src/tactic_gen/dpo.py",
+      "line": 19
+    },
+    "value_iteration": {
+      "file": "src/model_deployment/qed_value_iter.py",
+      "line": 24
+    },
+    "QEDValue.value_state": {
+      "file": "src/model_deployment/qed_cartographer.py",
+      "line": 99
+    },
+    "SolveGoal(_solve)": {
+      "file": "src/model_deployment/quarry_searcher.py",
+      "line": 224
+    },
+    "alias 결합(run_thm)": {
+      "file": "scripts/run_thm.py",
+      "line": 484
+    }
+  }
+}
