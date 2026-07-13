@@ -185,6 +185,111 @@ J(θ)  =  E_{τ ~ π_θ} [ R(τ) ]        # π_θ로 궤적을 뽑았을 때, �
 - 읽기: "θ의 정책으로 증명을 뽑으면(`τ ~ π_θ`), 그 보상 R의 평균."
 - **우리가 할 일**: `θ ← θ + η·∇θ J` (η=학습률). 즉 **J를 키우는 방향(∇θ J)으로 θ를 조금씩 이동.**
 
+## 1.5 reward R(τ)는 코드에서 정확히 어떻게 계산되나 (빠짐없이)
+
+> 위 수식의 `R(τ)`가 **우리 코드에서 실제로 어떤 값**인지 — 정의·수식·코드·구현 디테일을 전부.
+
+### (1) 무엇의 보상인가 — "시도(궤적) 단위, 증명 완결 여부"
+
+**reward는 tactic 하나가 아니라 증명 시도 τ 전체에 대해 매겨진다.** τ = 한 번의 증명 시도(여러 tactic의 나열).
+
+```
+R(τ) = 1   (그 시도가 Coq으로 COMPLETE = Qed 가능)
+     = 0   (그 외: INVALID로 죽거나, max_steps 안에 못 끝냄)
+```
+- 즉 **binary(0/1)**. "이 시도가 정리를 완전히 증명했나?" 딱 하나만 본다.
+- **검증 주체 = Coq**(coqpyt `check_proof`). 모델이 판단하는 게 아니라 **Coq이 통과시켜야** 1.
+
+<details><summary><b>▸ 기호 — 클릭</b></summary>
+
+| 기호 | 뜻 |
+|---|---|
+| `τ` (tau) | 한 증명 시도(궤적) = 시작 goal → tactic들 → 끝 |
+| `R(τ)` | 그 시도의 보상. 여기선 0 또는 1 |
+| COMPLETE | Coq 결과: 남은 goal 0개, Qed 가능 |
+| INVALID | Coq 결과: tactic이 에러 |
+| max_steps | 한 시도의 tactic 최대 수(=20). 넘으면 미완=0 |
+</details>
+
+### (2) 실제 코드 — `grpo_rollout.py:30` `rollout_attempt`
+
+```python
+reward = 0.0                                    # ① 시작 0
+last_valid_goals = _goals_str(check)            # (dense용) 마지막 valid 상태 기록
+for _ in range(max_steps):                      # ② 최대 20 tactic
+    tactic = get_recs(n=1, beam=False)          #    한 줄 샘플
+    steps.append({example.to_json(), tactic})   #    (상태,tactic) 저장
+    check = check_proof(prefix + tactic)        # ③ ← Coq 검증
+    if check == VALID:                          #    유효 → 마지막 valid 상태 갱신
+        last_valid_goals = _goals_str(check)
+    if check == COMPLETE:                        # ④ ★ 완결 → 보상 1
+        reward = 1.0; break
+    if check == INVALID:                         # ⑤ 에러 → 루프 종료(reward 0 유지)
+        break
+# ⑥ (dense reward) 미완이고 value_fn 있으면 부분보상
+if reward == 0.0 and value_fn is not None and steps:
+    reward = shaping_coef * value_fn(last_valid_goals)
+return {"steps": steps, "reward": reward}
+```
+- **④** COMPLETE에서만 `reward=1.0`. 그 전엔 계속 0.
+- **⑤** INVALID면 그 시도는 실패로 확정(reward 0). max_steps 소진도 동일(0).
+- **①~⑤** 이게 **binary reward**의 전부. (dense는 ⑥에서만 추가)
+
+### (3) dense reward 변형 (E2 실험만) — QED value로 부분보상
+
+binary는 "8개 다 실패면 신호 0"(성긴 신호) 문제가 있다. E2에서만 **미완 시도에 부분점수**:
+```
+R(τ) = 1.0                              (COMPLETE)
+     = shaping_coef · V(마지막 valid goal)   (미완, 0 ≤ V ≤ 1)   # shaping_coef=0.3
+```
+- `V` = QEDCartographer value 모델(§3)이 매긴 "그 상태가 QED에 얼마나 가까운가"(0~1).
+- `shaping_coef=0.3`으로 **눌러서**(최대 0.3) 완결(1.0)을 절대 못 넘게 → "완결이 항상 최고"라는 순서 보존.
+- 목적: 8개 다 미완이어도 "덜 미완 vs 더 미완"의 **advantage 신호를 만든다.**
+
+<details><summary><b>▸ 기호 — 클릭</b></summary>
+
+| 기호 | 뜻 |
+|---|---|
+| `V(goals)` | QED value: 상태가 증명 완료에 가까운 정도(0~1). `value_state`(§3) |
+| `shaping_coef` | 부분보상 스케일=0.3. 완결(1.0) 초과 방지 |
+| `last_valid_goals` | 시도가 죽기 직전 마지막 VALID 상태의 goal들(= V 입력) |
+</details>
+
+### (4) reward → advantage 로 흐르는 방식 (credit assignment)
+
+reward는 **시도 단위**인데 학습은 **(state,tactic) 스텝 단위**다. 어떻게 잇나:
+1. 한 정리에 G=8 시도 → reward `r = [r_1..r_8]` (예: `[1,0,0,1,0,0,0,0]`).
+2. 그룹상대 advantage `Â_i = (r_i − mean)/std` (§3).
+3. **시도 i의 advantage `Â_i`를 그 시도의 모든 스텝에 똑같이 부여**(`flatten_group`, `grpo_train.py:94`):
+```python
+for i, a in enumerate(attempts):
+    for st in a["steps"]:
+        advs.append(float(adv[i]))   # 시도 i의 모든 tactic이 같은 Â_i
+```
+> 🟦 **개념 · credit assignment**: "성공한 시도에서 친 모든 tactic은 좋았다고 보고 +, 실패 시도는 −." 어느 tactic이 결정적이었는지는 모르지만, 8번 평균내면 신호가 잡힌다. (이게 tactic별 보상을 안 쓰는 이유 — Coq은 "완결/실패"만 알려주지 tactic별 점수를 안 준다.)
+
+### (5) 구현 디테일 총정리 (빠짐없이)
+
+- reward는 `float`(0.0/1.0, dense는 0~1). `group_advantages`가 float를 받는다.
+- **성공 판정 = check_proof의 `COMPLETE`** (내부적으로 남은 goal 0 + Qed 재검증). 우리가 문자열로 판단 안 함.
+- INVALID / max_steps 초과 / `get_recs`가 빈 결과 → 전부 reward 0.
+- dense의 `value_fn`은 rollout searcher가 `qed_ckpt` 있으면 `QEDValuePredictor`로 만든다(`grpo_rollout.py` `GRPORolloutSearcher.__init__`).
+- **8개 다 reward 같으면**(다 0 or 다 1) → `group_advantages`가 0 반환 → 그 그룹은 학습에서 skip(`train` 루프의 `if all(|a|<1e-8): continue`).
+- 실제 수집: 39그룹 중 **binary로 신호(혼합) 있는 그룹 11개**. dense(E2)는 이 신호 그룹 수를 늘리려는 시도.
+
+<details><summary><b>▸ 돌아가는 예시 — 클릭</b></summary>
+
+```
+정리 idx 779038374015, G=8:
+  시도별 reward = [1, 0, 0, 1, 0, 0, 0, 0]     ← binary (4/8 완결은 아니고 예시)
+  mean=0.25, std=0.43
+  advantage Â = [+1.7, −0.58, −0.58, +1.7, −0.58, −0.58, −0.58, −0.58]
+  → 성공 시도(1,4)의 모든 tactic 확률↑, 실패 시도의 모든 tactic 확률↓
+dense였다면 실패 시도도: reward = 0.3 × V(마지막상태) 예: 0.3×0.4=0.12
+  → [1, 0.12, 0.05, 1, 0.08, ...] → 미완끼리도 우열이 생겨 신호↑
+```
+</details>
+
 ## 2. ∇θ J 를 어떻게 구하나 — Policy Gradient (REINFORCE)
 
 문제: R은 "Coq이 통과/실패"라는 **미분 불가능**한 결과다. θ로 직접 미분 못 한다.
