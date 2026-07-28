@@ -51,7 +51,11 @@ CoqStoq/
 # OS
 .DS_Store
 Thumbs.db
+# 실험 실행 중 생성되는 로그/모니터 출력
 all_log/*.log
+all_log/*.out
+all_log/*.log.*
+all_log/gpu_monitor.md
 
 # heavy model downloads / generated RL data
 models_dl/

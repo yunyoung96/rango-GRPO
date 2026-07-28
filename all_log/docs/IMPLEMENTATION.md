@@ -576,6 +576,206 @@ def grpo_batch_loss(logp_new, logp_old, logp_ref, advantages, mask, clip_eps=0.2
 
 ---
 
+# 이론편 · DPO (Direct Preference Optimization) — 밑바닥부터
+
+> 🟦 **왜 여기 있나**: DPO는 GRPO의 **대안 학습법**이다. BFS-Prover(arXiv:2502.03438) full 학습 = **expert-iteration(성공 trace SFT) + DPO(선호쌍 학습)**. 우리 코드는 이 DPO 항을 재현한다. 코어: `src/tactic_gen/dpo.py:19` · 데이터: `src/tactic_gen/bfs_dpo_data.py:33` · 학습: `src/tactic_gen/dpo_train.py:44` · alias: `scripts/run_thm.py:457` `bfs-dpo`.
+
+## D-0. 한 문장 개념 — "정답 tactic vs 오답 tactic을 직접 비교"
+
+> 🟦 **개념**: GRPO는 "8번 풀어 그룹 안에서 점수(advantage) 매김"이라면, DPO는 **같은 goal에서 잘된 tactic(chosen)과 못된 tactic(rejected) 한 쌍**을 놓고 "chosen을 rejected보다 더 그럴듯하게 만들어라"만 시킨다. reward 함수도, 탐색 rollout도 필요 없다 — **선호쌍만 있으면 됨**.
+
+**GRPO와의 핵심 차이:**
+
+| | GRPO | DPO |
+|---|---|---|
+| 학습 신호 | 그룹 상대 advantage `(r−mean)/std` (스칼라 보상 필요) | 선호쌍 chosen≻rejected (**보상함수 불필요**) |
+| 데이터 | 정리마다 8샷 rollout(온라인) | 트리 덤프에서 뽑은 (chosen, rejected) 쌍(오프라인 가능) |
+| sparse 취약성 | 그룹 전부 실패 → gradient 0 (§3, 28/40 dead) | 한 state에 성공·실패 **둘 다** 있어야 쌍 생성 → 유사한 취약성 |
+| π_ref 역할 | KL 페널티(안 멀어지게) | **손실 정의 자체에 내장**(아래 유도) |
+| clip | 있음(PPO) | 없음 (logσ가 자연히 saturate) |
+
+## D-1. 선호쌍은 어디서 오나 — `bfs_dpo_data.py:33` `extract_dpo_pairs`
+
+> 🟦 BFS 탐색 트리를 덤프하면 각 노드(=proof state)에서 여러 tactic을 시도한 기록이 남는다. **같은 state**에서:
+> - `leads_to_success=True` tactic → **chosen** (y_w)
+> - `result="INVALID"` 또는 `leads_to_success=False` → **rejected** (y_l)
+>
+> 한 state에 성공·실패가 **둘 다** 있을 때만 (chosen × rejected) 곱집합으로 쌍 생성.
+
+```python
+# bfs_dpo_data.py:33  — 같은 state x에서 성공 tactic과 실패 tactic을 짝지음
+for n in nodes:
+    chosen, rejected = [], []
+    for t in n.get("tactics", []):
+        if t.get("leads_to_success"):        chosen.append(t["tactic"])   # y_w
+        elif t.get("result")=="INVALID" or t.get("leads_to_success") is False:
+            rejected.append(t["tactic"])                                   # y_l
+    for c in chosen:
+        for r in rejected:
+            if c != r: pairs.append({"state": st, "chosen": c, "rejected": r})
+```
+
+> 🟨 **함정**: chosen·rejected가 **둘 다 있는 state만** 쌍이 됨. GRPO의 "그룹 전부 실패=dead"와 같은 병목이 여기도 있다(§3 sparse reward와 동형 문제). 성공 trace가 희박하면 선호쌍도 희박.
+
+## D-2. DPO 손실 — 수식과 코드 (`dpo.py:19`)
+
+같은 프롬프트 `x`, chosen `y_w`, rejected `y_l`에 대해:
+
+```
+L_DPO = − log σ( β · [ (logπ_θ(y_w|x) − logπ_ref(y_w|x)) − (logπ_θ(y_l|x) − logπ_ref(y_l|x)) ] )
+                       └──────────── chosen 우위 ───────────┘   └──────────── rejected 우위 ──────────┘
+```
+
+<details><summary><b>▸ 기호 — 클릭</b></summary>
+
+- `x` : proof state(프롬프트). `y_w` : chosen(성공 경로) tactic. `y_l` : rejected(막다른) tactic.
+- `π_θ` : 학습 중인 정책(LoRA). `π_ref` : **시작 정책의 동결 복사**(`dpo_train.py:126` `copy.deepcopy(policy).eval()`).
+- `logπ(y|x)` : 완성 토큰 log-prob **합**(`dpo.py:35` `masked_sum_logprob` = per-token logp × completion mask 합).
+- `β` : 온도. 클수록 π_ref에서 덜 벗어남. 기본 `0.1`(`dpo.py:24`).
+- `σ` : 시그모이드. `logσ(z) = −log(1+e^{−z})`.
+</details>
+
+```python
+# dpo.py:19  — 수식 한 줄씩 대응
+pi_logratios  = logp_w_policy - logp_l_policy      # 정책의 (chosen−rejected) 우위
+ref_logratios = logp_w_ref    - logp_l_ref         # 레퍼런스의 (chosen−rejected) 우위
+logits = beta * (pi_logratios - ref_logratios)     # β·[정책우위 − 레퍼런스우위]
+loss = -F.logsigmoid(logits).mean()                # −log σ(logits)
+acc  = (logits > 0).float().mean()                 # chosen을 실제로 선호하는 비율
+```
+
+## D-3. 수식 유도 — 이 손실은 어디서 왔나 (RLHF → closed-form → Bradley-Terry)
+
+> 🟦 DPO의 핵심 통찰: "**보상 모델을 따로 학습해 RL 돌리지 말고**, 그 최적해를 손실에 대입해 정책을 바로 학습하자"(그래서 *Direct*).
+
+<details><summary><b>▸ 3단계 유도 — 클릭</b></summary>
+
+**(1) RLHF의 목표** — KL 제약 하 보상 최대화:
+```
+max_π  E[ r(x,y) ]  − β·KL(π ‖ π_ref)
+```
+**(2) 이 문제의 closed-form 최적해** (라그랑주 → 지수가족):
+```
+π*(y|x) = (1/Z(x))·π_ref(y|x)·exp( r(x,y)/β )
+```
+양변 log·정리 → **보상을 정책의 log-ratio로 역표현**:
+```
+r(x,y) = β·log( π*(y|x) / π_ref(y|x) )  +  β·log Z(x)
+```
+**(3) Bradley-Terry 선호모델** `P(y_w≻y_l) = σ( r(x,y_w) − r(x,y_l) )` 에 (2)를 대입.
+`β·log Z(x)` 는 **차분에서 소거**(같은 x라 상쇄):
+```
+P(y_w≻y_l) = σ( β·[ log(π/π_ref)|_{y_w} − log(π/π_ref)|_{y_l} ] )
+```
+이 확률의 **음의 로그가능도** = `L_DPO`. ∎ (Rafailov et al. 2023, NeurIPS)
+</details>
+
+**직관**: `logits > 0` ⇔ 정책이 레퍼런스보다 chosen을 상대적으로 더 선호 → 손실↓. `−logσ`는 이미 잘 맞은 쌍엔 gradient가 작고(saturate), 틀린 쌍엔 크다 → PPO의 clip 없이도 **자연스러운 신뢰영역** 역할.
+
+## D-4. 학습 루프 — `dpo_train.py:44` `train`
+
+> 🟦 마이크로배치마다 π_ref·π_θ 각각으로 chosen/rejected log-prob 4개를 구해 손실 계산. **logp 계산은 GRPO와 공유**(`grpo_train.sequence_token_logprobs` 재사용, `dpo_train.py:21`).
+
+```python
+# dpo_train.py:65  — ref는 no_grad, policy는 grad. 4개 seq-logp → dpo_loss
+with torch.no_grad():
+    w_ref = _seq_logp(ref_model, ..., chosen);   l_ref = _seq_logp(ref_model, ..., rejected)
+w_pol = _seq_logp(model, ..., chosen);           l_pol = _seq_logp(model, ..., rejected)
+loss, acc = dpo_loss(w_pol, l_pol, w_ref, l_ref, beta=beta)   # dpo.py:19
+loss.backward(); clip_grad_norm_(..., 1.0); opt.step()        # LoRA만 업데이트
+```
+
+| DPO 단계 (수식) | 코드 위치 | 코드 |
+|---|---|---|
+| ① 선호쌍 추출 (chosen/rejected) | `bfs_dpo_data.py:33` `extract_dpo_pairs` | `pairs.append({state, chosen, rejected})` |
+| ② 4개 seq-logp (π_ref detach, π_θ grad) | `dpo_train.py:65` | `_seq_logp(ref…)` / `_seq_logp(model…)` |
+| ③ 완성토큰 logp 합 | `dpo.py:35` `masked_sum_logprob` | `(tok_logp*mask).sum(dim=1)` |
+| ④ log-ratio 차분 | `dpo.py:27` | `pi_logratios − ref_logratios` |
+| ⑤ `−logσ(β··)` 손실 | `dpo.py:30` | `-F.logsigmoid(beta*(…)).mean()` |
+| ⑥ θ 업데이트(LoRA만) | `dpo_train.py:76` | `loss.backward(); opt.step()` |
+
+## D-5. 결과 (@40)
+
+> 🟥 **결과**: `bfs-dpo` = **13/40** (baseline published Rango 12/40 대비 **+1**, GRPO round-1 16/40 대비 **−3**). BFS-Prover 학습항 자체는 동작하나, 우리 규모(1.3B·소량 선호쌍)에선 GRPO 대비 열위. 선호쌍이 "성공·실패 공존 state"에만 생겨 GRPO와 **동일한 sparse 병목**(§3)을 겪는 게 원인으로 보인다. → 전체 성과 요약표 §A(BFS-Prover, ✅ full, 13, +1) 참조.
+
+> 🟦 **한 문장 요약**: DPO = "같은 goal에서 **성공 tactic을 실패 tactic보다 (레퍼런스 대비) 더 그럴듯하게** 밀어라" — 보상함수·rollout 없이 선호쌍 하나로 학습하는 GRPO의 오프라인 대안.
+
+---
+
+# 이론편 · Expert Iteration (ExIt) — 밑바닥부터
+
+> 🟦 **왜 여기 있나**: Expert Iteration은 GRPO·DPO와 나란한 **자기개선(self-improvement) 학습 틀**이다. BFS-Prover(2502.03438) full 학습의 뼈대이자, effectiveness study의 **E1 실험**(iterated GRPO)이 이 원리다. 구현: `src/tactic_gen/bfs_expert_iter.py` · SFT 데이터 추출: `src/tactic_gen/bfs_dpo_data.py:23` `extract_sft` · E1 rollout: `run_thm.py:272` `grpo-rollout-r2`. 원논문: Anthony et al. 2017(*Thinking Fast and Slow with Deep Learning and Tree Search*, arXiv:1705.08439); 정리증명 적용: Polu et al. 2022(arXiv:2202.01344).
+
+## E-0. 한 문장 개념 — "느린 전문가로 빠른 견습생을 가르친다"
+
+> 🟦 **개념**: 두 주체가 있다. **견습생(apprentice)** = 빠른 정책 네트워크(tactic LLM). **전문가(expert)** = 느리지만 강한 탐색(BFS/MCTS + Coq 검증). 탐색은 앞을 내다보고 검증까지 하므로 **정책 단독보다 더 나은 결정**을 낸다. 이 전문가의 성공 결정을 **지도학습으로 견습생에 증류(distill)** → 견습생이 강해짐 → 강해진 견습생이 다음 탐색을 더 잘 이끔 → **반복**. 자기 자신이 만든 성공 증명으로 자기를 끌어올리는 부트스트랩.
+
+**GRPO·DPO와의 관계:**
+
+| | 신호 원천 | 학습 방식 | ExIt와의 관계 |
+|---|---|---|---|
+| **Expert Iteration** | 탐색(expert)이 찾은 **성공 증명** | 성공경로 (state,tactic) **SFT** | 원형(原型) |
+| GRPO | rollout 그룹의 상대 보상 | advantage 가중 policy gradient | ExIt의 **soft 버전**(하드 SFT 대신 보상가중) |
+| DPO | 성공 vs 실패 tactic 선호쌍 | 선호 로그비 | ExIt에 **음성 신호**를 더한 것 |
+
+> 즉 셋 다 "탐색으로 성공을 만들고 → 그걸로 정책을 옮긴다"는 **같은 self-improvement 계열**. 차이는 성공을 어떻게 정책에 반영하느냐(하드 SFT / 보상가중 / 선호대비)다.
+
+## E-1. 왜 통하나 — policy improvement 논증
+
+<details><summary><b>▸ 부트스트랩이 성립하는 이유 — 클릭</b></summary>
+
+**전제**: 탐색 연산자 `𝒮`(expert)는 현재 정책 `π_k`를 **prior로** 써서 탐색하되, Coq 검증으로 실패 가지를 쳐낸다. 따라서 `𝒮(π_k)`가 내는 결정 분포는 `π_k`보다 **성공률이 높다**(검증된 것만 남기므로 하한 보장).
+
+**증류(distillation)**: `π_{k+1} = argmin_π  E_{(s,a)~𝒮(π_k) 성공경로}[ −log π(a|s) ]`
+→ `π_{k+1}`은 `𝒮(π_k)`의 성공 결정을 모방 → `π_{k+1}` ≳ `π_k` (탐색이 뽑은 더 나은 정책으로 이동).
+
+**반복**: `π_{k+1}`이 더 나은 prior → `𝒮(π_{k+1})`가 더 깊이/넓게 성공 → 더 좋은 SFT 데이터 → `π_{k+2}` … **단조 개선**(정책공간이 유한 표현력이라 고정점으로 수렴). AlphaZero의 "policy improvement operator = MCTS, projection = 신경망 학습"과 동형.
+</details>
+
+> 🟦 **직관**: 탐색은 "느리게 생각(slow)"해서 정답을 찾고, 정책은 그걸 "빠른 직관(fast)"으로 흡수한다. 다음 번엔 직관만으로 더 멀리 가고, 탐색은 그 너머를 개척. **sparse reward 관점**: ExIt의 expert는 **성공 예시 자체를 생성**한다 → §1.5·§3에서 본 "그룹 전부 실패(dead)" 문제를, 보상 shaping이 아니라 **성공을 더 많이 만들어** 정면 공략(RMaxTS와 같은 방향, DeepSeek-Prover의 정공법).
+
+## E-2. 정리증명에서의 구체화 — 라운드 루프 (`bfs_expert_iter.py`)
+
+```
+라운드 r:
+  ① 탐색: 현재 정책으로 train 정리에 BFS 탐색 → 트리 덤프          run_search()  :30
+  ② 추출: 트리 → 성공경로 (state,tactic) SFT + (성공,실패) DPO쌍   extract_round() :45
+  ③ 학습: SFT(expert-iter) → 이어서 DPO → 새 adapter               run_dpo()      :57
+  ④ 새 adapter로 r+1 반복                                          main loop      :85
+```
+
+```python
+# bfs_dpo_data.py:23  — expert의 "성공 결정"만 골라 SFT 데이터로 (핵심)
+def extract_sft(nodes):
+    out = []
+    for n in nodes:
+        for t in n.get("tactics", []):
+            if t.get("leads_to_success"):                 # 검증된 성공경로 tactic만
+                out.append({"state": _state(n), "tactic": t["tactic"]})
+    return out
+```
+
+| ExIt 단계 | 코드 위치 | 코드 |
+|---|---|---|
+| ① expert 탐색(BFS+trace) | `bfs_expert_iter.py:30` `run_search` | `run_all.py --alias bfs-prover-trace` |
+| ② 성공경로 → SFT 데이터 | `bfs_dpo_data.py:23` `extract_sft` | `if leads_to_success: out.append((state,tactic))` |
+| ③ 증류(SFT→DPO) | `bfs_expert_iter.py:57` `run_dpo` | `dpo_train.py --init_adapter <prev>` |
+| ④ 라운드 반복 | `bfs_expert_iter.py:85` | `for r in range(rounds): adapter = out_adapter` |
+
+> 🟨 **함정 / 정직한 캐비어트**: 우리 `bfs_expert_iter.py`는 **SFT 단계를 데모에서 생략하고 DPO 위주**로 돌린다(코드 주석 `:92` 명시 — "SFT는 train_decoder 재사용 가능, 여기선 DPO 데모"). 즉 **full ExIt(SFT+DPO 반복)가 아니라 DPO-라운드**에 가깝다. 완전 재현하려면 ②에서 뽑은 `sft.jsonl`로 SFT fine-tune을 ③ 앞에 넣어야 한다.
+
+## E-3. E1 실험 = iterated GRPO (ExIt의 GRPO판)
+
+> 🟦 effectiveness study의 **E1**은 ExIt를 GRPO로 실체화한 것: **round-1 GRPO 정책으로 다시 rollout**(`grpo-rollout-r2`, `run_thm.py:272`)해서 새 성공/실패를 모으고 **이어서 학습**. 하드 SFT 대신 GRPO의 advantage 가중을 쓰는 "soft ExIt". 드라이버(`run_grpo_effstudy.sh:43`): `run_exp E1-expiter grpo-rollout-r2 "--start 200 --num 40" models/rango-grpo/adapter`.
+
+## E-4. 결과 (@40)
+
+> 🟥 **결과**: **E1(iterated GRPO)은 큐 대기 중**(E2→E3→E4 뒤 실행 예정 — 미측정). 참고로 **BFS-full(expert-iter+DPO)** = **13/40**(+1 vs baseline 12): expert가 뽑은 성공 trace가 적어(선호쌍 35개) 증류 신호가 약했다. **핵심 한계**: ExIt의 성패는 **expert가 새 성공을 얼마나 만드느냐**에 달렸는데, 우리 규모(1.3B·40 train 정리)에선 라운드당 새 성공이 희소 → 부트스트랩 동력이 약하다. DeepSeek-Prover가 통한 건 **대규모 문제셋 × 강한 base**로 라운드마다 성공이 풍부했기 때문. → 로드맵의 cross-project·6.7B 확장이 ExIt에도 직접적 처방.
+
+> 🟦 **한 문장 요약**: Expert Iteration = "탐색(느린 전문가)이 검증된 성공 증명을 만들고 → 그걸 정책(빠른 견습생)에 지도학습으로 증류 → 반복" — 자기 성공으로 자기를 끌어올리는 부트스트랩. GRPO·DPO는 이 증류를 각각 보상가중·선호대비로 바꾼 변형이다.
+
+---
+
 # 코드 단위 딥다이브 — search & 학습이 정확히 어떻게 도는가
 
 > 실제 소스를 **줄 단위로** 따라간다. 각 `▶` 제목 클릭 시 펼쳐짐(GitHub/VSCode 토글). 코드는 **실제 소스 그대로**.
@@ -1138,3 +1338,55 @@ SolveGoal(prefix, goals, depth):
 6. rollout prompt 재현은 collate_input(collator) — subword 경계 위해 prompt/completion 분리 토크나이즈.
 7. transplant는 Section 닫기 필수.
 8. `pkill -f "run..."`는 자기 자신 매치 → exit 144. `ps ... | grep [r]un` 브래킷 트릭 사용.
+
+---
+
+## 11. GRPO sparse-reward 개량 계보 (2026-07 세션)
+
+CompCert GRPO 는 **dead group(그룹 8개 보상 균일 → advantage 0 → 통째 버림)이 ~69%** 라 신호가 희소하다. 이걸 여러 축으로 공략한 기록. 모든 코어는 `grpo.py`(순수 텐서, 단위테스트)에, rollout 변형은 `grpo_rollout.py`(searcher), 학습은 `grpo_train.py`.
+
+### 11.0 base-model 정정 (fix) — 모든 후속의 출발점
+- **버그**: 구 `rango-grpo` 는 학습=`base`, rollout/배포=`instruct` 로 **세 정책이 어긋남**(adapter_config 의 base_model=instruct 를 추론서버가 따름).
+- **정정**: 전 파이프라인 `--model_name instruct` 통일. 결과 −1→+4 로 뒤집힘. alias `rango-grpo-fix`. **이후 모든 개량의 baseline·초기화 정책("on-fix")**.
+- 비교기준은 **우리 rango(@20=11 @40=15 @180=61)** 만. published(하드웨어 다름) 비교 안 함.
+
+### 11.1 진단 프레임 — 두 벽
+1. **dead group(신호 희소)**: 모델이 못 푸는 정리엔 신호가 없다.
+2. **covariate shift(gold 전이 실패)**: 상태 방문 분포 `d^gold ≠ d^π`. gold 상태에서 배운 게 정책 자신이 밟는 상태로 안 옮겨감(BC 오차 O(εT²) 복제, Ross-Bagnell 2011). 게다가 gold 항이 무제약이면 fix 를 좋은 지점에서 끌어내 **회귀**.
+   - 목적: `J_gold=E_{s~d^gold}[π_θ(a^gold|s)]` ↑ 가 `J_test=E_{s~d^π}[성공]` ↑ 를 함의하려면 `d^gold≈d^π` 필요.
+
+### 11.2 축 A — gold(off-policy) 주입: dead 에 신호를 넣지만 전이 위험
+| 방법 | 논문 | 메커니즘 | 코드 | alias | 결과 |
+|---|---|---|---|---|---|
+| **LUFFY** | 2504.14945 | dead group 에 gold 궤적 1개 주입(off_policy). gold 토큰은 **clip 없이 shaping** `f(π_θ)=π_θ/(π_θ+γ)` 로 증폭, KL 없음 | `luffy_batch_loss`, `rollout_gold`, `--luffy`, `group_advantages_with_gold`(std-floor) | `rango-grpo-luffy` | rango기반 @20+0/@40−1; **on-fix 회귀**(6/12, fix 10·11·15 상실) |
+| **KL-LUFFY** | (진단 처방) | LUFFY 에 **KL(π_θ‖fix) 복원** → fix 근처에 묶어 회귀 방지. LUFFY 와 유일차이=KL | `luffy_kl_batch_loss`, `--luffy_kl` | `rango-grpo-luffy-kl` | 큐(luffy.jsonl 재사용) |
+| **BREAD** | Branched Rollouts from Expert Anchors | on-policy 궤적 진행 중 **INVALID 로 막히면 그 depth 의 gold 를 한 스텝 '다리'로 splice**. 다리 step 만 off_policy → `--luffy`. LUFFY 보다 self-state 에 가까움 | `rollout_bread`, conf `bread`, per-step off_policy(flatten) | `rango-grpo-bread` | 큐 |
+
+### 11.3 축 B — curriculum / prefix: 성공확률을 조준
+| 방법 | 논문 | 메커니즘 | 코드 | alias | 결과 |
+|---|---|---|---|---|---|
+| **Backward curriculum** | Florensa 2017 | gold 중간상태(remaining=4)에서 롤아웃 시작 → 완주율↑. s0 그룹과 **별도 그룹**(baseline 오염 방지) | `build_backward_curriculum.py`, conf `curriculum_file` | `rango-grpo-backward(-prm)` | @20 6/20(−5) 회귀 |
+| **Reverse curriculum(전체 역행)** | Florensa 완전형 | gold **모든** 중간상태(remaining 2~8, 정리당 평균 4.8=총174)에서 각각 그룹. all-success/all-fail 은 학습 스킵 | `build_revcurr_curriculum.py`, searcher 다중시작(`starts`) | `rango-grpo-revcurr` | 큐 |
+| **Adaptive prefix** | pass-rate control | revcurr 후보 중 **정답률~0.5 prefix 를 정리별 probe(mc_value) 선택** → 그 그룹+s0 | conf `adapt_prefix`/`probe_k` | `rango-grpo-adaptprefix` | 큐 |
+
+### 11.4 축 C — on-policy: 전이문제 없음(clip+KL 로 fix 근처). 단, dead 엔 신호 못 만듦
+| 방법 | 논문 | 메커니즘 | 코드 | alias | 결과 |
+|---|---|---|---|---|---|
+| **PRM(process reward)** | 2606.20068 | coq-lsp 검증 기반 per-tactic φ(+1/−0.05/−0.10)를 tactic 첫 토큰에 credit. dead group 도 INVALID vs valid-실패 구분 신호 | `checker_process_rewards`, `--process`, first-token+길이보정 | `rango-grpo-prm` | @20 11 @40 16 (vs 우리rango 0/+1) |
+| **재샘플(retry)** | — | INVALID 시 같은 state 재샘플(state 불변) → 완주확률 1−(1−p)^{1+k} | conf `max_retries` | `rango-grpo-retry` | @20 10/@40 15(−1/0) 부작용: 방문분포 왜곡 |
+| **Dynamic sampling** | DAPO | dead s0 그룹을 **mixed 될 때까지 재샘플**(최대 4) → informative 그룹 채움. on-policy pass-rate 제어 | conf `dyn_resample` | `rango-grpo-fixdyn` | 큐 |
+| **VinePPO** | 2410.01679 | backbone + **각 on-policy state 에서 MC value(k분기)** → step advantage `V(s')−V(s)`. gold state 안 씀, 부분진전 신호로 dead rate↓. MC 분기=Tree | `rollout_vine`,`mc_value`, flatten `vine`, `--vine` | `rango-grpo-vine` | 큐 |
+
+### 11.5 Dr.GRPO length-bias 보정
+- 토큰평균(Σ/|a|)은 긴 tactic gradient 를 희석 → Coq 거부 tactic 이 평균 2.10배 길어 **가장 벌줘야 할 게 가장 약하게 벌받음**. `--denom_const`(상수 정규화, Dr.GRPO 2503.20783). PRM first-token credit 은 scale 을 분모와 일치시켜 상쇄(`grpo_batch_loss_perstep`).
+
+### 11.6 리뷰로 잡은 버그 (2026-07-16, 결과엔 소급 영향 없음)
+1. `--process`+`--denom_const` 동시: PRM credit 이 `n_tok` 곱하는데 분모는 상수 → 길이 재편향. scale 을 분모와 일치로 수정.
+2. 재시도 중복 INVALID 기록 → 음수예제 과가중 + normalize_process 왜곡. 중복 스킵.
+3. 빈 시도(steps=[])가 group baseline 오염 → 제외.
+4. BREAD per-step off_policy(flatten 이 attempt 단위였음) → step 단위 수정.
+
+### 11.7 미해결 & 방향
+- **근본 한계**: on-policy 는 dead(모델이 못 푸는 정리)에 신호 못 만듦(=base 능력 문제), gold 는 전이 실패. 둘 다 "무에서 창조"는 불가.
+- **covariate shift 정공법 후보**: DAgger(정책 상태+오라클 라벨, BREAD 는 gold-lite판), GAIL/occupancy matching, AWR/CQL(conservative), expert-iteration(HTPS/GPT-f 식, 자기 성공 강화). KL-LUFFY 가 conservative 의 최소 구현.
+- **gold 확률값**: forward pass(teacher forcing)로 채점=SFT loss 메커니즘(`sequence_token_logprobs`). off-policy 라 π_old 없음 → LUFFY 가 ratio/clip 빼고 shaping.

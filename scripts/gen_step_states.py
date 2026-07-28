@@ -15,9 +15,11 @@ def step_states(cfile, name, maxsteps=45):
     body="\n".join(lines[proof+1:qed])
     steps=reach.split_steps(body)[:maxsteps]
     stack=cov.open_sections_at(lines,start)
-    inj=[f'idtac "@@0@@".','Show.']
+    # 각 스텝마다 goal(Show) + proof term(Show Proof) 를 마커(@@Gk@@ / @@Pk@@)와 함께 뽑는다.
+    #   Gk 와 Pk 는 같은 proof state(둘 다 Show 계열 command 앞의 idtac 마커)라 함께 성공/실패.
+    inj=[f'idtac "@@G0@@".','Show.',f'idtac "@@P0@@".','Show Proof.']
     for k,s in enumerate(steps,1):
-        inj += [s, f'idtac "@@{k}@@".','Show.']
+        inj += [s, f'idtac "@@G{k}@@".','Show.', f'idtac "@@P{k}@@".','Show Proof.']
     new=lines[:proof+1]+inj+["Admitted."]+[f"End {x}." for x in reversed(stack)]
     d=os.path.join(cov.COMPCERT, os.path.dirname(cfile)); tmp=os.path.join(d,f"_ss_{name}.v")
     open(tmp,"w",encoding="utf-8").write("\n".join(new)+"\n")
@@ -32,18 +34,17 @@ def step_states(cfile, name, maxsteps=45):
             if j.startswith(f"_ss_{name}") or j.startswith(f"._ss_{name}"):
                 try: os.remove(os.path.join(d,j))
                 except: pass
-    # 마커로 분리: parts=[pre,'0',txt0,'1',txt1,...]
-    parts=re.split(r'@@(\d+)@@', out)
-    st={}
-    for i in range(1,len(parts)-1,2):
-        k=int(parts[i]); txt=parts[i+1]
-        # goal 블록만: 앞뒤 공백 정리, Error 이후 자르기
+    # 마커로 분리: @@G{k}@@ = goal, @@P{k}@@ = proof term. parts=[pre,'G','0',txt,...]
+    parts=re.split(r'@@([GP])(\d+)@@', out)
+    goal={}; pterm={}
+    for i in range(1,len(parts)-2,3):
+        kind=parts[i]; k=int(parts[i+1]); txt=parts[i+2]
         txt=re.split(r'\nError', txt)[0].strip()
-        st[k]=txt
+        (goal if kind=="G" else pterm)[k]=txt
     res=[]
     for k,s in enumerate(steps,1):
-        res.append({"tac":s.strip(), "state":st.get(k,"")})
-    return {"initial":st.get(0,""), "steps":res}
+        res.append({"tac":s.strip(), "state":goal.get(k,""), "proof":pterm.get(k,"")})
+    return {"initial":goal.get(0,""), "initial_proof":pterm.get(0,""), "steps":res}
 
 def build_all():
     ROWS=json.load(open("/tmp/claude-0/-app-coq-modeling/6331508b-8918-46d1-8fc8-94a923df1143/scratchpad/suffix_rows.json"))

@@ -12,6 +12,7 @@ import argparse
 import os
 import signal
 import json
+import queue
 import re
 import subprocess
 import threading
@@ -30,15 +31,20 @@ def get_compcert_indices() -> list[int]:
     return [i for i, t in enumerate(thms) if t.project.dir_name == "compcert"]
 
 
-def run_one(idx: int, log_file: Path, alias: str, timeout: int) -> dict:
+def run_one(idx: int, log_file: Path, alias: str, timeout: int, gpu=None) -> dict:
     cmd = ["python3", SCRIPT, "run", alias, "test", str(idx), "--timeout", str(timeout)]
     # 하드 timeout: 검색이 hang(무한루프/거대 goal)해도 강제 종료. 모델로드+정리 버퍼 +300s.
     hard_timeout = timeout + 300
+    # ★ 멀티-GPU: gpu 지정시 이 워커(+자식 서버/coq)를 해당 물리 GPU 에 핀.
+    #   서버는 device 인자 없이 torch 기본(cuda:0)만 쓰므로 CUDA_VISIBLE_DEVICES remap 으로 정확히 핀된다.
+    env = os.environ.copy()
+    if gpu is not None:
+        env["CUDA_VISIBLE_DEVICES"] = str(gpu)
     t0 = time.time()
     returncode = 0
     with log_file.open("w") as f:
-        f.write(f"# cmd: {' '.join(cmd)}\n\n")
-        proc = subprocess.Popen(cmd, stdout=f, stderr=f, start_new_session=True)
+        f.write(f"# cmd: {' '.join(cmd)}  [CUDA_VISIBLE_DEVICES={gpu}]\n\n")
+        proc = subprocess.Popen(cmd, stdout=f, stderr=f, start_new_session=True, env=env)
         try:
             returncode = proc.wait(timeout=hard_timeout)
         except subprocess.TimeoutExpired:
@@ -72,6 +78,7 @@ def run_one(idx: int, log_file: Path, alias: str, timeout: int) -> dict:
         "original_success": original_success,
         "exit_code": returncode,
         "elapsed_sec": round(elapsed, 2),
+        "gpu": gpu,
         "log": str(log_file),
     }
 
@@ -94,6 +101,10 @@ def main():
                         help="기존 결과 디렉토리 재사용(resume). 이미 완료된 idx는 건너뜀.")
     parser.add_argument("--idx-file", dest="idx_file", type=str, default=None, metavar="FILE",
                         help="명시적 인덱스 리스트 파일(커리큘럼용). 지정시 --start 무시.")
+    parser.add_argument("--gpus", type=str, default=None, metavar="LIST",
+                        help="쉼표구분 물리 GPU 목록(예: 0,1). 지정시 --workers=GPU당 워커수 → "
+                             "총 len(gpus)×workers 병렬, 각 워커를 CUDA_VISIBLE_DEVICES 로 핀(GPU당 정확히 workers개). "
+                             "미지정시 기존 단일풀 동작.")
     args = parser.parse_args()
 
     # compcert 인덱스 결정
@@ -158,20 +169,60 @@ def main():
         summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False))
 
     save_summary()  # resume 시에도 총계 즉시 반영
-    with ThreadPoolExecutor(max_workers=args.workers) as executor:
-        futures = {
-            executor.submit(run_one, idx, log_dir / f"{idx}.txt", args.alias, args.timeout): idx
-            for idx in indices_to_run
-        }
-        for future in as_completed(futures):
-            r = future.result()
-            with lock:
-                done += 1
-                n_success += r["success"]
-                results.append(r)
-                status = "✓" if r["success"] else "✗"
-                print(f"  [{done}/{total}] idx={r['idx']}  {status}  {r['elapsed_sec']:.1f}s")
-                save_summary()
+
+    def record(r):
+        nonlocal done, n_success
+        with lock:
+            done += 1
+            n_success += r["success"]
+            results.append(r)
+            status = "✓" if r["success"] else "✗"
+            g = r.get("gpu")
+            gtag = f" gpu{g}" if g is not None else ""
+            print(f"  [{done}/{total}] idx={r['idx']}  {status}  {r['elapsed_sec']:.1f}s{gtag}")
+            save_summary()
+            # (오염 가드는 in-code 로직 대신 별도 nvidia-smi 감시자(all_log/gpu_watch.sh)가
+            #  GPU util·메모리를 md 에 연속 기록 → 사용자에 보고. 보고 전용, 자동정지 없음.)
+
+    gpu_list = [g.strip() for g in args.gpus.split(",") if g.strip()] if args.gpus else None
+
+    if gpu_list:
+        # ★ 멀티-GPU: GPU당 정확히 args.workers 개 스레드(고정 GPU) + 공유큐(동적 분배) → 총 g×w 병렬.
+        #   스레드는 subprocess.wait 에서 블록만 하므로 오케스트레이션 CPU 는 무시할 수준.
+        total_par = len(gpu_list) * args.workers
+        print(f"멀티-GPU 병렬: gpus={gpu_list} × workers/gpu={args.workers} = {total_par} 병렬 "
+              f"(GPU당 {args.workers}개 캡, 공유큐 동적분배)")
+        work_q: queue.Queue = queue.Queue()
+        for idx in indices_to_run:
+            work_q.put(idx)
+
+        def worker(gpu):
+            while True:
+                try:
+                    idx = work_q.get_nowait()
+                except queue.Empty:
+                    return
+                try:
+                    record(run_one(idx, log_dir / f"{idx}.txt", args.alias, args.timeout, gpu))
+                finally:
+                    work_q.task_done()
+
+        threads = []
+        for gpu in gpu_list:
+            for _ in range(args.workers):
+                t = threading.Thread(target=worker, args=(gpu,), daemon=True)
+                t.start()
+                threads.append(t)
+        for t in threads:
+            t.join()
+    else:
+        with ThreadPoolExecutor(max_workers=args.workers) as executor:
+            futures = {
+                executor.submit(run_one, idx, log_dir / f"{idx}.txt", args.alias, args.timeout): idx
+                for idx in indices_to_run
+            }
+            for future in as_completed(futures):
+                record(future.result())
 
     print(f"\n완료: {n_success}/{total} 성공  →  {summary_path}")
 

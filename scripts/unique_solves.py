@@ -26,7 +26,7 @@ def all_idx(d):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--md", default="all_log/unique_solves.md")
+    ap.add_argument("--md", default="all_log/docs/unique_solves.md")
     ap.add_argument("--baseline", default="all_results/baseline600/summary.json")
     args = ap.parse_args()
 

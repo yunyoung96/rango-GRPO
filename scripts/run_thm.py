@@ -27,6 +27,8 @@ from model_deployment.portfolio_searcher import PortfolioSearchConf
 from model_deployment.rmaxts_searcher import RMaxTSSearchConf
 from model_deployment.bfs_prover_searcher import BFSProverSearchConf
 from model_deployment.quarry_searcher import QuarrySearchConf
+from model_deployment.pgts_searcher import PGTSSearchConf
+from model_deployment.progress_searcher import ProgressSearchConf
 from tactic_gen.grpo_rollout import GRPORolloutSearchConf
 from model_deployment.run_proof import TestProofConf
 
@@ -256,25 +258,228 @@ def get_searcher_conf(model_alias: str) -> SearcherConf:
                 timeout=timeout, group_size=8, max_steps=20,
                 out="data/grpo_rollouts/rollouts.jsonl",
             )
+        # ⚠️ 아래 alias 들의 out 경로는 **서로 달라야 한다**. 예전에 전부 rollouts.jsonl 을 공유해
+        #   E3 수집이 round-1 원본을 덮어썼다(md5 동일 확인). GRPO_ROLLOUT_ANALYSIS.md §0 참조.
         case "grpo-rollout-dense":
             # (E2) dense reward: 미완 시도에 QED value 부분보상 → 성긴 신호 완화.
             return GRPORolloutSearchConf(
                 timeout=timeout, group_size=8, max_steps=20,
-                out="data/grpo_rollouts/rollouts.jsonl",
+                out="data/grpo_rollouts/E2-dense.jsonl",
                 qed_ckpt="models/qed_value/qed.pt", shaping_coef=0.3,
             )
         case "grpo-rollout-g16":
             # (E4) scale: G=16 샘플 → 신호 절대량↑.
             return GRPORolloutSearchConf(
                 timeout=timeout, group_size=16, max_steps=20,
-                out="data/grpo_rollouts/rollouts.jsonl",
+                out="data/grpo_rollouts/E4-g16.jsonl",
             )
         case "grpo-rollout-r2":
             # (E1) expert-iteration: round-1 GRPO adapter 정책으로 재-rollout.
             return GRPORolloutSearchConf(
                 timeout=timeout, group_size=8, max_steps=20,
-                out="data/grpo_rollouts/rollouts.jsonl",
+                out="data/grpo_rollouts/E1-r2.jsonl",
             )
+        case "pgts":
+            # PGTS(2604.24354) FULL: bfs-a1(우리 최강 탐색) + tactic-pattern 재랭킹 + 기호적 가지치기.
+            # 베이스가 bfs-a1(α=1.0, 16/40)이라 bfs-a1 대비 순수 delta가 이 기법의 기여분.
+            return PGTSSearchConf(
+                timeout=timeout, alpha=1.0, beta=0.5, expand_width=2,
+                pattern_db="data/tactic_patterns/patterns.json",
+                use_failure_dict=True, use_no_progress_filter=True, print_proofs=True,
+            )
+        case "pgts-sym":
+            # ablation: 패턴 재랭킹 제거(β=0) → 기호적 가지치기(failure dict + no-progress)만의 기여.
+            return PGTSSearchConf(
+                timeout=timeout, alpha=1.0, beta=0.0, expand_width=2, pattern_db=None,
+                use_failure_dict=True, use_no_progress_filter=True, print_proofs=True,
+            )
+        case "pgts-pat":
+            # ablation: 기호적 가지치기 제거 → tactic-pattern 재랭킹만의 기여.
+            return PGTSSearchConf(
+                timeout=timeout, alpha=1.0, beta=0.5, expand_width=2,
+                pattern_db="data/tactic_patterns/patterns.json",
+                use_failure_dict=False, use_no_progress_filter=False, print_proofs=True,
+            )
+
+        case "rango-progress" | "rango-progress-a05" | "rango-progress-a10" | "rango-progress-a0":
+            # LeanProgress(2502.17925): progress critic(남은 스텝 수) 를 logprob 과 블렌드.
+            #   α sweep — 논문은 0.2 최적, α=1.0(순수 value) 는 18.5% 로 붕괴한다고 보고.
+            #   우리 rango-qed(-1) 가 value 로 랭킹해서 죽은 것과 같은 함정 → α 를 직접 쓸어 확인한다.
+            #   α=0 은 bfs-a1 과 순위가 동일해야 한다(정규화 sanity check).
+            a = {"rango-progress": 0.2, "rango-progress-a05": 0.5,
+                 "rango-progress-a10": 1.0, "rango-progress-a0": 0.0}[model_alias]
+            return ProgressSearchConf(
+                timeout=timeout, alpha=a, expand_width=2, print_proofs=True,
+                critic_dir="models/progress_critic",
+            )
+
+        case "grpo-rollout-e1fix":
+            # E1(expert-iter) 재검증: round-1 = rango-grpo-fix(정정본) 정책으로 재롤아웃 → 재학습.
+            return GRPORolloutSearchConf(
+                timeout=timeout, group_size=8, max_steps=20,
+                out="data/grpo_rollouts/e1fix.jsonl",
+            )
+
+        case "grpo-rollout-scale":
+            # ★ CompCert 내부 학습셋 확대(40→200). 재샘플링 없음(k=0) — rango-grpo 와 유일한 차이가
+            #   '학습셋 크기'뿐이 되게. --idx-file data/compcert_scale_idx.txt (cc[200:400]).
+            return GRPORolloutSearchConf(
+                timeout=timeout, group_size=8, max_steps=20,
+                out="data/grpo_rollouts/scale.jsonl",
+            )
+        case "grpo-rollout-bigscale":
+            # ★ 대규모 scale: CompCert 뒤 1000개로 GRPO 학습 → 앞 5091개 평가(disjoint).
+            #   --idx-file data/compcert_bigscale_train_idx.txt (뒤 1000). 재샘플 k=0.
+            return GRPORolloutSearchConf(
+                timeout=timeout, group_size=8, max_steps=20,
+                out="data/grpo_rollouts/bigscale.jsonl",
+            )
+
+        case "grpo-rollout-bigscale2":
+            # ★ bigscale2: compcert 1000~1299(300개)로 GRPO 학습용 롤아웃. 원본 rango 정책, workers=2.
+            #   --idx-file data/compcert_bs2_train_idx.txt. 평가는 앞 1000(disjoint).
+            return GRPORolloutSearchConf(
+                timeout=timeout, group_size=8, max_steps=20,
+                out="data/grpo_rollouts/bigscale2.jsonl",
+            )
+
+        case "grpo-rollout-goldsft":
+            # ★ gold-SFT 데이터: compcert 300의 gold 참조증명만 replay 기록(on-policy 없음).
+            #   --sft 로 이걸 학습 = rango-style SFT(외부 gold teacher forcing). gold_file=gold_bs2.
+            return GRPORolloutSearchConf(
+                timeout=timeout, group_size=1, max_steps=30, gold_only=True,
+                gold_file="data/curriculum/gold_bs2.json",
+                out="data/grpo_rollouts/goldsft_bs2.jsonl",
+            )
+
+        case "grpo-rollout-bs2sft":
+            # ★ SFT→GRPO on-policy(confound 수정): SFT 모델 정책으로 300개 재롤아웃 → GRPO 학습에 사용.
+            #   (기존 bigscale2.jsonl 은 원본 rango 롤아웃이라 SFT 모델엔 off-policy)
+            return GRPORolloutSearchConf(
+                timeout=timeout, group_size=8, max_steps=20,
+                out="data/grpo_rollouts/bigscale2_sft.jsonl",
+            )
+
+        case "grpo-rollout-cross":
+            # ★ cross-repo 롤아웃(§10 P6): non-CompCert repo 로 학습 데이터 수집.
+            #   run_all --idx-file data/crossrepo/train_idx.txt 로 대상 정리 지정.
+            #   재샘플링 k=4(dead group 완화) + 경로 분리. 평가는 CompCert → sibling 누출 0.
+            return GRPORolloutSearchConf(
+                timeout=timeout, group_size=8, max_steps=20, max_retries=4,
+                out="data/grpo_rollouts/cross.jsonl",
+            )
+
+        case "grpo-rollout-retry":
+            # ★ 재샘플링 롤아웃 (GRPO_ROLLOUT_ANALYSIS.md §7 P1 처방).
+            #   INVALID 는 state 를 안 바꾸므로 같은 state 에서 다시 뽑는다. 기존 롤아웃은 첫 실수에
+            #   즉사했고(실패의 100%), 그게 dead group 73% 의 원인이었다.
+            #   실측 p=0.815 → k=4 면 p_eff≈0.99, L=14 완주율 5.7% → 91.5%(보수 가정).
+            #   비용: 스텝의 81%가 첫 샘플에 통과 → 기대 샘플수 1/p≈1.23 (≈25% 증가, 5배 아님).
+            return GRPORolloutSearchConf(
+                timeout=timeout, group_size=8, max_steps=20, max_retries=4,
+                out="data/grpo_rollouts/retry.jsonl",
+            )
+
+        case "grpo-rollout-backward":
+            # ★ Backward curriculum (sparse reward 의 구조적 해법).
+            #   인간 gold 증명의 중간 상태(남은 tactic 4개)에서도 롤아웃을 돌린다.
+            #   정리마다 **그룹 2개**를 만든다: s_0(처음)에서 8개, s_k(중간)에서 8개.
+            #   ⚠️ 한 그룹에 섞으면 안 된다 — 그룹 평균이 V(s) baseline 이라 같은 s 에서 나와야 한다.
+            #   기대: 혼합그룹(신호O) 비율 27% → 90%+ (p=0.816, remaining=4 → 98.9%).
+            #   재샘플링(k=4)도 함께 켠다 — 두 처방이 곱해진다.
+            return GRPORolloutSearchConf(
+                timeout=timeout, group_size=8, max_steps=20, max_retries=4,
+                curriculum_file="data/curriculum/backward.json",
+                out="data/grpo_rollouts/backward.jsonl",
+            )
+
+        case "grpo-rollout-subgoal":
+            # ★ Subgoal-first 재귀 커리큘럼 (B: deep→shallow 부트스트랩).
+            #   gold 증명 트리의 decompose 노드(goal 수 증가 지점)에서 seed → 모델이 fresh subgoal 롤아웃.
+            #   backward 와 같은 seeding 이지만 seed 지점이 **canonical decompose 노드**(얕고 재현가능)라
+            #   배포 때 모델이 실제 도달하는 state → transfer 가능(backward 의 깊은 idiosyncratic 상태와 대비).
+            #   스테이지별 curriculum/out 은 env 로 주입(run_subgoal_bigscale.sh 가 깊음→얕음 순 호출).
+            return GRPORolloutSearchConf(
+                timeout=timeout,
+                group_size=int(os.environ.get("SUBGOAL_GS", "6")),        # 속도: 8→6
+                max_steps=int(os.environ.get("SUBGOAL_MAXSTEPS", "16")),  # 속도: 20→16
+                max_retries=int(os.environ.get("SUBGOAL_RETRIES", "2")),  # 속도: 4→2 (INVALID 재샘플 배수↓)
+                curriculum_file=os.environ.get("SUBGOAL_CURRICULUM", "data/curriculum/subgoal.json"),
+                curriculum_frac=float(os.environ.get("SUBGOAL_FRAC", "0.5")),
+                out=os.environ.get("SUBGOAL_OUT", "data/grpo_rollouts/subgoal.jsonl"),
+                skip_s0=(os.environ.get("SUBGOAL_SKIP_S0", "1") == "1"),   # subgoal: s0 그룹 생략(dead=낭비)
+                subgoal_reward=(os.environ.get("SUBGOAL_REWARD", "0") == "1"),  # leaf-first: focused subgoal 닫힘=reward
+            )
+
+        case "grpo-rollout-adaptprefix":
+            # ★ Adaptive trace prefix: revcurr 후보 중 정답률~0.5 인 prefix 를 정리별로 골라 그 그룹 수집(+s0).
+            #   pass-rate 조준 커리큘럼. on-fix. curriculum=revcurr.json(모든 후보 prefix).
+            return GRPORolloutSearchConf(
+                timeout=timeout, group_size=8, max_steps=20, max_retries=4, probe_k=3,
+                adapt_prefix=True, curriculum_file="data/curriculum/revcurr.json",
+                out="data/grpo_rollouts/adaptprefix.jsonl",
+            )
+        case "grpo-rollout-fixdyn":
+            # ★ Dynamic sampling(DAPO): dead s0 그룹을 mixed 될 때까지 재샘플(최대 4). on-policy pass-rate 제어.
+            #   (8→4 로 낮춤: 5% 정리는 8회 재샘플해도 대개 헛수고 → 속도 우선.)
+            return GRPORolloutSearchConf(
+                timeout=timeout, group_size=8, max_steps=20, dyn_resample=4,
+                out="data/grpo_rollouts/fixdyn.jsonl",
+            )
+        case "grpo-rollout-passk":
+            # ★ pass@K 진단: fix 정책으로 정리당 K(=8)개 완증명 시도(온도샘플) → 저장.
+            #   하나라도 COMPLETE 면 solved@K. jsonl 에 8시도 다 남으므로 pass@1~8 사후계산.
+            #   "천장이 능력이냐 디코딩이냐" 판별용. curriculum/gold/dyn 전부 off(순수 롤아웃).
+            return GRPORolloutSearchConf(
+                timeout=timeout, group_size=8, max_steps=30,
+                out="data/grpo_rollouts/passk.jsonl",
+            )
+        case "grpo-rollout-dapo":
+            # ★ DAPO(2503.14476) rollout: dynamic sampling(dead s0 그룹 재샘플, dyn_resample=4).
+            #   나머지 3기법(clip-higher/token-level/overlong)은 grpo_train --dapo 에서. on-fix.
+            return GRPORolloutSearchConf(
+                timeout=timeout, group_size=8, max_steps=20, dyn_resample=4,
+                out="data/grpo_rollouts/dapo.jsonl",
+            )
+        case "grpo-rollout-bread":
+            # ★ BREAD: on-policy 궤적 + INVALID 지점 gold 다리. gold_file 필요. on-fix.
+            return GRPORolloutSearchConf(
+                timeout=timeout, group_size=8, max_steps=20, max_retries=2, bread=True,
+                gold_file="data/curriculum/gold.json",
+                out="data/grpo_rollouts/bread.jsonl",
+            )
+
+        case "grpo-rollout-vine":
+            # ★ VinePPO(2410.01679): backbone G개 + 각 on-policy state 에서 MC value(k개 분기) 추정.
+            #   step별 advantage=V(s')−V(s). gold state 안 씀 → 전이문제 회피. Tree 분기로 탐색 효율.
+            #   비쌈(state당 k_mc 롤아웃) → group_size 작게(4), k_mc=3, max_steps 12.
+            return GRPORolloutSearchConf(
+                timeout=timeout, group_size=4, max_steps=12, vine_k=3,
+                out="data/grpo_rollouts/vine.jsonl",
+            )
+
+        case "grpo-rollout-revcurr":
+            # ★ Reverse curriculum(전체 역행): gold 의 모든 중간상태(remaining 2~8)에서 각각 롤아웃.
+            #   정리당 s_0 + 여러 curriculum 그룹(평균 ~5). 각 시작상태가 자기 baseline.
+            #   fix 정책으로 수집(on-fix). all-success/all-fail 그룹은 학습때 스킵(중간밴드만 신호).
+            return GRPORolloutSearchConf(
+                timeout=timeout, group_size=8, max_steps=20, max_retries=4,
+                curriculum_file="data/curriculum/revcurr.json",
+                out="data/grpo_rollouts/revcurr.jsonl",
+            )
+
+        case "grpo-rollout-luffy":
+            # ★ LUFFY (2504.14945): off-policy gold 주입으로 dead group 부활.
+            #   정리마다 s_0 그룹(8개 π_old 샘플)에 **인간 gold 증명 궤적 1개**(재생·검증)를 섞는다.
+            #   dead group(전부 실패)이라도 gold(r=1) 덕에 그룹 mean≠0 → advantage 신호 생성.
+            #   학습 때 gold 토큰은 clip 없이 shaping f(π_θ) 으로(--luffy), on-policy 는 표준 GRPO.
+            #   재샘플링(k=4)도 함께: precision 실패를 줄이면서 gold 로 정답 방향을 준다.
+            return GRPORolloutSearchConf(
+                timeout=timeout, group_size=8, max_steps=20, max_retries=4,
+                gold_file="data/curriculum/gold.json",
+                out="data/grpo_rollouts/luffy.jsonl",
+            )
+
         case "quarry":
             # Quarry(Planning to Hammer, 2606.17981) FULL: LLM 분해 + CoqHammer 재귀 + 난이도 랭킹.
             return QuarrySearchConf(
@@ -432,7 +637,7 @@ def get_tactic_confs(model_alias: str, split: Split) -> list[TacticGenConf]:
     )
 
     match model_alias:
-        case "rango" | "rango-best-beam" | "rango-best-rand" | "rango-mem" | "rango-mem-wide" | "rango-portfolio" | "rango-portfolio-08" | "rango-portfolio-06" | "rango-vlog" | "rango-vguided" | "rango-hybrid" | "rango-hybrid-v" | "rango-qed" | "rango-qed-hybrid" | "rango-qed-sum" | "rango-qed-min" | "rmaxts" | "rmaxts-noreward" | "rmaxts-nomerge" | "rmaxts-nomcts" | "bfs-prover" | "bfs-a0" | "bfs-a1" | "bfs-prover-trace" | "grpo-rollout" | "grpo-rollout-cur" | "grpo-rollout-dense" | "grpo-rollout-g16" | "quarry" | "quarry-heur" | "quarry-trace":
+        case "rango" | "rango-best-beam" | "rango-best-rand" | "rango-mem" | "rango-mem-wide" | "rango-portfolio" | "rango-portfolio-08" | "rango-portfolio-06" | "rango-vlog" | "rango-vguided" | "rango-hybrid" | "rango-hybrid-v" | "rango-qed" | "rango-qed-hybrid" | "rango-qed-sum" | "rango-qed-min" | "rmaxts" | "rmaxts-noreward" | "rmaxts-nomerge" | "rmaxts-nomcts" | "bfs-prover" | "bfs-a0" | "bfs-a1" | "bfs-prover-trace" | "grpo-rollout" | "grpo-rollout-cur" | "grpo-rollout-dense" | "grpo-rollout-g16" | "grpo-rollout-retry" | "grpo-rollout-cross" | "grpo-rollout-scale" | "grpo-rollout-bigscale" | "grpo-rollout-backward" | "quarry" | "quarry-heur" | "quarry-trace" | "pgts" | "pgts-sym" | "pgts-pat" | "rango-progress" | "rango-progress-a05" | "rango-progress-a10" | "rango-progress-a0":
             checkpoint = (
                 "models/deepseek-bm25-proof-tfidf-proj-thm-prem-final/checkpoint-54500"
             )
@@ -444,7 +649,24 @@ def get_tactic_confs(model_alias: str, split: Split) -> list[TacticGenConf]:
             )
             return [DecoderTacticGenConf(Path(checkpoint), [formatter])]
 
-        case "rango-grpo":
+        case "grpo-rollout-luffy" | "grpo-rollout-revcurr" | "grpo-rollout-vine" \
+                | "grpo-rollout-adaptprefix" | "grpo-rollout-fixdyn" | "grpo-rollout-bread" \
+                | "grpo-rollout-passk":
+            # ★ on-fix 롤아웃: 롤아웃도 **fix 정책**으로 수집(expert-iteration).
+            #   fix(base 정정 GRPO, @40 +4)가 현재 최고 정책 → 그 위에서 롤아웃/재학습.
+            #   luffy=gold 주입, revcurr=전체 역행. 둘 다 fix 정책으로 수집.
+            formatter = GeneralFormatterConf(
+                premise_client_conf=tfidf_premise_conf,
+                proof_retriever_conf=bm25_proof_conf,
+                num_premises=50,
+                num_proofs=20,
+            )
+            return [DecoderTacticGenConf(Path("models/rango-grpo-fix/adapter"), [formatter])]
+
+        case "rango-grpo" | "rango-grpo-self":
+            # GRPO-self: **same-project** RL — CompCert(train idx 200:240)로 학습하고 CompCert(eval 0:40)
+            #   를 푼다. 탐색 rollout 기반(정답 proof 미열람)이라 SFT 누출은 아니나, 같은 프로젝트라
+            #   sibling 전이 confound가 남는다(→ 향후 rango-grpo-cross 로 대비). `rango-grpo`는 구 alias(동일).
             # GRPO(DeepSeek-Prover-V1.5)로 RL fine-tune한 rango adapter + 동일 retrieval 프롬프트.
             formatter = GeneralFormatterConf(
                 premise_client_conf=tfidf_premise_conf,
@@ -453,6 +675,200 @@ def get_tactic_confs(model_alias: str, split: Split) -> list[TacticGenConf]:
                 num_proofs=20,
             )
             return [DecoderTacticGenConf(Path("models/rango-grpo/adapter"), [formatter])]
+
+        case "rango-grpo-fix":
+            # base 정정 재학습: 기존 rango-grpo 는 **base** 위에서 학습되고 **instruct** 위에 배포됐다
+            #   (adapter_config 의 base_model_name_or_path = instruct, 추론 서버가 이를 따름).
+            #   → 데이터생성/최적화/배포 정책이 셋 다 달랐다. instruct 로 통일해 재학습한 것.
+            #   rango-grpo 와의 차이는 **베이스 모델뿐** — 알고리즘·데이터·하이퍼 동일.
+            formatter = GeneralFormatterConf(
+                premise_client_conf=tfidf_premise_conf,
+                proof_retriever_conf=bm25_proof_conf,
+                num_premises=50,
+                num_proofs=20,
+            )
+            return [DecoderTacticGenConf(Path("models/rango-grpo-fix/adapter"), [formatter])]
+
+        case "rango-grpo-backward" | "rango-grpo-backward-prm":
+            # backward curriculum 롤아웃으로 학습한 GRPO.
+            formatter = GeneralFormatterConf(
+                premise_client_conf=tfidf_premise_conf,
+                proof_retriever_conf=bm25_proof_conf,
+                num_premises=50,
+                num_proofs=20,
+            )
+            sub = "backward" if model_alias == "rango-grpo-backward" else "backward-prm"
+            return [DecoderTacticGenConf(Path(f"models/rango-grpo-{sub}/adapter"), [formatter])]
+
+        case "rango-grpo-luffy" | "rango-grpo-luffy-kl" | "rango-grpo-luffy-ch":
+            # LUFFY (2504.14945): gold 주입 롤아웃(--luffy)으로 학습한 GRPO.
+            #   -kl = Conservative(gold 항에 KL 복원, 회귀 방지). 롤아웃은 luffy.jsonl 공유.
+            #   -ch = clip-higher(on-policy 항 상한 확대, exploration 보존). 롤아웃 공유.
+            formatter = GeneralFormatterConf(
+                premise_client_conf=tfidf_premise_conf,
+                proof_retriever_conf=bm25_proof_conf,
+                num_premises=50,
+                num_proofs=20,
+            )
+            sub = model_alias.replace("rango-grpo-", "")  # luffy / luffy-kl / luffy-ch
+            return [DecoderTacticGenConf(Path(f"models/rango-grpo-{sub}/adapter"), [formatter])]
+
+        case "rango-grpo-revcurr":
+            # Reverse curriculum(전체 역행): gold 모든 중간상태 롤아웃으로 학습한 GRPO(on-fix).
+            formatter = GeneralFormatterConf(
+                premise_client_conf=tfidf_premise_conf,
+                proof_retriever_conf=bm25_proof_conf,
+                num_premises=50,
+                num_proofs=20,
+            )
+            return [DecoderTacticGenConf(Path("models/rango-grpo-revcurr/adapter"), [formatter])]
+
+        case "rango-grpo-vine":
+            # VinePPO(2410.01679): on-policy MC advantage 로 학습한 GRPO(on-fix).
+            formatter = GeneralFormatterConf(
+                premise_client_conf=tfidf_premise_conf,
+                proof_retriever_conf=bm25_proof_conf,
+                num_premises=50,
+                num_proofs=20,
+            )
+            return [DecoderTacticGenConf(Path("models/rango-grpo-vine/adapter"), [formatter])]
+
+        case ("rango-grpo-adaptprefix" | "rango-grpo-fixdyn" | "rango-grpo-bread"
+              | "rango-grpo-dapo" | "rango-grpo-revcurr-anneal"
+              | "rango-grpo-rft-gold" | "rango-grpo-rft-self" | "rango-grpo-dapg"
+              | "rango-grpo-bs2-sft" | "rango-grpo-bs2-sftgrpo"
+              | "rango-grpo-bs2-ppo" | "rango-grpo-bs2-sftppo"
+              | "rango-grpo-awac" | "rango-grpo-goldshape" | "rango-grpo-vdpo"
+              | "rango-grpo-ppo-linear" | "rango-grpo-ppo-mlp" | "rango-grpo-ppo-mlp2" | "rango-grpo-ppo-tanh" | "rango-grpo-ppo-sigmoid"
+              | "rango-grpo-subgoal" | "rango-grpo-subgoal-s1" | "rango-grpo-subgoal-s2"
+              | "rango-grpo-subgoal-bs2" | "rango-grpo-subgoal-bs2-s1" | "rango-grpo-subgoal-bs2-s2" | "rango-grpo-subgoal-bs2-s0"
+              | "rango-grpo-cascade-s1" | "rango-grpo-cascade-s2" | "rango-grpo-cascade-s3" | "rango-grpo-cascade-s0"
+              | "rango-grpo-cascade-harvest" | "rango-grpo-cascade-s0r2"
+              | "rango-grpo-ei-r1" | "rango-grpo-ei-r2" | "rango-grpo-ei-r3" | "rango-grpo-ei-r4"
+              | "rango-grpo-dapo-small" | "rango-grpo-vapo"):
+            # adaptprefix=pass-rate 조준, fixdyn=dynamic sampling, bread=gold 다리,
+            # dapo=4기법 종합, revcurr-anneal=anneal-to-s0. 전부 on-fix.
+            formatter = GeneralFormatterConf(
+                premise_client_conf=tfidf_premise_conf,
+                proof_retriever_conf=bm25_proof_conf,
+                num_premises=50,
+                num_proofs=20,
+            )
+            sub = model_alias.replace("rango-grpo-", "")
+            return [DecoderTacticGenConf(Path(f"models/rango-grpo-{sub}/adapter"), [formatter])]
+
+        case s if s.startswith("rango-grpo-ei-r"):
+            # EI R5+ 등 임의 라운드 자동 처리 (r1~r4 는 위 명시 케이스; 본문 동일)
+            formatter = GeneralFormatterConf(
+                premise_client_conf=tfidf_premise_conf,
+                proof_retriever_conf=bm25_proof_conf, num_premises=50, num_proofs=20,
+            )
+            sub = model_alias.replace("rango-grpo-", "")
+            return [DecoderTacticGenConf(Path(f"models/rango-grpo-{sub}/adapter"), [formatter])]
+
+        case "grpo-rollout-e1fix":
+            # E1 재롤아웃 정책 = 정정된 round-1 (rango-grpo-fix)
+            formatter = GeneralFormatterConf(
+                premise_client_conf=tfidf_premise_conf,
+                proof_retriever_conf=bm25_proof_conf, num_premises=50, num_proofs=20,
+            )
+            return [DecoderTacticGenConf(Path("models/rango-grpo-fix/adapter"), [formatter])]
+
+        case "rango-grpo-e2fix" | "rango-grpo-e3fix" | "rango-grpo-e4fix" | "rango-grpo-e1fix":
+            # ★ sparse-mitigation 기법 재검증 (베이스 정정 후). 옛 effstudy(E1~E4)는 base 불일치
+            #   버그가 있던 상태로 평가돼 전부 실패 판정. fix 가 -1→+2 로 뒤집힌 걸 보고 재검증.
+            #   e2=dense reward, e3=curriculum, e4=G16 scale, e1=expert-iter(round2).
+            formatter = GeneralFormatterConf(
+                premise_client_conf=tfidf_premise_conf,
+                proof_retriever_conf=bm25_proof_conf, num_premises=50, num_proofs=20,
+            )
+            sub = model_alias.replace("rango-grpo-", "")  # e2fix / e3fix / ...
+            return [DecoderTacticGenConf(Path(f"models/rango-grpo-{sub}/adapter"), [formatter])]
+
+        case "rango-grpo-bigscale":
+            # 대규모 scale(뒤1000 학습): 원본 rango 초기화, 앞 5091 평가.
+            formatter = GeneralFormatterConf(
+                premise_client_conf=tfidf_premise_conf,
+                proof_retriever_conf=bm25_proof_conf, num_premises=50, num_proofs=20)
+            return [DecoderTacticGenConf(Path("models/rango-grpo-bigscale/adapter"), [formatter])]
+
+        case "grpo-rollout-bigscale2" | "grpo-rollout-goldsft":
+            # bigscale2/goldsft 롤아웃 정책 = 원본 rango(checkpoint-54500), straight-line.
+            #   (goldsft 는 생성 안 하지만 example 빌드용 formatter/retrieval 필요 → 동일 client)
+            formatter = GeneralFormatterConf(
+                premise_client_conf=tfidf_premise_conf,
+                proof_retriever_conf=bm25_proof_conf, num_premises=50, num_proofs=20)
+            return [DecoderTacticGenConf(Path("models/deepseek-bm25-proof-tfidf-proj-thm-prem-final/checkpoint-54500"), [formatter])]
+
+        case "grpo-rollout-bs2sft":
+            # SFT→GRPO on-policy 재롤아웃 정책 = SFT 모델(bs2-sft adapter).
+            formatter = GeneralFormatterConf(
+                premise_client_conf=tfidf_premise_conf,
+                proof_retriever_conf=bm25_proof_conf, num_premises=50, num_proofs=20)
+            return [DecoderTacticGenConf(Path("models/rango-grpo-bs2-sft/adapter"), [formatter])]
+
+        case "grpo-rollout-subgoal":
+            # ★ Subgoal-first 롤아웃 정책 = init 정책과 동일(on-policy). env SUBGOAL_POLICY 로 주입:
+            #   게이트=models/rango-grpo-fix/adapter(fix), bigscale=checkpoint-54500(원본 rango).
+            formatter = GeneralFormatterConf(
+                premise_client_conf=tfidf_premise_conf,
+                proof_retriever_conf=bm25_proof_conf, num_premises=50, num_proofs=20)
+            pol = os.environ.get("SUBGOAL_POLICY", "models/rango-grpo-fix/adapter")
+            return [DecoderTacticGenConf(Path(pol), [formatter])]
+
+        case "rango-grpo-bigscale2":
+            # bigscale2 평가: compcert 300개(1000~1299)로 GRPO 학습한 adapter. 앞 1000 평가.
+            formatter = GeneralFormatterConf(
+                premise_client_conf=tfidf_premise_conf,
+                proof_retriever_conf=bm25_proof_conf, num_premises=50, num_proofs=20)
+            return [DecoderTacticGenConf(Path("models/rango-grpo-bigscale2/adapter"), [formatter])]
+
+        case "rango-grpo-scale" | "rango-grpo-scale-prm":
+            # CompCert 200개로 학습한 GRPO. rango-grpo(40개) 대비 유일한 변인 = 학습셋 크기.
+            #   신호그룹이 12개→대폭 늘 것으로 기대(dead group 문제 완화).
+            formatter = GeneralFormatterConf(
+                premise_client_conf=tfidf_premise_conf,
+                proof_retriever_conf=bm25_proof_conf, num_premises=50, num_proofs=20,
+            )
+            sub = "scale" if model_alias == "rango-grpo-scale" else "scale-prm"
+            return [DecoderTacticGenConf(Path(f"models/rango-grpo-{sub}/adapter"), [formatter])]
+
+        case "rango-grpo-cross" | "rango-grpo-cross-prm":
+            # cross-repo 학습 GRPO 평가. -prm 은 process reward 추가.
+            #   rango-grpo(same-project) 대비 유일한 변인 = **학습 데이터 출처**(다른 repo, 더 많음).
+            formatter = GeneralFormatterConf(
+                premise_client_conf=tfidf_premise_conf,
+                proof_retriever_conf=bm25_proof_conf,
+                num_premises=50, num_proofs=20,
+            )
+            sub = "cross" if model_alias == "rango-grpo-cross" else "cross-prm"
+            return [DecoderTacticGenConf(Path(f"models/rango-grpo-{sub}/adapter"), [formatter])]
+
+        case "rango-grpo-retry" | "rango-grpo-retry-prm":
+            # 재샘플링 롤아웃으로 학습한 GRPO.
+            #   -retry     : outcome reward 만 (재샘플링의 순수 효과)
+            #   -retry-prm : + process reward  (재샘플링 × PRM 결합 = 풀스택)
+            formatter = GeneralFormatterConf(
+                premise_client_conf=tfidf_premise_conf,
+                proof_retriever_conf=bm25_proof_conf,
+                num_premises=50,
+                num_proofs=20,
+            )
+            sub = "retry" if model_alias == "rango-grpo-retry" else "retry-prm"
+            return [DecoderTacticGenConf(Path(f"models/rango-grpo-{sub}/adapter"), [formatter])]
+
+        case "rango-grpo-prm":
+            # PRM-GRPO(Process-Verified RL, 2606.20068): outcome reward + **coq-lsp 검증 기반
+            #   per-tactic process reward**(φ: +1 증명완결 / -0.05 유효하나 실패 / -0.10 에러)를
+            #   각 tactic의 **첫 토큰**에 건다. GRPO의 실병목(40그룹 중 28개가 dead=신호 0)을 직접 겨냥.
+            #   정책/프롬프트는 rango-grpo와 동일 — 유일한 변인은 **학습 신호**다.
+            formatter = GeneralFormatterConf(
+                premise_client_conf=tfidf_premise_conf,
+                proof_retriever_conf=bm25_proof_conf,
+                num_premises=50,
+                num_proofs=20,
+            )
+            return [DecoderTacticGenConf(Path("models/rango-grpo-prm/adapter"), [formatter])]
 
         case "bfs-dpo":
             # BFS-Prover full: DPO(+expert-iter)로 학습한 adapter + BFS-Prover 탐색.

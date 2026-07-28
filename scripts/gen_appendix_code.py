@@ -97,16 +97,80 @@ def _trace_items(rec):
         out.append(f'<details {NEST_L3}><summary {SUM_STYLE}>{i} · <code>{html.escape(s["tac"])}</code></summary>\n{_pre_state(s.get("state",""))}\n</details>')
     return "".join(out)
 
-def trace_table(trec, nrec, tlabel, nlabel):
-    """스텝별 goal state 를 좌우 2열(대상 | 이웃)로. 레벨2 레일."""
+PROOF_CAP=4000  # proof term 은 매우 길어질 수 있어 표시 상한(전체는 step_states.json)
+
+def _pre_proof(raw):
+    """proof term(Show Proof) → <pre>. 빈 줄 제거(마크다운 HTML블록 끊김 방지) + 너무 길면 소프트 캡."""
+    txt="\n".join(l for l in (raw or "").split("\n") if l.strip()!="")
+    if not txt:
+        return f'<pre style="{PRE_STYLE}"><code><span style="color:{C_CMT}">— (proof term 없음)</span></code></pre>'
+    note=""
+    if len(txt)>PROOF_CAP:
+        note=f' … (전체 {len(txt)}자 중 {PROOF_CAP}자 표시 — 전체는 step_states.json)'
+        txt=txt[:PROOF_CAP]
+    return f'<pre style="{PRE_STYLE}"><code>{html.escape(txt)}<span style="color:{C_CMT}">{note}</span></code></pre>'
+
+def _step_toggle(k, tac, tval, nval, tlabel, nlabel, is_proof, init=False):
+    """한 스텝 = 토글 1개. 열면 대상|이웃 2열. ★ 줄바꿈 없는 한 줄(마크다운 HTML블록 끊김 방지)."""
+    lab=f'<i>{html.escape(tac)}</i>' if init else f'<code>{html.escape(tac)}</code>'
+    cell=_pre_proof if is_proof else _pre_state
+    return (f'<details {NEST_L3}><summary {SUM_STYLE}>{k} · {lab}</summary>'
+            f'<table><thead><tr><th align="left">대상 <code>{tlabel}</code></th>'
+            f'<th align="left">이웃 <code>{nlabel}</code></th></tr></thead>'
+            f'<tbody><tr><td valign="top">{cell(tval)}</td>'
+            f'<td valign="top">{cell(nval)}</td></tr></tbody></table></details>')
+
+def _steps_2col(trec, nrec, tlabel, nlabel, field, initkey, title, is_proof):
+    """스텝당 토글 1개(내부 대상|이웃 2열) 리스트. 레벨2 레일로 감쌈. 전부 한 줄(줄바꿈 없음)."""
     if not trec and not nrec: return ""
-    return (f"<details {NEST_L2}><summary {SUM_STYLE}><b>스텝별 goal state (대상 | 이웃)</b> — 각 스텝 펼치면 그 tactic 직후 상태·가설 포함</summary>\n"
-            "<table><thead><tr>"
-            f"<th align=\"left\">대상 <code>{tlabel}</code></th><th align=\"left\">이웃 <code>{nlabel}</code></th>"
-            "</tr></thead><tbody><tr>"
-            f"<td valign=\"top\">{_trace_items(trec)}</td>"
-            f"<td valign=\"top\">{_trace_items(nrec)}</td>"
-            "</tr></tbody></table>\n</details>")
+    ts=(trec or {}).get("steps",[]); ns=(nrec or {}).get("steps",[])
+    kind="proof term" if is_proof else "goal"
+    items=[_step_toggle(0, f"초기 {kind}", (trec or {}).get(initkey,""),
+                        (nrec or {}).get(initkey,""), tlabel, nlabel, is_proof, init=True)]
+    for i in range(max(len(ts),len(ns))):
+        t=ts[i] if i<len(ts) else None; n=ns[i] if i<len(ns) else None
+        tac=(t or n or {}).get("tac","")
+        items.append(_step_toggle(i+1, tac, (t or {}).get(field,""),
+                                  (n or {}).get(field,""), tlabel, nlabel, is_proof))
+    return (f'<details {NEST_L2}><summary {SUM_STYLE}><b>{title}</b> — 스텝당 토글, 열면 대상|이웃 2열</summary>'
+            + "".join(items) + "</details>")
+
+def trace_table(trec, nrec, tlabel, nlabel):
+    """④ 스텝별 goal state — 스텝당 토글1개+내부 2열."""
+    return _steps_2col(trec, nrec, tlabel, nlabel, "state", "initial",
+                       "스텝별 goal state (대상 | 이웃)", is_proof=False)
+
+def trace_proof_table(trec, nrec, tlabel, nlabel):
+    """⑤ 스텝별 proof term(Show Proof) — 스텝당 토글1개+내부 2열."""
+    return _steps_2col(trec, nrec, tlabel, nlabel, "proof", "initial_proof",
+                       "스텝별 proof term (대상 | 이웃)", is_proof=True)
+
+def _col_step(k, tac, state, proof, init=False):
+    """열 내부 한 스텝 토글: 열면 goal state + proof term 세로 나열. ★ 한 줄(HTML블록 끊김 방지)."""
+    lab=f'<i>{html.escape(tac)}</i>' if init else f'<code>{html.escape(tac)}</code>'
+    return (f'<details {NEST_L3}><summary {SUM_STYLE}>{k} · {lab}</summary>'
+            f'<div><b>goal</b></div>{_pre_state(state)}'
+            f'<div><b>proof term</b></div>{_pre_proof(proof)}</details>')
+
+def _col_items(rec):
+    """한 정리(=한 열)의 trace 전체: 0(초기)부터 tactic 순서대로, 스텝마다 goal+proof term."""
+    if not rec or not rec.get("steps"): return "<i>(스텝 상태 추출 없음 — 파일/타임아웃)</i>"
+    out=[_col_step(0, "초기", rec.get("initial",""), rec.get("initial_proof",""), init=True)]
+    for i,s in enumerate(rec.get("steps",[]),1):
+        out.append(_col_step(i, s.get("tac",""), s.get("state",""), s.get("proof","")))
+    return "".join(out)
+
+def trace_cols(trec, nrec, tlabel, nlabel):
+    """스텝별 trace — 먼저 2열(대상|이웃)로 쪼개고, 각 열 안에서 tactic 나열.
+    스텝 토글을 열면 그 시점 goal state + proof term. 열마다 스텝 수가 달라 길이가 다를 수 있음."""
+    if not trec and not nrec: return ""
+    tn=len((trec or {}).get("steps",[]) or []); nn=len((nrec or {}).get("steps",[]) or [])
+    return (f'<details {NEST_L2}><summary {SUM_STYLE}><b>스텝별 trace (대상 열 | 이웃 열)</b>'
+            f' — 열별 tactic 나열({tn} vs {nn}스텝), 스텝을 열면 goal+proof term</summary>'
+            f'<table><thead><tr><th align="left">대상 <code>{tlabel}</code> — {tn}스텝</th>'
+            f'<th align="left">이웃 <code>{nlabel}</code> — {nn}스텝</th></tr></thead>'
+            f'<tbody><tr><td valign="top">{_col_items(trec)}</td>'
+            f'<td valign="top">{_col_items(nrec)}</td></tr></tbody></table></details>')
 
 def line_of(cfile, nm):
     if not nm or nm=="None": return None

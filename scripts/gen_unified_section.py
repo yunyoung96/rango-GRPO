@@ -34,9 +34,9 @@ def block(idx,name,tfile,nb):
              "</tr></tbody></table>")
     stuckproof=(f'<details {ga.NEST_L2}><summary {ga.SUM_STYLE}><b>③ rango 포기 직전 누적 부분증명</b> — 정답과 어긋나 여기서 정지</summary>\n'
                 f'{gs._pre_hl(e.get("proof",""))}\n</details>') if e.get("proof") else ""
-    # ④ 스텝별 goal state (trace_table 이 '스텝별 goal state (대상|이웃)' details 를 반환)
-    steps=ga.trace_table(ss.get("t"), ss.get("n"), html.escape(name), html.escape(nname)) if ss else ""
-    steps4=steps.replace("스텝별 goal state (대상 | 이웃)","④ 스텝별 goal state (대상 | 이웃)") if steps else ""
+    # ④ 스텝별 trace — 먼저 2열(대상|이웃)로 쪼개고, 각 열에서 tactic 나열(스텝마다 goal+proof term)
+    steps=ga.trace_cols(ss.get("t"), ss.get("n"), html.escape(name), html.escape(nname)) if ss else ""
+    steps4=steps.replace("스텝별 trace (대상 열 | 이웃 열)","④ 스텝별 trace (대상 열 | 이웃 열)") if steps else ""
     return f"<details {ga.NEST_L1}>\n{head}\n{stuck}\n{codetbl}\n{stuckproof}\n{steps4}\n</details>\n"
 
 def main():
@@ -45,7 +45,9 @@ def main():
     section=("\n\n## 6.1 부록 상세 — 항목별 통합 (접기/펴기)\n\n"
              "> §6 표의 80건을 **idx 하나당 한 항목으로 통합**. 각 항목을 펼치면 순서대로:\n"
              "> **① rango 가 막힌 goal** → **② 대상 정답증명 ↔ 이웃 형제증명(이식원) 좌우 2열** →\n"
-             "> **③ rango 포기 직전 부분증명**(중첩) → **④ 스텝별 goal state**(대상|이웃 2열·가설 포함, 중첩).\n"
+             "> **③ rango 포기 직전 부분증명**(중첩) → **④ 스텝별 trace**(먼저 대상|이웃 2열로 쪼개고,\n"
+             "> 각 열 안에서 tactic 을 순서대로 나열 — 스텝 토글을 열면 그 시점 goal state + proof term.\n"
+             "> 두 증명의 스텝 수가 달라 열 길이가 다를 수 있음).\n"
              "> \"target 이 어디서 막혔나\"와 \"이웃 증명·중간 상태가 어떻게 흐르나\"를 한 항목에서. \n"
              "> 헤더 배지: `파일:라인` · 이웃 available(✅앞/⚠️뒤/타파일) · `rango ❌` · 이식결과(✅/◑/✗/미평가).\n"
              "> 색상: <span style=\"color:#8250df\">키워드</span>·<span style=\"color:#0969da\">tactic</span>·<span style=\"color:#6a9955\">주석</span>.\n\n"

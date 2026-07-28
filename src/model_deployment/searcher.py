@@ -37,6 +37,14 @@ from model_deployment.quarry_searcher import (
     QuarrySearchConf,
     QuarrySearcher,
 )
+from model_deployment.pgts_searcher import (
+    PGTSSearchConf,
+    PGTSSearcher,
+)
+from model_deployment.progress_searcher import (
+    ProgressSearchConf,
+    ProgressSearcher,
+)
 from tactic_gen.grpo_rollout import (
     GRPORolloutSearchConf,
     GRPORolloutSearcher,
@@ -46,7 +54,7 @@ SuccessfulSearch = ClassicalSuccess | StraightLineSuccess | WholeProofSuccess
 FailedSearch = ClassicalFailure | StraightLineFailure | WholeProofFailure
 SearchResult = SuccessfulSearch | FailedSearch
 
-Searcher = ClassicalSearcher | StraightLineSearcher | WholeProofSearcher | PortfolioSearcher | RMaxTSSearcher | BFSProverSearcher | QuarrySearcher | GRPORolloutSearcher
+Searcher = ClassicalSearcher | StraightLineSearcher | WholeProofSearcher | PortfolioSearcher | RMaxTSSearcher | BFSProverSearcher | QuarrySearcher | PGTSSearcher | ProgressSearcher | GRPORolloutSearcher
 SearcherConf = (
     ClassicalSearchConf
     | StraightLineSearcherConf
@@ -55,6 +63,8 @@ SearcherConf = (
     | RMaxTSSearchConf
     | BFSProverSearchConf
     | QuarrySearchConf
+    | PGTSSearchConf
+    | ProgressSearchConf
     | GRPORolloutSearchConf
 )
 
@@ -76,6 +86,10 @@ def searcher_conf_from_yaml(yaml_data: Any) -> SearcherConf:
             return BFSProverSearchConf.from_yaml(yaml_data)
         case QuarrySearchConf.ALIAS:
             return QuarrySearchConf.from_yaml(yaml_data)
+        case PGTSSearchConf.ALIAS:
+            return PGTSSearchConf.from_yaml(yaml_data)
+        case ProgressSearchConf.ALIAS:
+            return ProgressSearchConf.from_yaml(yaml_data)
         case GRPORolloutSearchConf.ALIAS:
             return GRPORolloutSearchConf.from_yaml(yaml_data)
         case _:
@@ -100,5 +114,9 @@ def searcher_from_conf(
             return BFSProverSearcher.from_conf(conf, tactic_gens, manager)
         case QuarrySearchConf():
             return QuarrySearcher.from_conf(conf, tactic_gens, manager)
+        case PGTSSearchConf():
+            return PGTSSearcher.from_conf(conf, tactic_gens, manager)
+        case ProgressSearchConf():
+            return ProgressSearcher.from_conf(conf, tactic_gens, manager)
         case GRPORolloutSearchConf():
             return GRPORolloutSearcher.from_conf(conf, tactic_gens, manager)
