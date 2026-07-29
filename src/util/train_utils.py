@@ -146,6 +146,10 @@ def get_training_args(
         # deepspeed=__get_required_arg("deepspeed", conf),
         local_rank=(local_rank if local_rank else -1),
         ddp_find_unused_parameters=False,
+        # ★ Qwen2.5는 vocab 151936(DeepSeek 32K의 ~4.7배)라 loss의 logits.float()가 OOM.
+        #   gradient checkpointing으로 activation 메모리 대폭 절감(conf에서 on/off, 기본 on).
+        gradient_checkpointing=get_optional_arg("gradient_checkpointing", conf, True),
+        gradient_checkpointing_kwargs={"use_reentrant": False},
     )
     # transformers 4.46+ 는 evaluation_strategy → eval_strategy 로 개명. 버전 무관 대응.
     _params = inspect.signature(TrainingArguments.__init__).parameters

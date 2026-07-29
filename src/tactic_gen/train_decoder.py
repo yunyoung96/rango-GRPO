@@ -168,6 +168,9 @@ def get_trainer(
     raw_model = get_model(model_name)
     lora_config = get_lora_conf(conf)
     model = get_peft_model(raw_model, lora_config)
+    # gradient checkpointing(메모리 절감) + PEFT 4-bit: 입력이 grad 요구하도록 해야 checkpoint 작동.
+    if get_optional_arg("gradient_checkpointing", conf, True):
+        model.enable_input_require_grads()
 
     print("\n\nConstructing Dataset...")
     train_dataset, val_dataset = get_datasets(conf)

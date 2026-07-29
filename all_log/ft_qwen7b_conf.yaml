@@ -39,8 +39,9 @@ tactic_data:
     premise_tokens: 512
     out_tokens: 128
 
-per_device_train_batch_size: 2        # OOM 회피(이전 batch4 GPU OOM) — 7B 4-bit seq4096
-gradient_accumulation_steps: 4        # 유효배치 8 유지
+per_device_train_batch_size: 1        # Qwen vocab 151936 loss OOM 회피 (+gradient_checkpointing)
+gradient_accumulation_steps: 8        # 유효배치 8 유지
+gradient_checkpointing: true          # activation 메모리 대폭 절감 (Qwen 큰 vocab OOM 대응)
 learning_rate: 1.0e-4                  # 파인튜닝 보수 LR(1.3B 1e-3보다 낮게)
 num_train_epochs: 1
 max_steps: 20000                       # 포맷 학습 충분(rango 60k, 큰 base는 적게)
