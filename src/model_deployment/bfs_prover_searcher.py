@@ -37,6 +37,12 @@ class BFSProverSearchConf:
     print_proofs: bool = True
     initial_proof: Optional[str] = None
     trace_out: Optional[str] = None   # expert-iter/DPO용 트리 덤프 jsonl 경로(None=끔)
+    # ── value-free structural search (VALUE_FREE_SEARCH.md) ──
+    use_vfsearch: bool = False        # True=분해노드서 구조적 후보 열거 + MC-rollout 랭킹 + backtrack
+    mc_K: int = 4                     # 분해 후보당 MC 롤아웃 수
+    mc_D: int = 6                     # MC 롤아웃 깊이(step)
+    mc_budget: int = 240              # 정리당 총 MC 롤아웃 상한(초과 시 logprob fallback) — compute 폭발 방지
+    struct_cap: int = 8               # 분해노드당 MC 평가할 구조적 후보 상한
     ALIAS = "bfs_prover"
 
     @classmethod
@@ -49,6 +55,11 @@ class BFSProverSearchConf:
             yaml_data.get("print_proofs", True),
             yaml_data.get("initial_proof", None),
             yaml_data.get("trace_out", None),
+            yaml_data.get("use_vfsearch", False),
+            yaml_data.get("mc_K", 4),
+            yaml_data.get("mc_D", 6),
+            yaml_data.get("mc_budget", 240),
+            yaml_data.get("struct_cap", 8),
         )
 
 
@@ -74,6 +85,11 @@ class BFSProverSearcher:
         print_proofs: bool = True,
         initial_proof: Optional[str] = None,
         trace_out: Optional[str] = None,
+        use_vfsearch: bool = False,
+        mc_K: int = 4,
+        mc_D: int = 6,
+        mc_budget: int = 240,
+        struct_cap: int = 8,
     ):
         self.tactic_clients = tactic_clients
         self.proof_manager = proof_manager
@@ -83,6 +99,12 @@ class BFSProverSearcher:
         self.max_depth = max_depth
         self.print_proofs = print_proofs
         self.trace_out = trace_out
+        self.use_vfsearch = use_vfsearch
+        self.mc_K = mc_K
+        self.mc_D = mc_D
+        self.mc_budget = mc_budget
+        self.struct_cap = struct_cap
+        self.mc_spent = 0             # 이 정리에서 소비한 MC 롤아웃 수
         self.total_model_time = 0.0
         # 트리 덤프용: node_id -> record{state_example, tactics[]}, 그리고 부모 링크.
         self.trace_records: dict[int, dict] = {}
@@ -105,6 +127,9 @@ class BFSProverSearcher:
             getattr(conf, "max_depth", 50), getattr(conf, "print_proofs", True),
             getattr(conf, "initial_proof", None),
             getattr(conf, "trace_out", None),
+            getattr(conf, "use_vfsearch", False),
+            getattr(conf, "mc_K", 4), getattr(conf, "mc_D", 6),
+            getattr(conf, "mc_budget", 240), getattr(conf, "struct_cap", 8),
         )
 
     def _goal_key(self, goals: list[Goal]) -> str:
@@ -114,6 +139,38 @@ class BFSProverSearcher:
         # score = cum_logprob / L^α  (L≥1)
         L = max(1, depth)
         return cum_logprob / (L ** self.alpha)
+
+    # ── value-free structural search (VALUE_FREE_SEARCH.md) ─────────────
+    def _is_decomp_point(self, check) -> bool:
+        """현재 goal에 destruct/induction/inversion 가능한 hyp/inductive var가 있으면 분해 결정 지점."""
+        from tactic_gen.grpo_rollout import _targeted_cands, _goals_str
+        return len(_targeted_cands(_goals_str(check))) > 0
+
+    def _enum_structural(self, check) -> list[str]:
+        """분해 후보 강제 열거(각 가설 destruct / 각 변수 induction / inversion). coverage 22% 직격."""
+        from tactic_gen.grpo_rollout import _targeted_cands, _goals_str
+        return _targeted_cands(_goals_str(check))[: self.struct_cap]
+
+    def _mc_value(self, child_script: str, theorem) -> float:
+        """value-free 점수: child state에서 policy로 K개 짧은(깊이 D) 롤아웃 → subgoal 닫힘률(진전).
+        1.3B는 D step 안에 전체 QED가 드무니 subgoal-close(goal 수↓)를 dense 신호로 사용(도달성 직격,
+        전부-0 랭킹붕괴 완화). mc_budget 초과 시 -1 반환(호출부가 logprob fallback)."""
+        from tactic_gen.grpo_rollout import rollout_attempt
+        if self.mc_spent + self.mc_K > self.mc_budget:
+            return -1.0
+        prog = 0
+        t0 = time.time()
+        for i in range(self.mc_K):
+            r = rollout_attempt(
+                self.tactic_clients[0], self.proof_manager, theorem,
+                child_script, max_steps=self.mc_D, temperature_seed=i,
+                max_retries=1, subgoal_reward=True,
+            )
+            self.mc_spent += 1
+            if r.get("reward", 0.0) >= 1.0:
+                prog += 1
+        self.total_model_time += time.time() - t0
+        return prog / self.mc_K
 
     def search(self, **kwargs) -> StraightLineSuccess | StraightLineFailure:
         start = time.time()
@@ -143,10 +200,25 @@ class BFSProverSearcher:
             )
             self.total_model_time += time.time() - t0
 
-            for tactic, tac_logprob in zip(recs.next_tactic_list, recs.score_list):
+            # ── 후보 tactic 구성 ──
+            # vfsearch + 분해노드: 구조적 후보(강제 열거, logprob=None→MC 랭킹) + 정책 top-k(logprob).
+            # 아니면: 정책 top-k만 (기존 BFS-Prover).
+            decomp = self.use_vfsearch and self._is_decomp_point(node.check_result)
+            cand: list[tuple[str, Optional[float]]] = []
+            if decomp:
+                for t in self._enum_structural(node.check_result):
+                    cand.append((t, None))          # 구조적 후보 = MC로 점수
+            seen_t = {t for t, _ in cand}
+            for t, lp in zip(recs.next_tactic_list, recs.score_list):
+                if t not in seen_t:
+                    cand.append((t, lp))            # 정책 후보 = logprob 점수
+                    seen_t.add(t)
+
+            for tactic, tac_logprob in cand:
                 res = self.proof_manager.check_proof(script + tactic, new_proof.theorem)
                 if self.print_proofs:
-                    print(f"  [BFS-Prover d={node.depth+1}] {tactic.strip()!r} → {res.tactic_result.name}")
+                    tag = "VF" if (decomp and tac_logprob is None) else "BFS"
+                    print(f"  [{tag} d={node.depth+1}] {tactic.strip()!r} → {res.tactic_result.name}")
                 self._record_tactic(node.node_id, tactic, res.tactic_result.name)
                 if res.tactic_result == TacticResult.COMPLETE:
                     if self.print_proofs:
@@ -157,14 +229,23 @@ class BFSProverSearcher:
                         time.time() - start, self.total_model_time, res.new_proof, [],
                     )
                 if res.tactic_result == TacticResult.VALID:
-                    cum = node.cum_logprob + tac_logprob   # Σ log p(a_t|s_t)
                     depth = node.depth + 1
-                    score = self._score(cum, depth)         # / L^α
+                    if decomp and tac_logprob is None:
+                        # ★ value-free: 이 분해가 좋은지 MC-rollout 진전률로 점수. budget 있으면 큰 bonus로 우선.
+                        mcv = self._mc_value(script + tactic, new_proof.theorem)
+                        cum = node.cum_logprob       # 구조적 후보엔 logprob 없음(불변)
+                        if mcv >= 0.0:
+                            neg_score = -(1000.0 + mcv)   # 분해 자식 먼저 확장(진전 높을수록 먼저)
+                        else:
+                            neg_score = -self._score(cum, depth)  # budget 소진 → logprob fallback
+                    else:
+                        cum = node.cum_logprob + tac_logprob   # Σ log p(a_t|s_t)
+                        neg_score = -self._score(cum, depth)    # / L^α
                     seq += 1
                     child_id = seq
                     self.node_parent[child_id] = (node.node_id, tactic)
-                    heapq.heappush(frontier, _QNode(-score, seq, res, cum, depth, child_id))
-                # INVALID → terminal, 버림
+                    heapq.heappush(frontier, _QNode(neg_score, seq, res, cum, depth, child_id))
+                # INVALID → terminal, 버림 (stuck→backtrack은 frontier가 자동)
         self._dump_trace()
         return StraightLineFailure(time.time() - start, self.total_model_time, [])
 

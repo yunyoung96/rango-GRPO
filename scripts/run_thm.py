@@ -241,6 +241,19 @@ def get_searcher_conf(model_alias: str) -> SearcherConf:
 
         case "bfs-prover" | "bfs-dpo":  # BFS-Prover length-normalized best-first, α=0.5(논문)
             return BFSProverSearchConf(timeout=timeout, alpha=0.5, expand_width=2, print_proofs=True)
+        case "rango-vfsearch":  # value-free structural search (VALUE_FREE_SEARCH.md)
+            # 분해노드서 구조적 후보 열거 + MC-rollout 진전률 랭킹 + backtrack. 정책=rango-grpo(π₀).
+            # print_proofs=False: MC 롤아웃이 로그를 폭증(정리당 19K줄)시켜 I/O가 검색 느리게 함 → 끔.
+            return BFSProverSearchConf(
+                timeout=timeout, alpha=0.5, expand_width=4, print_proofs=False,
+                use_vfsearch=True, mc_K=4, mc_D=6, mc_budget=240, struct_cap=8,
+            )
+        case "rango-vfsearch-nomc":  # ablation: 구조적 후보 열거는 하되 MC 끔(mc_budget=0 → logprob 랭킹)
+            # vfsearch에서 MC-scoring의 기여를 분리(§8 ablation). 열거만 vs 열거+MC.
+            return BFSProverSearchConf(
+                timeout=timeout, alpha=0.5, expand_width=4, print_proofs=False,
+                use_vfsearch=True, mc_K=4, mc_D=6, mc_budget=0, struct_cap=8,
+            )
         case "bfs-prover-trace":  # BFS-Prover + 트리 덤프(expert-iter/DPO 학습 데이터 수집)
             return BFSProverSearchConf(
                 timeout=timeout, alpha=0.5, expand_width=2, print_proofs=True,
@@ -663,7 +676,8 @@ def get_tactic_confs(model_alias: str, split: Split) -> list[TacticGenConf]:
             )
             return [DecoderTacticGenConf(Path("models/rango-grpo-fix/adapter"), [formatter])]
 
-        case "rango-grpo" | "rango-grpo-self":
+        case "rango-grpo" | "rango-grpo-self" | "rango-vfsearch" | "rango-vfsearch-nomc":
+            # rango-vfsearch(-nomc): value-free structural search가 이 π₀(SFT→GRPO) 정책을 그대로 씀(추론측 레버).
             # GRPO-self: **same-project** RL — CompCert(train idx 200:240)로 학습하고 CompCert(eval 0:40)
             #   를 푼다. 탐색 rollout 기반(정답 proof 미열람)이라 SFT 누출은 아니나, 같은 프로젝트라
             #   sibling 전이 confound가 남는다(→ 향후 rango-grpo-cross 로 대비). `rango-grpo`는 구 alias(동일).
