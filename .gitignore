@@ -61,3 +61,6 @@ all_log/gpu_monitor.md
 models_dl/
 data/vguided_trees/
 data/quarry_traces/
+
+# 서버 전용 런타임 토글 (GPU1 강제)
+.gpu1_only
