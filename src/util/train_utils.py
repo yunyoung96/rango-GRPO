@@ -83,8 +83,9 @@ def make_output_dir(conf: dict[str, Any]) -> None:
         time_since_created = time.time() - os.path.getctime(output_dir)
         thirty_mins = 1800
         if thirty_mins < time_since_created:
-            print(f"{output_dir} already exists.")
-            exit(1)
+            # 기존: exit(1)로 덮어쓰기 방지. 반복 학습에서 오래된 디렉토리에 걸려
+            # 학습이 매번 죽으므로 경고만 하고 진행(같은 output_dir 재사용).
+            print(f"[warn] {output_dir} already exists (>30min old) — 덮어쓰며 진행")
     else:
         os.makedirs(output_dir, exist_ok=True)
 
@@ -120,7 +121,9 @@ def get_train_val_path(data_path: Path) -> tuple[Path, Path]:
 def get_training_args(
     conf: dict[str, Any], local_rank: Optional[int]
 ) -> TrainingArguments:
-    return TrainingArguments(
+    import inspect
+
+    kwargs: dict[str, Any] = dict(
         output_dir=get_required_arg("output_dir", conf),
         per_device_train_batch_size=get_required_arg(
             "per_device_train_batch_size", conf
@@ -136,7 +139,6 @@ def get_training_args(
         save_strategy="steps",
         save_steps=get_required_arg("save_steps", conf),
         save_total_limit=get_required_arg("save_total_limit", conf),
-        evaluation_strategy="steps",
         eval_steps=get_required_arg("eval_steps", conf),
         per_device_eval_batch_size=get_required_arg("per_device_eval_batch_size", conf),
         eval_accumulation_steps=get_optional_arg("eval_accumulation_steps", conf, 1),
@@ -145,3 +147,9 @@ def get_training_args(
         local_rank=(local_rank if local_rank else -1),
         ddp_find_unused_parameters=False,
     )
+    # transformers 4.46+ 는 evaluation_strategy → eval_strategy 로 개명. 버전 무관 대응.
+    _params = inspect.signature(TrainingArguments.__init__).parameters
+    kwargs["eval_strategy" if "eval_strategy" in _params else "evaluation_strategy"] = (
+        "steps"
+    )
+    return TrainingArguments(**kwargs)

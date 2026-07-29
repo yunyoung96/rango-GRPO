@@ -98,10 +98,14 @@ def get_model(model_name: str) -> PreTrainedModel:
         bnb_4bit_quant_storage=torch.bfloat16,
     )
 
+    # DDP(torchrun) 시 각 rank를 자기 GPU에 로드 — 4-bit는 로드시 device 고정이라
+    # device_map 없으면 모든 rank가 cuda:0에 몰려 OOM. LOCAL_RANK로 분산(QLoRA multi-GPU).
+    _local_rank = int(os.environ.get("LOCAL_RANK", "0") or "0")
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         quantization_config=bnb_config,
         torch_dtype=torch.bfloat16,
+        device_map={"": _local_rank},
     )
 
     # https://huggingface.co/docs/bitsandbytes/main/en/fsdp_qlora
@@ -181,15 +185,21 @@ def get_trainer(
     #     max_seq_length=hard_seq_len,
     # )
 
-    trainer = Trainer(
+    import inspect as _inspect
+
+    _trainer_kwargs = dict(
         model=model,
-        tokenizer=train_dataset.tokenizer,
         args=training_args,
         data_collator=train_dataset.collator,
         train_dataset=train_dataset,
         eval_dataset=val_dataset,
-        # max_seq_length=hard_seq_len,
     )
+    # transformers 4.46+ 는 Trainer(tokenizer=) → processing_class= 로 개명. 버전 무관 대응.
+    _tr_params = _inspect.signature(Trainer.__init__).parameters
+    _tok_key = "processing_class" if "processing_class" in _tr_params else "tokenizer"
+    _trainer_kwargs[_tok_key] = train_dataset.tokenizer
+
+    trainer = Trainer(**_trainer_kwargs)
     return trainer
 
 
