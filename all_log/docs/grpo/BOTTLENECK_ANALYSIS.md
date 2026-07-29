@@ -257,7 +257,7 @@ on-path lemma 오선택(**8~20%만**, 상한 낮음)을 커버. premise-tactic �
 
 | # | 방법 | 우리 진단 근거 | 문헌 | 비용 |
 |---|---|---|---|---|
-| **1★** | **value-free structural search**: 분해 노드서 **후보 분해(각 가설 destruct/각 변수 induction) 열거 + MC-rollout 성공률로 랭킹 + stuck시 backtrack** | coverage 22%(정답 분해 안 생성)·오류 49% "대상 틀림"·stuck 74% 직격 | Proverbot 1907.07794 · **MC-rollout 스코어=Math-Shepherd 2312.08935를 network 없이 온라인 사용** | 추론compute(학습X) |
+| **1★** | **value-free structural search** (▶ **전체 설계·의사코드·구현계획: [[VALUE_FREE_SEARCH]]**): 분해 노드서 **후보 분해(각 가설 destruct/각 변수 induction) 열거 + MC-rollout 성공률로 랭킹 + stuck시 backtrack** | coverage 22%(정답 분해 안 생성)·오류 49% "대상 틀림"·stuck 74% 직격 | Proverbot 1907.07794 · **MC-rollout 스코어=Math-Shepherd 2312.08935를 network 없이 온라인 사용** | 추론compute(학습X) |
 | **2** | **분해-rationale SFT** (Lean-STaR): structural tactic **앞에 "왜 이 변수 induction"** 한 줄 생성, gold 합리화로 부트스트랩 | coverage 22% = generation 문제를 학습으로 직격 | Lean-STaR 2407.10040 · (teacher distill) DS-Prover-V2 2504.21801 | 싼 SFT, critic X |
 | **3** | **HER 재라벨**: 실패 롤아웃(62%)을 **"닫은 subgoal의 성공 증명"으로 재라벨** → 데이터 증강 | dead 58% 신호0을 데이터로 전환 | HER-for-provers 2112.10664 | 싼, value-free |
 | **4** | **Baldur repair**: stuck 상태 + **Coq 에러 메시지**를 넣어 재시도 | **stuck 74%** 직격 | Baldur 2303.04910 | 싼 추론 |
@@ -304,7 +304,7 @@ Proverbot9001 1907.07794 · Math-Shepherd 2312.08935 · Lean-STaR 2407.10040 · 
 
 ### 실험 큐 (우선순위)
 1. **divergence-DPO (구현 완료)**: `bash all_log/run_divdpo.sh` → rand200 w2 vs 37.5%. (GPU 지정만 조정)
-2. **★ value-free structural search (미구현, 최우선 next)** — 스펙:
+2. **★ value-free structural search (미구현, 최우선 next)** — 요약 스펙(**전체 설계·의사코드·하이퍼파라미터·compute관리·구현계획·ablation은 [[VALUE_FREE_SEARCH]] 참조**):
    - `bfs_prover_searcher` expansion에서 **분해 결정 노드**(현 goal에 case 가능한 hyp/inductive var 존재) 감지 시:
      - **후보 열거**: 각 가설 `destruct H_i` + 각 변수 `induction x_j` (+ 정책 top-k tactic) → 후보 tactic set.
      - **MC-rollout voting(value-free)**: 각 후보에서 짧은 rollout K개 → **성공/진전률로 랭킹**(Math-Shepherd 신호를 network 없이). 
