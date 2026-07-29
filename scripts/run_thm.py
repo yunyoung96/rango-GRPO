@@ -248,6 +248,9 @@ def get_searcher_conf(model_alias: str) -> SearcherConf:
                 timeout=timeout, alpha=0.5, expand_width=4, print_proofs=False,
                 use_vfsearch=True, mc_K=4, mc_D=6, mc_budget=240, struct_cap=8,
             )
+        case "rango-bfs-grpo":  # 대조군: rango-grpo(π₀) 정책 + 순수 BFS(vfsearch off, ew=4로 vfsearch와 폭 매칭)
+            return BFSProverSearchConf(timeout=timeout, alpha=0.5, expand_width=4, print_proofs=False,
+                                       use_vfsearch=False)
         case "rango-vfsearch-nomc":  # ablation: 구조적 후보 열거는 하되 MC 끔(mc_budget=0 → logprob 랭킹)
             # vfsearch에서 MC-scoring의 기여를 분리(§8 ablation). 열거만 vs 열거+MC.
             return BFSProverSearchConf(
@@ -676,7 +679,7 @@ def get_tactic_confs(model_alias: str, split: Split) -> list[TacticGenConf]:
             )
             return [DecoderTacticGenConf(Path("models/rango-grpo-fix/adapter"), [formatter])]
 
-        case "rango-grpo" | "rango-grpo-self" | "rango-vfsearch" | "rango-vfsearch-nomc":
+        case "rango-grpo" | "rango-grpo-self" | "rango-vfsearch" | "rango-vfsearch-nomc" | "rango-bfs-grpo":
             # rango-vfsearch(-nomc): value-free structural search가 이 π₀(SFT→GRPO) 정책을 그대로 씀(추론측 레버).
             # GRPO-self: **same-project** RL — CompCert(train idx 200:240)로 학습하고 CompCert(eval 0:40)
             #   를 푼다. 탐색 rollout 기반(정답 proof 미열람)이라 SFT 누출은 아니나, 같은 프로젝트라
