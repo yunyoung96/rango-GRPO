@@ -152,6 +152,15 @@ def main():
     done = len(results)
     print(f"총 {total}개  arch={args.alias}  timeout={args.timeout}s  workers={args.workers}  →  {out_dir}")
 
+    # ★ HW 환경 stamp(성공률 해석은 검색·워커·GPU 함께 봐야 함 — CEILING_ANALYSIS §0 confound)
+    try:
+        import subprocess as _sp
+        _gpu_name = _sp.check_output(
+            ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+            text=True, timeout=10).strip().splitlines()[0].strip()
+    except Exception:
+        _gpu_name = "unknown"
+
     lock = threading.Lock()
 
     def save_summary():
@@ -160,6 +169,9 @@ def main():
             "architecture": args.alias,
             "description": args.description,
             "timeout_sec": args.timeout,
+            "workers": args.workers,          # ★ 워커 수(성공률 confound 축)
+            "gpus": args.gpus,                 # ★ 사용 GPU id 리스트("0" / "0,1")
+            "gpu_name": _gpu_name,             # ★ 실측 GPU 모델명
             "total": total,
             "done": done,
             "success": n_success,

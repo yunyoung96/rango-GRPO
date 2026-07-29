@@ -240,11 +240,17 @@ def get_searcher_conf(model_alias: str) -> SearcherConf:
             return RMaxTSSearchConf(timeout=timeout, print_proofs=True, use_ducb=False)
 
         case "bfs-prover" | "bfs-dpo":  # BFS-Prover length-normalized best-first, α=0.5(논문)
-            return BFSProverSearchConf(timeout=timeout, alpha=0.5, expand_width=2, print_proofs=True)
-        case "bfs-prover-trace":  # BFS-Prover + 트리 덤프(expert-iter/DPO 학습 데이터 수집)
+            # ★ BFS_TRACE_OUT env가 있으면 평가에서도 트레이스 덤프(막힌지점 분석용). 없으면 None(무덤프).
+            return BFSProverSearchConf(timeout=timeout, alpha=0.5, expand_width=2, print_proofs=True,
+                                       trace_out=os.environ.get("BFS_TRACE_OUT"))
+        case "bfs-prover-trace":  # BFS-Prover + 트리 덤프(expert-iter/DPO 학습 데이터 수집). trace_out=env로 라운드별 분리.
             return BFSProverSearchConf(
                 timeout=timeout, alpha=0.5, expand_width=2, print_proofs=True,
-                trace_out="data/bfs_trees/trees.jsonl",
+                trace_out=os.environ.get("BFS_TRACE_OUT", "data/bfs_trees/trees.jsonl"),
+            )
+        case "bfs-prover-beam":  # expert-iter step1 beam 필터: 결정론적 beam 확장(쉬운 정리 식별). trace 끔.
+            return BFSProverSearchConf(
+                timeout=timeout, alpha=0.5, expand_width=2, print_proofs=True, beam=True,
             )
         case "bfs-a0":           # ablation: length-norm 제거(α=0, 순수 누적 log-prob)
             return BFSProverSearchConf(timeout=timeout, alpha=0.0, expand_width=2, print_proofs=True)
@@ -635,6 +641,18 @@ def get_tactic_confs(model_alias: str, split: Split) -> list[TacticGenConf]:
         cached_proof_loc=None,
         first_step_only=False,
     )
+
+    # BFS-Prover expert-iteration: 라운드별 정책 adapter를 env(BFS_ADAPTER)로 교체.
+    #   π_0 = rango SFT baseline(checkpoint-54500). 각 라운드 SFT/DPO adapter를 여기로 주입.
+    if model_alias in ("bfs-prover", "bfs-prover-trace", "bfs-prover-beam",
+                       "bfs-a0", "bfs-a1") and os.environ.get("BFS_ADAPTER"):
+        formatter = GeneralFormatterConf(
+            premise_client_conf=tfidf_premise_conf,
+            proof_retriever_conf=bm25_proof_conf,
+            num_premises=50,
+            num_proofs=20,
+        )
+        return [DecoderTacticGenConf(Path(os.environ["BFS_ADAPTER"]), [formatter])]
 
     match model_alias:
         case "rango" | "rango-best-beam" | "rango-best-rand" | "rango-mem" | "rango-mem-wide" | "rango-portfolio" | "rango-portfolio-08" | "rango-portfolio-06" | "rango-vlog" | "rango-vguided" | "rango-hybrid" | "rango-hybrid-v" | "rango-qed" | "rango-qed-hybrid" | "rango-qed-sum" | "rango-qed-min" | "rmaxts" | "rmaxts-noreward" | "rmaxts-nomerge" | "rmaxts-nomcts" | "bfs-prover" | "bfs-a0" | "bfs-a1" | "bfs-prover-trace" | "grpo-rollout" | "grpo-rollout-cur" | "grpo-rollout-dense" | "grpo-rollout-g16" | "grpo-rollout-retry" | "grpo-rollout-cross" | "grpo-rollout-scale" | "grpo-rollout-bigscale" | "grpo-rollout-backward" | "quarry" | "quarry-heur" | "quarry-trace" | "pgts" | "pgts-sym" | "pgts-pat" | "rango-progress" | "rango-progress-a05" | "rango-progress-a10" | "rango-progress-a0":

@@ -13,6 +13,9 @@ Coq 증명 자동생성(Rango: DeepSeek-Coder-1.3B + LoRA + BM25/TF-IDF retrieva
 - **[INTERLEAVED_SFT_RL.md](INTERLEAVED_SFT_RL.md)** — SFT↔GRPO 교대 문헌(ReLIFT/BRIDGE/Goedel/STP) + Coq 공백 + **우리 실측 비판**(그들 gold-SFT 데이터원은 §10 함정 → reachable로 교체) + 종합 파이프라인.
 - **[MODEL_CANDIDATES.md](MODEL_CANDIDATES.md)** — 더 큰/teacher 모델 + 로컬(2×48GB) 실행성. DeepSeek(-Prover는 Lean) vs **Qwen 비교**(§7·§8), naive base 비교.
 
+## 🔬 진행중 실험 (2026-07-28)
+- **[BFS_PROVER_METHOD.md](BFS_PROVER_METHOD.md)** — **BFS-Prover(2502.03438) 논문 충실 재구현**. dead-group 돌파 정공법: beam으로 쉬운것 거르고 **hard를 length-norm best-first 탐색으로 뚫어 → 성공경로=SFT, 컴파일에러=DPO negative → self-training(EI)**. §1 beam vs BFS, §2 SFT+DPO 둘 다 하는 이유, §4 실측(R1 hard 272 중 BFS-solved 69 = 실제 돌파중), §5 invertible-BFS 대조(전멸).
+
 ## 📊 실험 상세 (원판 기록)
 - **[GRPO_ROLLOUT_ANALYSIS.md](GRPO_ROLLOUT_ANALYSIS.md)** — 롤아웃 분석(dead 73%, 길이편향, MDP 층위).
 - **[GRPO_RESULT.md](GRPO_RESULT.md)** — GRPO 결과.

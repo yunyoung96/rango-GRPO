@@ -165,32 +165,81 @@ def rollout_attempt(
 
 _IND_TYPES = {'nat', 'positive', 'Z', 'N', 'bool', 'list', 'option', 'comparison',
               'ident', 'block', 'val', 'memval', 'instruction', 'sumbool', 'prod'}
+# CompCert 결정절차(case-split "조건") — gold의 compound-term destruct는 goal에 구문적으로
+# 안 나타나고 문맥 변수에 '결정절차'를 적용하는 것. 타입-지향 열거(Coq이 무효는 필터).
+_DEC_UN = {'bool': ['destruct {a}.'], 'val': ['destruct {a}.'], 'option': ['destruct {a}.'],
+           'comparison': ['destruct {a}.'], 'sumbool': ['destruct {a}.']}
+_DEC_CONST = {  # 상수(0)와의 case-split
+    'Z': ['destruct (zeq {a} 0).', 'destruct (zlt {a} 0).', 'destruct (zle 0 {a}).'],
+    'R': ['destruct (Rle_or_lt 0 {a}).', 'destruct (Rlt_le_dec 0 {a}).'],
+}
+_DEC_BIN = {  # 두 변수 쌍의 결정절차
+    'Z': ['destruct (zeq {a} {b}).', 'destruct (zlt {a} {b}).', 'destruct (zle {a} {b}).'],
+    'positive': ['destruct (peq {a} {b}).'], 'ident': ['destruct (peq {a} {b}).'],
+    'nat': ['destruct (Nat.eq_dec {a} {b}).', 'destruct (le_lt_dec {a} {b}).'],
+    'R': ['destruct (Rle_or_lt {a} {b}).', 'destruct (Rlt_le_dec {a} {b}).'],
+}
+
+def _scrutinees(txt: str) -> list[str]:
+    """match E with / if E then 의 scrutinee E(compound term) 추출 → destruct 대상."""
+    out = []
+    for kw, end in (('match ', ' with'), ('if ', ' then')):
+        i = 0
+        while True:
+            j = txt.find(kw, i)
+            if j < 0:
+                break
+            k = txt.find(end, j + len(kw))
+            if k < 0:
+                break
+            e = txt[j + len(kw):k].strip()
+            if e and '\n' not in e and 0 < len(e) <= 80 and e.count('(') == e.count(')'):
+                out.append(e)
+            i = k + len(end)
+    return out
+
 def _targeted_cands(goals: list) -> list[str]:
-    """현재 goal(첫 goal)의 가설에서 targeted-invertible 후보 tactic 생성:
-    유도형 변수 → destruct/induction, 등식/H-가설 → inversion. (하이브리드 검색용, Coq이 무효 필터.)"""
+    """현재 goal(첫 goal)에서 targeted-invertible 후보 생성 (Coq이 무효 필터):
+    ① 문맥 유도형 변수 destruct/induction ② goal/hyp의 match·if scrutinee(compound-term) destruct
+    ③ 타입-지향 CompCert 결정절차 case-split(destruct 조건) ④ 명제 가설 inversion."""
     if not goals:
         return []
+    txt = str(goals[0])
+    parts = txt.split('\n\n', 1)
+    hyp_txt, goal_txt = parts[0], (parts[1] if len(parts) > 1 else '')
+    byty: dict = {}
     dv, pr = [], []
-    for ln in str(goals[0]).split('\n'):
-        if ln.strip() == '':
-            break
+    for ln in hyp_txt.split('\n'):
         m = re.match(r"^([\w' ]+?)\s*:\s*(.+)$", ln)
         if not m:
-            break
+            continue
         typ = m.group(2).strip()
         head = typ.split()[0] if typ.split() else typ
         for nm in m.group(1).split():
-            if '->' not in typ and (head in _IND_TYPES or
-                                    (head[:1].isupper() and head not in ('Type', 'Set', 'Prop', 'R', 'Q', 'radix'))):
-                dv.append(nm)
+            if '->' not in typ:
+                byty.setdefault(head, []).append(nm)
+                if head in _IND_TYPES or (head[:1].isupper() and head not in ('Type', 'Set', 'Prop', 'R', 'Q', 'radix')):
+                    dv.append(nm)
             if ('=' in typ or nm[0] == 'H') and '->' not in typ:
                 pr.append(nm)
     out: list[str] = []
-    for v in dv[:3]:
+    for v in dv[:3]:                                    # ① 문맥 변수
         out += [f'\ndestruct {v}.', f'\ninduction {v}.']
-    for h in pr[:2]:
-        out += [f'\ninversion {h}.']
-    return list(dict.fromkeys(out))
+    for e in list(dict.fromkeys(_scrutinees(goal_txt) + _scrutinees(hyp_txt)))[:4]:  # ② scrutinee
+        out.append(f'\ndestruct ({e}).')
+    for head, names in byty.items():                   # ③ 타입-지향 결정절차
+        for tmpl in _DEC_UN.get(head, []):
+            for a in names[:2]:
+                out.append('\n' + tmpl.format(a=a))
+        for tmpl in _DEC_CONST.get(head, []):
+            for a in names[:2]:
+                out.append('\n' + tmpl.format(a=a))
+        if len(names) >= 2:
+            for tmpl in _DEC_BIN.get(head, []):
+                out.append('\n' + tmpl.format(a=names[0], b=names[1]))
+    for h in pr[:2]:                                    # ④ inversion
+        out.append(f'\ninversion {h}.')
+    return list(dict.fromkeys(out))[:18]
 
 
 def _goals_str(check) -> list[str]:

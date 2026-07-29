@@ -15,6 +15,7 @@ Lean→Coq. **탐색 알고리즘은 rango 탐색과 안 섞은 순수 length-no
 from __future__ import annotations
 import heapq
 import math
+import os
 import time
 from dataclasses import dataclass, field
 from typing import Any, Optional
@@ -37,6 +38,7 @@ class BFSProverSearchConf:
     print_proofs: bool = True
     initial_proof: Optional[str] = None
     trace_out: Optional[str] = None   # expert-iter/DPO용 트리 덤프 jsonl 경로(None=끔)
+    beam: bool = False                 # True=결정론적 beam 확장(expert-iter step1 필터), False=temperature 샘플링(논문)
     ALIAS = "bfs_prover"
 
     @classmethod
@@ -49,6 +51,7 @@ class BFSProverSearchConf:
             yaml_data.get("print_proofs", True),
             yaml_data.get("initial_proof", None),
             yaml_data.get("trace_out", None),
+            yaml_data.get("beam", False),
         )
 
 
@@ -74,6 +77,7 @@ class BFSProverSearcher:
         print_proofs: bool = True,
         initial_proof: Optional[str] = None,
         trace_out: Optional[str] = None,
+        beam: bool = False,
     ):
         self.tactic_clients = tactic_clients
         self.proof_manager = proof_manager
@@ -83,6 +87,12 @@ class BFSProverSearcher:
         self.max_depth = max_depth
         self.print_proofs = print_proofs
         self.trace_out = trace_out
+        self.beam = beam
+        # BFS_INVERT=1: 각 노드 확장에 invertible 분해 후보(_targeted_cands)를 추가 주입.
+        #   → cascade 정책 tactic E개 + invertible 후보 → 우선순위큐가 재귀적 invertible+cascade 탐색.
+        #   destruct가 만든 subgoal은 COMPLETE(전체 goal 닫힘) 필요 → 재귀로 닫음. (A: 분해 유도 + SFT수집)
+        self._invert = os.environ.get("BFS_INVERT", "0") == "1"
+        self._invert_k = int(os.environ.get("BFS_INVERT_K", "6"))
         self.total_model_time = 0.0
         # 트리 덤프용: node_id -> record{state_example, tactics[]}, 그리고 부모 링크.
         self.trace_records: dict[int, dict] = {}
@@ -105,6 +115,7 @@ class BFSProverSearcher:
             getattr(conf, "max_depth", 50), getattr(conf, "print_proofs", True),
             getattr(conf, "initial_proof", None),
             getattr(conf, "trace_out", None),
+            getattr(conf, "beam", False),
         )
 
     def _goal_key(self, goals: list[Goal]) -> str:
@@ -137,13 +148,18 @@ class BFSProverSearcher:
             script = proof.proof_prefix_to_string(proof.steps[-1], include_theorem=False)
             self._record_state(node.node_id, proof, dset, client)
             t0 = time.time()
-            recs = client.get_recs(  # E개 샘플 (beam=False → temperature 샘플링)
+            recs = client.get_recs(  # E개 후보 (beam=False → temperature 샘플링[논문]; beam=True → 결정론적 필터)
                 len(proof.steps) - 1, proof, dset, self.expand_width,
-                beam=False, file_prefix=self.proof_manager.file_prefix,
+                beam=self.beam, file_prefix=self.proof_manager.file_prefix,
             )
             self.total_model_time += time.time() - t0
 
-            for tactic, tac_logprob in zip(recs.next_tactic_list, recs.score_list):
+            cand_pairs = list(zip(recs.next_tactic_list, recs.score_list))
+            if self._invert:  # invertible 분해 후보 추가 주입(고정 penalty logprob으로 탐색은 하되 우선순위 낮게)
+                from tactic_gen.grpo_rollout import _targeted_cands, _goals_str
+                for _tac in _targeted_cands(_goals_str(node.check_result))[: self._invert_k]:
+                    cand_pairs.append((_tac, -3.0))
+            for tactic, tac_logprob in cand_pairs:
                 res = self.proof_manager.check_proof(script + tactic, new_proof.theorem)
                 if self.print_proofs:
                     print(f"  [BFS-Prover d={node.depth+1}] {tactic.strip()!r} → {res.tactic_result.name}")
@@ -210,7 +226,9 @@ class BFSProverSearcher:
             return
         import json
         from pathlib import Path
-        p = Path(self.trace_out)
+        # 병렬 워커(run_all)가 같은 파일에 동시 append하면 깨질 수 있어 per-PID 파일로 분리.
+        # (오케스트레이터가 trees.jsonl.* 를 합쳐서 추출.)
+        p = Path(f"{self.trace_out}.{os.getpid()}")
         p.parent.mkdir(parents=True, exist_ok=True)
         with p.open("a") as f:
             for rec in self.trace_records.values():

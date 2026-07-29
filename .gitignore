@@ -61,3 +61,9 @@ all_log/gpu_monitor.md
 models_dl/
 data/vguided_trees/
 data/quarry_traces/
+
+# NFS silly-rename 임시파일(열린 채 삭제된 파일의 잔재)
+.nfs*
+
+# 로컬 Claude Code 설정
+.claude/
