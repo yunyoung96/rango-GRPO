@@ -1,0 +1,85 @@
+<요청사항>
+- 발표 자료 md = presentation/slides.md (v3) 에 작성됨.
+- 그림 = presentation/figures/*.png (presentation/gen_figures.py 로 생성, 수치·라벨 고쳐 재생성 가능).
+- md 여러 번 수정 후 ppt로 만들 예정.
+- 아래 = 원 outline + [반영] 현황 + [TODO]. (→ = 슬라이드 번호 매핑)
+
+<상황>
+- Coq/Proof automation은 잘 모르지만 전통적 강화학습은 잘 아시는 이종민 교수(연세대)와 협업.
+- 우리가 하는 것을 공유드리고, 강화학습적으로 어떻게 하는 게 좋을지 논의하고자 함.
+- Rango 논문에 강화학습을 적용해 rango 성능을 올리는 것이 목표.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+<발표 자료 목표 + 반영 현황>
+
+(introduction — Coq이란)  → slides §1, §2
+- Coq = 수학/명제를 formal하게 기술·검증하는 언어. [반영]
+- 예시(destruct/induction)를 더 직관적인 명제논리로 교체 [반영]:
+    · §1  and_elim :  A /\ B -> A       (intro → destruct → exact)
+    · §2  or_comm  :  A \/ B -> B \/ A  (destruct 로 case A / case B 분기)
+- goal / subgoal 의미. [반영] + 그림 fig_subgoal_tree.png (destruct → 2 subgoal → QED)
+
+(background)  → slides §3
+- 4색 정리를 Coq으로 증명함(Gonthier 2005). [반영]
+- 수학 문제는 LLM이 잘 품 → miniF2F 88.9% (DeepSeek-Prover-V2) 수치 삽입. [반영]
+
+(formal verification + CompCert)  → slides §4
+- 수학으로 소프트웨어가 잘 돌아감을 증명. 예: 컴파일러 에러 없이 동작. [반영]
+- CompCert = C 동작을 수학으로 치환해 "컴파일이 의미 보존"을 증명. [반영]
+- 최상위 정리 개념형태 코드 삽입: transf_c_program_correct + backward_simulation.
+- [TODO] compcert 자체 개념 없이도 이해되는 아주 작은 예시 1개 더.
+
+(proof auto generation)  → slides §5
+- 사람이 직접 증명 작성은 힘듦, 간단해도 길다. [반영: 개념]
+- 수학(miniF2F)은 잘 풀지만 CompCert류는 낮음 → fig_domain_gap.png (~85% vs <40%). [반영]
+- [TODO] "간단한 정리인데 증명이 긴" 실제 CompCert 예시 코드 1개.
+- [반영] CompCert 자동증명 <40% 문헌표: Proverbot9001 ~19-21% / Tactician 23.4% / Rango 32.5%(최고).
+    대조 miniF2F: DS-Prover-V2 88.9% / Goedel 57.6% / Lean-STaR 46.3%. → §5 표 + References 슬라이드(§14).
+    (주의: QEDCartographer 97.6%는 subgoal·오라클필터라 제외; ASTactic 계열은 CoqGym 평균이라 제외.)
+
+(rango)  → slides §6
+- DeepSeek-Coder 1.3B fine-tune. 프롬프트에 유사 증명(BM25)+lemma(TF-IDF). [반영]
+- 아키텍처 그림 → fig_rango_arch.png (자체 제작; [TODO] 논문 원본 figure로 교체 권장).
+- CompCert 성공률 여전히 낮음(~37%). [반영]
+
+(강화학습 모델링)  → slides §7
+- rango=agent / state=goal state / π=state+premises→LLM 토큰 확률 / θ=LLM 파라미터(LLM=policy net). [반영, 표]
+- episode = QED까지 여정, QED reward=1 나머지 0, V(s=QED). [반영]
+- MDP 그림 → fig_mdp.png (or_comm 을 episode로, sparse·terminal reward 강조).
+
+(기본 실험 세팅 — 공통)  → slides §8
+- CompCert만. 전체 ~6000 중 앞 1500 → test 1200 / train 300. [반영]
+- GRPO: 정리당 G rollout → 그룹 상대 advantage (r−mean)/std, critic-free. [반영]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+<시도해본 실험 — 결과 반영>
+
+(실험 set 1: SFT / GRPO / SFT→GRPO)  → slides §9
+- rand200 결과: SFT 33.5% (67/200) · SFT→GRPO 37.5% (75/200) · [TODO GRPO-alone 값].
+- mixed 대비 dead/all 높음: dead 64% / mixed 31% / all 5% → fig_deadmixed.png, fig_results.png.
+- SFT→GRPO 최고지만 개선 미미. 원인 = dead group(=sparse reward) 과다. [반영]
+
+(실험 set 2: SFT→GRPO ×3 반복)  → slides §10
+- 가설: GRPO로 풀던 걸 SFT로 강화 반복 → mixed↑ → 성능↑?
+- 결과: train coverage/mixed 는 올랐으나(36→38→43%) rand200 은 실패(37.5 정체 ~ 28 하락).
+- → overfitting 의심. fig_overfitting.png. [반영]
+
+(실험 set 3: 안전장치 넣은 Expert Iteration)  → slides §11
+- EI 정의 + 안전장치 4개: KL→고정 π₀ 앵커 / gold+자기성공 누적 혼합 / lr↓·1epoch / val 조기중단. [반영]
+- fig_ei_loop.png.
+- 결과(진행): val R1 38.3% ≈ R2 38.3% → 조기중단(평탄), collapse 없음(Set2 하락과 대조).
+- [TODO] 최종 rand200 (best=eisafe-r1) vs 37.5% — eval 진행 중, 오늘 새벽 확정 후 §11에 채움.
+
+(해봐야 할 실험: PPO)  → slides §12
+- PPO 면 sub-episode(step) 단위로 한 번에 update → sparse 완화.
+- 단 좋은 critic 필요. [반영]
+- 추가: 우리 예비 PPO critic 학습 실패(explained variance ≈ 0) → critic 설계가 핵심 과제.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+<남은 TODO>
+1. CompCert 아주 작은 예시 코드 1개 (§4)
+2. "짧은 정리 · 긴 증명" 실제 CompCert 예시 1개 (§5)
+3. [완료] CompCert <40% 문헌표 (§5) + References 슬라이드(§14) — 수치 검증됨
+4. GRPO-alone rand200 값 (§9)
+5. 안전-EI 최종 rand200 결과 채우기 (§11) — 오늘 새벽
+6. 그림 라벨 겹침 미세조정 + Rango/CompCert 원본 논문 figure 교체

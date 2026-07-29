@@ -10,8 +10,8 @@
 |---|---|---|---|---|
 | **R1** | **101/283 = 35.7%** | ✅ r1sft | ✅ rango-grpo-ei-r1 | 완료 |
 | **R2** | **108/288 = 37.5%** (+1.8pp) | ✅ r2sft | ✅ rango-grpo-ei-r2 (11:46) | 완료 |
-| **R3** | 🔵 rollout 진행 중(11:46 시작) | — | — | rollout 중 |
-| 최종 | rand200 w2 600s eval | | | 대기 |
+| **R3** | **120/288 = 41.7%** (14:35 완료, +3.4pp) | 🔵 진행 중 | — | RFT 중 |
+| R3 eval | rand200 w2 600s (여기서 멈춤·검토) | | | 대기 |
 
 - 실행 프로세스: `grpo_train` **1개**(pid 2830999, CUDA_VISIBLE_DEVICES=1, GPU1), `run_ei.sh` 1개. **중복 없음.**
 - coverage 추세: R1 35.7% → R2 37.5% (**+1.8pp**). SFT→GRPO 단일(37.5%) 수준으로 **수렴 신호**(폭발적 상승 없음).
@@ -69,36 +69,25 @@ GRPO는 그룹(정리당 G=8 rollout) 단위로 학습. 그룹 종류:
 
 ---
 
-## 3b. R3 rollout — all/mixed/dead 분해 & 새로 푼 정리 (동일 157개 부분집합)
+## 3b. R3 rollout 완료 — all/mixed/dead 분해 & 새로 푼 정리 (전체)
 
-라운드 간 정리 매칭은 **(file_name, proof_idx)** 안정키 사용(주의: rollout의 `theorem` 필드는 `abs(hash(text))`라 프로세스마다 랜덤 → 매칭 불가). R3 롤아웃 진행 중(168/~288 처리) 시점 스냅샷, R1·R2·R3에 공통 존재하는 **157개** 기준.
+라운드 간 정리 매칭은 **(file_name, proof_idx)** 안정키(주의: rollout의 `theorem` 필드는 `abs(hash(text))`라 프로세스마다 랜덤 → 매칭 불가). R3 롤아웃 **완료**(288그룹), R1·R2·R3 공통 **269개** 기준.
 
-| 라운드 | all-solved | mixed | dead | coverage(all+mixed) |
+| 라운드 | all-solved | mixed | **dead** | coverage(all+mixed) |
 |---|---|---|---|---|
-| R1 | 6 | 48 | 103 | 54 (34.4%) |
-| R2 | 13 | 45 | 99 | 58 (36.9%) |
-| **R3** | **23** | 45 | **89** | **68 (43.3%)** |
+| R1 | 13 (4.8%) | 84 (31.2%) | 172 (**63.9%**) | 97 (36.1%) |
+| R2 | 23 (8.6%) | 80 (29.7%) | 166 (**61.7%**) | 103 (38.3%) |
+| **R3** | **40 (14.9%)** | 75 (27.9%) | 154 (**57.2%**) | 115 (**42.8%**) |
 
-- dead **103→99→89** (−14), all-solved **6→13→23** (+17), mixed 평탄(45~48).
-- coverage 상승이 **mixed→all(확신) + dead→mixed(신규 크래킹) 두 경로 동시**.
+- dead **63.9→61.7→57.2%** (R1→R3 **−6.7pp**), all-solved 4.8→**14.9%**(3배), mixed 31.2→27.9%(졸업으로 소폭↓), coverage **+6.7pp**.
+- R3 전체 288그룹: all 40 · mixed 80 · dead 168 · **coverage 120 = 41.7%**.
 
-**전이 R2 → R3:**
+**전이 R2 → R3:** dead→dead 150 · mixed→mixed 58 · all→all 22 · **mixed→all 18**(졸업) · **dead→mixed 16 ★신규** · mixed→dead 4▽ · all→mixed 1▽ → **dead→solved 순증 +12**.
 
-| 전이 | 개수 |
-|---|---|
-| dead → dead | 87 |
-| mixed → mixed | 33 |
-| all → all | 13 |
-| **dead → mixed (★새로 풀림)** | **12** |
-| mixed → all (확신 졸업) | 10 |
-| mixed → dead (▽퇴보) | 2 |
+**R1·R2 모두 dead였던 159개 중 R3 처음 풀림 = 10개** (전부 mixed):
+`Interpreter_complete#16, Constpropproof#6, Inliningspec#25, ValueDomain#124, Globalenvs#35, Values#105, Round_pred#29, Integers#145, Integers#215, SelectOpproof#40`.
 
-→ dead→solved **+12 / 퇴보 −2 = 순증 +10**.
-
-**기존에 한 번도 못 풀던 정리(R1·R2 모두 dead) 93개 중 R3 처음 풀림 = 7개** (전부 mixed):
-`Constpropproof.v#6`, `ValueDomain.v#124`, `SelectOpproof.v#40`, `Globalenvs.v#35`, `Inliningspec.v#25`, `Integers.v#215`, `Interpreter_complete.v#16`.
-
-**해석**: R2 GRPO metrics(mixed 감소)만으로 "정체"라 본 것은 **성급했음** — R3 rollout은 EI가 실제로 dead를 뚫어(103→89) **처음 푸는 정리 7개**를 만들었음을 보여줌. 단, 이는 **train셋 coverage**이며 최종 판정은 held-out rand200 w2 eval. train↑가 held-out↑을 보장하진 않음(과적합 여지).
+**해석**: train셋에서 EI는 **실제로 dead를 뚫는 중**(63.9→57.2%, 처음 푸는 정리 10개). 단 이는 **train coverage** — **harvest도 train 신호는 올랐으나 held-out 37.5% 동률**이었음(RFT가 자기 성공을 imitate → train 암기 가능). 진짜 판정은 **R3 rand200 w2 held-out**: 37.5% 넘으면 navigation 실개선, 동률이면 train-암기(harvest와 동류). ▶ 다음 아이디어는 [[decomposition-ideas]] 아니라 **search-rollout / rank-sharpening**(닫기가 아닌 navigation 학습) 방향 — §HARVEST_ROUND 교훈 반영.
 
 ## 4. 참고
 - 최종 비교 기준: **SFT→GRPO 75/200=37.5% (p90 399s)**. EI가 이를 유의미하게 넘겨야 성공.

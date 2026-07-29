@@ -724,6 +724,9 @@ def main():
     ap.add_argument("--lr", type=float, default=1e-6)
     ap.add_argument("--clip_eps", type=float, default=0.2)
     ap.add_argument("--kl_beta", type=float, default=0.04)
+    ap.add_argument("--ref_adapter", default=None,
+        help="KL 기준 정책(고정). 지정 시 ref_model을 이 어댑터(예 π₀)에서 로드 → EI 누적 drift 차단. "
+             "미지정 시 init_adapter(직전 라운드) 동결 복사=기존 동작.")
     ap.add_argument("--micro_bsz", type=int, default=4)
     ap.add_argument("--collator_conf", default=None,
                     help="example_collator yaml(rango training_conf). example 기반 rollout 재현용.")
@@ -830,7 +833,15 @@ def main():
     for _mod in policy.modules():
         if isinstance(_mod, torch.nn.Dropout):
             _mod.p = 0.0
-    ref_model = copy.deepcopy(policy).eval()
+    if args.ref_adapter:
+        # ★ KL 앵커를 고정 base(π₀)에 — EI 누적 drift 차단(init_adapter=직전 라운드와 별개).
+        _ref_base = AutoModelForCausalLM.from_pretrained(args.model_name, torch_dtype=torch.bfloat16).to(device)
+        ref_model = PeftModel.from_pretrained(_ref_base, args.ref_adapter).eval()
+        for _mod in ref_model.modules():
+            if isinstance(_mod, torch.nn.Dropout):
+                _mod.p = 0.0
+    else:
+        ref_model = copy.deepcopy(policy).eval()
     for p in ref_model.parameters():
         p.requires_grad_(False)
 

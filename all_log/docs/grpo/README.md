@@ -18,6 +18,10 @@ Coq 증명 자동생성(Rango: DeepSeek-Coder-1.3B + LoRA + BM25/TF-IDF retrieva
 - **[GRPO_RESULT.md](GRPO_RESULT.md)** — GRPO 결과.
 - **[LEAF_SUBGOAL_METHOD.md](LEAF_SUBGOAL_METHOD.md)** — leaf subgoal 방법.
 - **[HARVEST_ROUND.md](HARVEST_ROUND.md)** — 실패 롤아웃서 닫힌 subgoal harvest(RFT).
+- **[BFS_PROVER_IMPL.md](BFS_PROVER_IMPL.md)** — BFS-Prover(2502.03438) 우리 구현 정리(탐색 충실 재현+ablation, DPO/validity-DPO, 실측·충실도).
+- **[EI_PROGRESS.md](EI_PROGRESS.md)** — Expert Iteration 진행·mixed 변화율·R3 분해.
+- **[EI_OVERFIT_MITIGATIONS.md](EI_OVERFIT_MITIGATIONS.md)** — EI overfitting 완화책 정확 구현(early-stop/KL→π₀/entropy·clip-higher/lr↓) + 문헌.
+- **[BOTTLENECK_ANALYSIS.md](BOTTLENECK_ANALYSIS.md)** — ★병목 실측 진단(retrieval OK·built-in OK·**선택/분해가 병목**) + 해결안(top-K분기→correctness-DPO+GRPO).
 - **[SUBGOAL_EXPERIMENT_PLAN.md](SUBGOAL_EXPERIMENT_PLAN.md)** — subgoal 실험 계획.
 - **[PASSK_ANALYSIS.md](PASSK_ANALYSIS.md)** — pass@k 분석.
 

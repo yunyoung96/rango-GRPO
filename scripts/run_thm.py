@@ -757,8 +757,8 @@ def get_tactic_confs(model_alias: str, split: Split) -> list[TacticGenConf]:
             sub = model_alias.replace("rango-grpo-", "")
             return [DecoderTacticGenConf(Path(f"models/rango-grpo-{sub}/adapter"), [formatter])]
 
-        case s if s.startswith("rango-grpo-ei-r"):
-            # EI R5+ 등 임의 라운드 자동 처리 (r1~r4 는 위 명시 케이스; 본문 동일)
+        case s if s.startswith("rango-grpo-ei-r") or s.startswith("rango-grpo-eisafe-r") or s.startswith("rango-grpo-div"):
+            # EI R5+ / 안전-EI(eisafe) 임의 라운드 자동 처리 (본문 동일)
             formatter = GeneralFormatterConf(
                 premise_client_conf=tfidf_premise_conf,
                 proof_retriever_conf=bm25_proof_conf, num_premises=50, num_proofs=20,
