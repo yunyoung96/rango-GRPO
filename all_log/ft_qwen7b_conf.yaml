@@ -44,13 +44,14 @@ gradient_accumulation_steps: 8        # 유효배치 8 유지
 gradient_checkpointing: true          # activation 메모리 대폭 절감 (Qwen 큰 vocab OOM 대응)
 learning_rate: 1.0e-4                  # 파인튜닝 보수 LR(1.3B 1e-3보다 낮게)
 num_train_epochs: 1
-max_steps: 20000                       # 포맷 학습 충분(rango 60k, 큰 base는 적게)
+max_steps: 2500                        # 밤샘 완료 가능(~9h, on-the-fly 검색 13s/step). 부분-SFT 첫 신호
+                                       # (full 20000은 검색바운드로 ~72h — 캐시 빌드 후에나 가능)
 peft_lora_r: 64                        # rango 레시피와 동일(r=64)
 peft_lora_alpha: 16
 eval_steps: 1000
 save_steps: 1000
 eval_accumulation_steps: 1
 per_device_eval_batch_size: 1
-num_eval_examples: 500
+num_eval_examples: 100
 logging_steps: 50
 save_total_limit: 2
