@@ -2,7 +2,7 @@
 # base만 DeepSeek-Coder-1.3B → Qwen2.5-Coder-7B로 교체. 토크나이저 호환 확인됨(pad≠eos, add_eos 작동).
 # cached_proof_loc/cached_premise_loc 생략 → on-the-fly 검색(sentences.db) + ExampleCache. rango train_decoder.py 그대로.
 model_name: "Qwen/Qwen2.5-Coder-7B-Instruct"
-output_dir: "models/rango-qwen7b-ft-smoke"
+output_dir: "models/rango-qwen7b-ft-timing"
 
 tactic_data:
   data_loc: raw-data/coq-dataset
@@ -44,7 +44,7 @@ gradient_accumulation_steps: 8        # 유효배치 8 유지
 gradient_checkpointing: true          # activation 메모리 대폭 절감 (Qwen 큰 vocab OOM 대응)
 learning_rate: 1.0e-4                  # 파인튜닝 보수 LR(1.3B 1e-3보다 낮게)
 num_train_epochs: 1
-max_steps: 30                       # 포맷 학습 충분(rango 60k, 큰 base는 적게)
+max_steps: 8                       # 포맷 학습 충분(rango 60k, 큰 base는 적게)
 peft_lora_r: 64                        # rango 레시피와 동일(r=64)
 peft_lora_alpha: 16
 eval_steps: 1000
@@ -52,5 +52,5 @@ save_steps: 1000
 eval_accumulation_steps: 1
 per_device_eval_batch_size: 1
 num_eval_examples: 500
-logging_steps: 50
+logging_steps: 1
 save_total_limit: 2
