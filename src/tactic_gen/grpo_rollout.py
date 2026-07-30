@@ -124,6 +124,15 @@ def rollout_attempt(
                                     " | [ H : _ /\\ _ |- _ ] => destruct H end));"
                                     " try (solve [ auto | eauto | lia | congruence | intuition | now eauto ])).")
             res = proof_manager.check_proof(prefix + applied, new_proof.theorem)
+            # ★ APPLY_EAUTO=1: 모델의 apply류가 INVALID면 인자 자동추론 변형(eapply/eauto using) 시도.
+            #   실행(state 전이)만 변형, 기록("tactic")은 모델 원본 유지 → GRPO log π 불변(on-policy).
+            #   목적: apply-INVALID(58~68%)의 '정답 lemma·인자 오류' 회복 → dead group 감소.
+            if os.environ.get("APPLY_EAUTO", "0") == "1" and res.tactic_result == TacticResult.INVALID:
+                for _v in _apply_eauto_variants(tactic):
+                    _r = proof_manager.check_proof(prefix + _v, new_proof.theorem)
+                    if _r.tactic_result in (TacticResult.VALID, TacticResult.COMPLETE):
+                        res = _r
+                        break
             seen[tactic] = res
             # INVALID 였던 tactic 도 전부 기록한다 — PRM 의 음수 신호이자, 버리면 안 되는 데이터.
             steps.append({
@@ -191,6 +200,31 @@ def _targeted_cands(goals: list) -> list[str]:
     for h in pr[:2]:
         out += [f'\ninversion {h}.']
     return list(dict.fromkeys(out))
+
+
+def _apply_eauto_variants(tactic: str) -> list[str]:
+    """apply류(apply/rewrite/exact...) tactic → 인자 자동추론 실행 변형 리스트.
+    모델이 고른 lemma는 그대로 두고 **인자만 자동**: eapply(evar 지연) + eauto using(unification 탐색).
+    ★ 실행(Coq state 전이)용일 뿐 — 롤아웃 기록의 "tactic"은 모델 원본을 유지하므로 GRPO log π 는 불변.
+    apply-INVALID(58~68%)의 '정답 lemma·인자 오류'를 회복해 dead group을 깨려는 목적."""
+    t = tactic.strip()
+    m = re.match(r"^(apply|eapply|exact|refine|rewrite|erewrite)\b\s*(.*?)\.?\s*$", t, re.S)
+    if not m:
+        return []
+    head, body = m.group(1), m.group(2).strip()
+    if not body:
+        return []
+    lead = tactic[: len(tactic) - len(tactic.lstrip())]   # 앞 개행/공백 보존(프롬프트 포맷)
+    base = re.sub(r"^\s*<-\s*", "", body)                  # rewrite <- L
+    base = re.split(r"\s+with\b|\s+in\b|,|\s+by\b", base)[0].strip()  # 'with(..)'/'in H'/', L2' 제거 → lemma 이름
+    out: list[str] = []
+    if head in ("apply", "exact", "refine"):
+        out.append(f"{lead}eapply {body}.")
+    elif head == "rewrite":
+        out.append(f"{lead}erewrite {body}.")
+    if base and not base.startswith("("):
+        out.append(f"{lead}eauto using {base}.")
+    return out
 
 
 def _goals_str(check) -> list[str]:

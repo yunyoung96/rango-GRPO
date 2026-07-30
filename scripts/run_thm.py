@@ -339,7 +339,7 @@ def get_searcher_conf(model_alias: str) -> SearcherConf:
             #   정책=SFT(checkpoint-54500). --idx-file data/compcert_xl_train_idx.txt. 평가=xl_test 2000(disjoint).
             return GRPORolloutSearchConf(
                 timeout=timeout, group_size=8, max_steps=20,
-                out="data/grpo_rollouts/xlscale.jsonl",
+                out=os.environ.get("ROLLOUT_OUT") or "data/grpo_rollouts/xlscale.jsonl",
             )
 
         case "grpo-rollout-bigscale2":
