@@ -218,12 +218,21 @@ def _apply_eauto_variants(tactic: str) -> list[str]:
     base = re.sub(r"^\s*<-\s*", "", body)                  # rewrite <- L
     base = re.split(r"\s+with\b|\s+in\b|,|\s+by\b", base)[0].strip()  # 'with(..)'/'in H'/', L2' 제거 → lemma 이름
     out: list[str] = []
+    _has_base = bool(base) and not base.startswith("(")
     if head in ("apply", "exact", "refine"):
-        out.append(f"{lead}eapply {body}.")
-    elif head == "rewrite":
-        out.append(f"{lead}erewrite {body}.")
-    if base and not base.startswith("("):
-        out.append(f"{lead}eauto using {base}.")
+        out.append(f"{lead}eapply {body}.")               # 인자 evar 지연(missing arg)
+        out.append(f"{lead}eapply {body}; eauto.")        # 남은 evar/side-goal 자동 닫기
+        if _has_base:
+            out.append(f"{lead}eauto using {base}.")      # unification 탐색
+    elif head in ("rewrite", "erewrite"):
+        out.append(f"{lead}erewrite {body}.")             # 인자 evar rewrite
+        if _has_base:
+            # 방향 불일치(→ ↔ <-) 토글
+            flip = base if body.lstrip().startswith("<-") else f"<- {base}"
+            out.append(f"{lead}rewrite {flip}.")          # 반대 방향
+            out.append(f"{lead}rewrite {base} in *.")     # 위치 불일치(모든 가설/goal)
+            out.append(f"{lead}erewrite {base} by eauto.")# side-condition 자동 닫기
+            out.append(f"{lead}eauto using {base}.")
     return out
 
 
