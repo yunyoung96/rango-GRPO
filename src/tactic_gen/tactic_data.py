@@ -47,6 +47,16 @@ _logger = get_basic_logger(__name__)
 RESPONSE_TEMPLATE = "[TACTIC]"
 NEWLINE_RESPONSE_TEMPLATE = f"\n{RESPONSE_TEMPLATE}\n"
 
+
+def _robust_response_ids(tokenizer) -> list[int]:
+    """completion-only collator용 강건한 응답 토큰 IDs.
+    ★ NEWLINE_RESPONSE_TEMPLATE의 leading '\\n'은 in-context에서 앞 텍스트와 병합돼
+      토크나이저(특히 Qwen: vocab 151936)마다 token-id가 달라져 '못 찾음→전 시퀀스 마스킹→loss 0'을
+      유발한다. leading '\\n' 토큰을 제거하면 '[TACTIC]\\n'가 남아 어떤 앞 텍스트에도 강건히 매칭된다.
+      마스킹 경계의 '끝'(최종 '\\n' 뒤)은 동일 → 학습 대상(labels) 불변 → DeepSeek도 안전."""
+    ids = tokenizer.encode(NEWLINE_RESPONSE_TEMPLATE, add_special_tokens=False)
+    return ids[1:] if len(ids) > 1 else ids
+
 __test_lm_json = {
     "proof_script": "Theorem rev_app : forall x l, rev l ++ [x] = rev (x::l).\nProof.\n  intros.",
     "proof_state": "x: X\nl: list X\n\nrev l ++ [x] = rev (x :: l)",
@@ -646,7 +656,7 @@ class LmProcessedDataset(Dataset):
         self.edb_map = dict(zip(range(self.edb.size()), __shuffled_list))
         self.raw_examples: list[LmExample] = []
         self.collator = DataCollatorForCompletionOnlyLM(
-            response_template=NEWLINE_RESPONSE_TEMPLATE,
+            response_template=_robust_response_ids(tokenizer),
             tokenizer=tokenizer,
             mlm=False,
         )
@@ -808,7 +818,7 @@ class LmDataset(Dataset):
         self.hard_seq_len = hard_seq_len
         self.max_n_examples = max_n_examples
         self.collator = DataCollatorForCompletionOnlyLM(
-            response_template=NEWLINE_RESPONSE_TEMPLATE,
+            response_template=_robust_response_ids(tokenizer),
             tokenizer=tokenizer,
             mlm=False,
         )
