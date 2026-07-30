@@ -334,6 +334,13 @@ def get_searcher_conf(model_alias: str) -> SearcherConf:
                 timeout=timeout, group_size=8, max_steps=20,
                 out="data/grpo_rollouts/bigscale.jsonl",
             )
+        case "grpo-rollout-xlscale":
+            # ★ XL-scale(bigscale보다 큼): CompCert xl_train 1000개로 SFT→GRPO on-policy 롤아웃.
+            #   정책=SFT(checkpoint-54500). --idx-file data/compcert_xl_train_idx.txt. 평가=xl_test 2000(disjoint).
+            return GRPORolloutSearchConf(
+                timeout=timeout, group_size=8, max_steps=20,
+                out="data/grpo_rollouts/xlscale.jsonl",
+            )
 
         case "grpo-rollout-bigscale2":
             # ★ bigscale2: compcert 1000~1299(300개)로 GRPO 학습용 롤아웃. 원본 rango 정책, workers=2.
@@ -792,8 +799,8 @@ def get_tactic_confs(model_alias: str, split: Split) -> list[TacticGenConf]:
                 proof_retriever_conf=bm25_proof_conf, num_premises=50, num_proofs=20)
             return [DecoderTacticGenConf(Path("models/rango-grpo-bigscale/adapter"), [formatter])]
 
-        case "grpo-rollout-bigscale2" | "grpo-rollout-goldsft":
-            # bigscale2/goldsft 롤아웃 정책 = 원본 rango(checkpoint-54500), straight-line.
+        case "grpo-rollout-bigscale2" | "grpo-rollout-goldsft" | "grpo-rollout-xlscale":
+            # bigscale2/goldsft/xlscale 롤아웃 정책 = SFT(checkpoint-54500), straight-line.
             #   (goldsft 는 생성 안 하지만 example 빌드용 formatter/retrieval 필요 → 동일 client)
             formatter = GeneralFormatterConf(
                 premise_client_conf=tfidf_premise_conf,
@@ -822,6 +829,13 @@ def get_tactic_confs(model_alias: str, split: Split) -> list[TacticGenConf]:
                 premise_client_conf=tfidf_premise_conf,
                 proof_retriever_conf=bm25_proof_conf, num_premises=50, num_proofs=20)
             return [DecoderTacticGenConf(Path("models/rango-grpo-bigscale2/adapter"), [formatter])]
+
+        case "rango-grpo-xlscale":
+            # ★ XL-scale SFT→GRPO 평가: xl_train 1000개로 GRPO 학습한 adapter. xl_test 2000 평가(disjoint).
+            formatter = GeneralFormatterConf(
+                premise_client_conf=tfidf_premise_conf,
+                proof_retriever_conf=bm25_proof_conf, num_premises=50, num_proofs=20)
+            return [DecoderTacticGenConf(Path("models/rango-grpo-xlscale/adapter"), [formatter])]
 
         case "rango-grpo-scale" | "rango-grpo-scale-prm":
             # CompCert 200개로 학습한 GRPO. rango-grpo(40개) 대비 유일한 변인 = 학습셋 크기.
