@@ -65,6 +65,30 @@ destruct (Rnd_DN_UP_pt_split F x d u Hxd Hxu g Hg)
 - [TYPES]/decider 심층분석 = 1차(재료 정리)의 상한을 정량화한 것. 조합력이 2차의 본질.
 - 단 도달성 천장(§10) 여전 — 조합 개선도 완전체 성공엔 도달(navigation)이 함께여야.
 
+## 4b. ★ proof-generation 전용 LLM 비전 (완전한 상태 + 조합 attention)
+사용자 아이디어: "어떤 문맥에서 어떤 가설을 쓸지 attention으로 학습하는 proof-gen 전용 LLM". → 이번 분석의 실행 형태.
+
+### 왜 지금 attention이 안 되나
+- LLM은 이미 프롬프트 어디에 attend할지 학습. **근데 재료가 프롬프트에 없으면 attend할 게 없음**:
+  - goal 함수 **정의 0%**(이름만), decider **어디에도 없음**(B1 91%).
+- 재료가 있어도(B2: 가설+premise 다 있음) **조합 못 함** — attention이 "이 가설+이 lemma 연결"을 학습 안 됨.
+
+### 전용 LLM = (완전한 상태) + (조합 attention 학습)
+```
+① 완전한 상태 표현 (attend할 재료 제공)
+   [TYPES] 타입정의 + [DEFINITIONS] 함수정의 + 재랭킹 premise
+   → goal의 모든 심볼이 "이름"이 아니라 "구조"로 프롬프트에 존재
+② 조합 attention 학습 (재료를 연결)
+   성공 궤적 expert-iteration: "이 goal 문맥 → 이 가설/lemma 선택 → 성공"의
+   attention 패턴을 내재화. 구조(정의)로 학습 → 이름 아닌 구조에 attend → 전이.
+```
+- rango 자체가 이미 proof-gen 전용 fine-tune. 부족한 것 = ①완전한 상태(지금 넣는 구조정보) + ②조합 학습(expert-iter).
+- **①+②가 전용 LLM의 완성형.**
+
+### 냉정한 한계
+- attention은 "재료 연결"을 배우나 **도달성(navigation, 여러 스텝 앞)**은 별개(§10). attention만으론 부족.
+- 텍스트 attention보다 **구조 인코딩(Graph2Tac류)**이 전이에 유리할 수 있음(이름 무관 구조 매칭). [[REPRESENTATION_FOR_TRANSFER]].
+
 ## 5. 한 줄 결론
 **compound/apply 실패는 정보 부족이 아니라 조합 사고력 부족.** 재료(가설·premise·타입)는 대부분 프롬프트에 있고(oracle +2pp가 증명), 그걸 선택·적용·연결하는 능력이 벽. → **정보 주입([TYPES]/decider)은 재료 정리(1차, 상한 명확)이고, 진짜 레버는 조합을 학습시키는 것(expert-iteration 등, 2차).**
 

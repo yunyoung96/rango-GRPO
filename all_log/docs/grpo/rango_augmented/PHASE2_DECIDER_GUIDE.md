@@ -1,4 +1,60 @@
-# 2차 구현 가이드 — decider 주입 (저쪽 서버용)
+# rango-augmented 최종 스펙 + 2차 구현 가이드 (저쪽 서버용, single source of truth)
+
+작성 2026-08-02, **개정 2026-08-02(심층분석 후)**. **이 파일이 최종 스펙.** 아래 §최종스펙이 우선.
+
+---
+
+# ★★ 최종 스펙 (2026-08-02) — 무엇을 넣고 무엇을 안 넣나
+
+## 핵심 프레임 (왜 하나)
+한 프로젝트서 학습→다른 프로젝트 전이하려면 **lexical(이름) 아닌 structural(구조)** 정보 필요.
+현재 프롬프트는 **함수/타입 이름만** 줌(goal 함수 정의 **0%**, = 불완전한 상태). Coq 커널은 완전한 정의 환경에서 보는데 프롬프트는 정의를 잘라냄. → **구조 정보를 복원**해 "완전한 상태"에 가깝게 + 그걸 **조합**하도록 학습.
+근거: [[STRUCTURAL_INFO_MAP]] · [[COMPOSITION_IS_THE_WALL]] · [[DECIDER_DEEP_DIVE]].
+
+## 넣는 것 (우선순위)
+| # | 항목 | 상태 | 넣나 | 근거 |
+|---|---|---|---|---|
+| 1 | **재랭킹**(premise 순서 재배치, 블렌드 α5) | ✅배선됨 `RERANK_PREMISES=1` | **1차** | apply 선택 top-1 +14pp, 7데이터셋 검증 |
+| 2 | **[TYPES]**(inductive 타입 생성자) | 계산됨(`augment.selective_types`), collator 미배선 | **1차** | destruct/induction 구조, goal당 3개, 커버87~100%, 노이즈0, 가설+결론 타입 |
+| 3 | **[DEFINITIONS]**(goal 함수의 정의) | 미구현 | **2차(유력)** | ★상태 완전성 — goal 함수 정의 0%가 문제. 재료 72%, goal당 1~3개(안터짐), proof-독립 선별 |
+| 4 | [DECIDERS](compound decider) | 미구현 | **낮음/보류** | 주력(A 62%)은 goal 스캔(`_targeted_cands` 이미함). 조회유효분 B1 12%뿐, 89개 노이즈+랭킹부담 |
+| 5 | [SIGNATURES] | — | **불필요** | 70% 이미 [PREMISES]에 중복 |
+
+## 선별 규칙 (proof-독립 필수 — test는 proof 모름)
+- **[TYPES]**: goal(가설+결론)의 inductive 타입 → 생성자 ≤8개, top6, ≤200토큰. `augment.selective_types`.
+- **[DEFINITIONS]**: goal 결론의 **정의된 함수 전부**(unfold만 아님 — 모든 tactic이 함수 다룸).
+  - goal당 정의함수 중앙 1~2개라 전부 넣어도 안터짐. 로컬변수(in/x/H)·키워드 제외. 정의 ≤80토큰, 큰 재귀함수는 시그니처만.
+  - ❌ "unfold 빈도" 선별 금지(proof 봐야앎=누수). ❌ "apply함수" 좁힘 금지(함수는 apply만 아님).
+- **[DECIDERS]**(넣을 경우): decider는 goal당 89개 → **강한 필터+랭킹+캡 필수**(§아래). 단 우선순위 낮음.
+
+## 프롬프트 구조 (배선 시)
+```
+[TYPES]        val := Vundef | Vint | ...          ← 1차
+[DEFINITIONS]  cmpf (c v1 v2) := of_optbool(...)    ← 2차
+[PREMISES] <재랭킹된 순서>                          ← 1차(순서만)
+[PROOFS] ... [STATE] ... [SCRIPT] ... [TACTIC]
+```
+- [TYPES]/[DEFINITIONS]는 **독립 토큰예산**(각 ≤200), premise_tokens 안 뺏음. [STATE] 앞 삽입.
+- 배선 = 재랭킹 패턴(§Step C): env 가드 `INJECT_TYPES`/`INJECT_DEFS`, collate_input에 삽입.
+
+## 성능 예측 (정직)
+- 정보 주입은 **재료 제공(수평)** → oracle "gold lemma 줘도 +2pp"가 상한 프레임. [TYPES]+[DEFS] 순 성능 **+1~2pp 예측(불확실)**.
+- **진짜 값 = 전이율**(train에 없던 타입/함수의 test 적용률). 성능(같은프로젝트)보다 전이에서 큼.
+- **진짜 레버 = 조합 학습(수직)**: 성공궤적 expert-iteration으로 "재료→조합" attention 학습([[COMPOSITION_IS_THE_WALL]] §4b). = proof-gen 전용 LLM 완성형.
+
+## 평가 (필수)
+- 통제군: 비증강 same-split(`rango-tst1000tr5091-sft`).
+- (a) gold tactic top-1(teacher-forcing) (b) rand200 성공률 (c) **★전이율**: train에 없던 타입/함수가 test에 나올 때 적용되나.
+
+## 실행 순서
+1. 1차: 재랭킹 + [TYPES] 학습 → 통제군 대비 A/B (진행중, 저쪽 서버)
+2. 1차 효과+전이율 확인 후 → 2차: +[DEFINITIONS] (선별·터짐 CPU검증 후)
+3. decider는 그 다음(우선순위 낮음, goal 스캔 `_targeted_cands`로 대부분 됨)
+4. 조합 학습(expert-iteration)은 별도 트랙 — 정보 주입의 +2pp 천장 넘으려면 필수
+
+---
+
+# [이하: decider를 굳이 프롬프트 섹션으로 넣을 때의 상세 (참고용, 우선순위 낮음)]
 
 작성 2026-08-02, **개정 2026-08-02(심층분석 후)**. 1차([TYPES]+재랭킹) 이후 decider.
 
@@ -77,7 +133,85 @@ if base and re.search(r'\b'+re.escape(base)+r'\b', goal): ok = True
 
 ---
 
-## 3. 구현 단계 (저쪽 서버)
+# ★ [DEFINITIONS] 구현 (2차 유력 — decider보다 우선)
+
+"완전한 상태 복원"의 핵심. goal 함수 정의가 프롬프트에 **0%** = 불완전. 재료 72%, goal당 1~3개(안터짐), proof-독립. [[STRUCTURAL_INFO_MAP]] §3-①.
+
+## D1. 왜 decider보다 우선인가
+| | [DEFINITIONS] | [DECIDERS] |
+|---|---|---|
+| 대상 | goal의 **모든** 함수(정의 0%=완전 없음) | compound destruct 12%(B1) |
+| 개수 | goal당 1~3개 | goal당 89개(노이즈) |
+| 랭킹 | 불필요(개수 작음) | 필수(89개) |
+| 재료 | 72% 코퍼스 | notation+base매칭 세팅 복잡 |
+| 성격 | 상태 완전성(모든 tactic 근거) | destruct 후보(A62%는 goal스캔이 이미함) |
+→ **[DEFINITIONS]가 값·구현난이도 모두 유리.** decider는 그 다음.
+
+## D2. 인덱스 빌드
+`scripts/build_func_defs.py` (신규):
+```python
+# 코퍼스 sentences.db의 Definition/Fixpoint → {함수명: 정의문(:=body 포함)}
+# 큰 재귀함수는 시그니처만(정의 ≤80토큰 초과 시 ':' 이후 결론타입만).
+# 출력: data/func_defs.json  (실측: 10059개, unfold대상 72% 커버)
+import sqlite3, re, json
+c=sqlite3.connect('raw-data/coqstoq-test/coqstoq-test-sentences.db')
+DEFN=re.compile(r'^\s*(?:Definition|Fixpoint)\s+([A-Za-z_][\w\']*)')
+out={}
+for (t,) in c.execute("SELECT text FROM sentence WHERE sentence_type IN ('TermType.DEFINITION','TermType.FIXPOINT')"):
+    m=DEFN.match(t.strip())
+    if m: out[m.group(1).split('.')[-1]]=re.sub(r'\s+',' ',t.strip())
+json.dump(out, open('data/func_defs.json','w'))
+```
+
+## D3. augment.py에 definitions() 추가 (canonical, selective_types 옆에)
+```python
+_LOCAL=re.compile(r'^(H\w*|IH\w*|[a-z]\d?|in|at|of|as)$')  # 로컬변수/키워드 제외
+def definitions(goal, func_index, max_defs=5, budget_tok=200, max_body=80, ntok=None):
+    """goal 결론의 정의된 함수 → 정의문. proof-독립(goal만). unfold만 아니라 모든 함수.
+    선별: 결론 등장 + 코퍼스정의 + 로컬변수/키워드 아님. 큰 정의는 시그니처만."""
+    if ntok is None: ntok=lambda s:max(1,len(re.findall(r'\S+',s or '')))
+    concl=goal.split('\n\n',1)[1] if '\n\n' in goal else goal
+    heads=set()
+    for m in re.finditer(r"([A-Za-z_][\w'\.]*)\s*\(", concl): heads.add(m.group(1).split('.')[-1])  # f(
+    for m in re.finditer(r"\b([A-Z][\w'\.]*)", concl): heads.add(m.group(1).split('.')[-1])         # 대문자
+    lines, tot = [], 0
+    for h in sorted(heads):
+        if _LOCAL.match(h) or h not in func_index: continue
+        d = func_index[h]
+        if ntok(d) > max_body:                       # 큰 정의 → 시그니처만(:= 앞)
+            d = d.split(':=')[0].strip()
+        t = ntok(d)
+        if tot + t > budget_tok: break
+        lines.append((h, d)); tot += t
+    return lines[:max_defs]
+```
+- ⚠️ **proof-독립 필수**: goal만 봄. unfold 빈도(누수)·apply함수좁힘 금지.
+- 개수 작아 **랭킹 불필요**(decider와 대조).
+
+## D4. collator 배선 (재랭킹 패턴, [TYPES]와 같이)
+`ProofPremiseCollator.collate_input`에 env 가드로 [STATE] 앞 삽입:
+```python
+struct = ""
+if os.environ.get("INJECT_TYPES","0")=="1":  struct += "[TYPES]\n"+_types_block(example)+"\n"
+if os.environ.get("INJECT_DEFS","0")=="1":   struct += "[DEFINITIONS]\n"+_defs_block(example)+"\n"
+# combined_str: ...premise_str + PROOF_SEP + proof_str + struct + STATE_SEP + state_str...
+```
+- 독립예산(각 ≤200), premise_tokens 안 뺏음. 학습·추론 **동일 env**(INJECT_TYPES/INJECT_DEFS 양쪽).
+
+## D5. 검증 (학습 전 CPU)
+- 렌더링: `render_augmented_examples.py` 확장해 [DEFINITIONS] 노이즈(로컬변수 in/x 새는지)·크기 확인.
+- 실측 예상: goal당 정의 1~3개, 중앙 +43토큰, 최대 재귀함수 시그니처로 잘림(안터짐).
+- 재료 72%(코퍼스), CompCert소스 추가 스캔 시 더.
+
+## D6. 리스크
+- **터짐**: 큰 재귀함수(sem_shift 377·최대 3303토큰) → max_body로 시그니처만(위 D3). 여러 함수 겹쳐도 budget_tok 캡.
+- **재료 부재 28%**: 코퍼스에 정의 없는 함수(stdlib 내부) → 그건 스킵(무해). AST/CompCert소스로 보강 여지.
+- **누수**: proof-독립 규칙 엄수(goal만). 정의는 인프라(타입정의처럼 누수 아님, but exclusion 확인).
+- **조합 벽**: 정의 줘도 "언제 unfold/어떻게 쓸지"는 학습(oracle +2pp). 전이율로 값 평가.
+
+---
+
+## 3. 구현 단계 (저쪽 서버 — [DECIDERS] 상세, 우선순위 낮음)
 
 ### Step A — notation-map 인덱스 빌드 (신규 스크립트)
 `scripts/build_notation_map.py` 작성 (로직은 `improve_decider_coverage.py` 상단 NMAP 빌드 그대로):
