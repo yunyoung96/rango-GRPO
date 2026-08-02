@@ -86,6 +86,40 @@ B1의 ③ _DEC_* 테이블(Z→zle, R→Rle_or_lt)은 **CompCert/stdlib 특정 �
 | **lemma head**(type_instr_complete 등) | **premise retrieval에 54%**, 가설 6% |
 → B2 = `destruct (lemma 가설)` = **retrieval된 lemma를 가설에 apply**. 예: `Zle_lt_or_eq _ _ H'` = premise의 Zle_lt_or_eq를 가설 H'(≤사실)에 적용. **재료(가설+premise)가 절반쯤 이미 프롬프트에 있음.** 못 하는 이유 = "정보 없어서"가 아니라 **"있는 재료를 조합(lemma선택+가설매칭+apply)할 능력이 없어서"** = capacity 벽(oracle +2pp).
 
+### ★ 실제 예시 (각 부류)
+
+**A — goal에 통째로 있음 (복사)**
+```
+destruct (Loc.eq l l')          결론: Val.lessdef (if Loc.eq l l' then match l with...)
+    → 결론에 'if Loc.eq l l' then' 그대로 있음. goal의 if에서 복사.
+destruct (ident_eq id id0)      결론: (if ident_eq id id0 then if Ptrofs.eq_dec... )
+    → 'if ident_eq id id0'이 결론에 있음.
+destruct (transf_function f)    결론: exists ra, return_address_offset f c ra
+    → transf_function f가 결론(또는 match)에 등장.
+```
+
+**B1 — 결정절차, 어디에도 없음 (생성 필요)**
+```
+destruct (Rle_or_lt 0 x)        결론: succ (pred x) = x          [Rle_or_lt: premise에 False]
+    → goal은 succ(pred x)=x인데, "0과 x를 비교하자"는 Rle_or_lt는 goal·가설·premise 어디에도 없음. 모델이 생성.
+destruct (Zle_or_lt x y)        결론: (y < x)%Z                  [premise False]
+destruct (Pos.compare_spec v0 v1)  결론: ((v0,i0)=(v,i) \/ ...)  [premise False]
+    → v0,v1 비교를 위해 compare_spec을 스스로 불러와야. 결론엔 compare 안 보임.
+destruct (Req_dec (f-x) 0)      결론: f - x = 0                  [premise False]
+```
+
+**B2 — 도메인 lemma, 재료 있음 (조합 못 함)**
+```
+destruct (type_instr_complete te e v)  결론: exists e', match type_instr e v...  [premise에 True]
+    → type_instr_complete(완결성 정리)가 premise에 있고, te/e/v는 가설. 재료 다 있는데 "이 lemma를 이 가설에 적용"을 못 함.
+destruct (in_dests _ _ H)              결론: In d (dests mu) \/ is_temp d         [premise True]
+    → in_dests(premise) + 가설 H. 둘 다 있으나 조합(apply) 못 함.
+destruct (parmove_initial_reg_or_temp _ _ _ A)  결론: In d (dests mu) \/ is_temp d [premise True]
+destruct (Rnd_DN_UP_pt_split F x d u Hxd Hxu g Hg)  결론: Rabs(f-x)<=Rabs(g-x)     [premise True]
+    → 인자 Hxd,Hxu,Hg가 가설. lemma는 premise. 재료 있음 = 조합 문제(capacity).
+```
+(B2는 4예시 전부 lemma가 premise에 있음 = 재료 존재 확인. B1은 전부 premise에 없음 = 생성 필요.)
+
 ### 종합: 세 부류의 근본 차이
 | 부류 | destruct 대상 | 재료 위치 | 벽 |
 |---|---|---|---|

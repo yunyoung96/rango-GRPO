@@ -15,6 +15,23 @@
 
 → 전부 **"정보는 있는데 조합(선택·적용·경로)을 못 한다"**를 가리킴.
 
+### 대표 예시 — 재료 다 있는데 조합 못 함 (B2)
+```
+destruct (type_instr_complete te e v)
+    · type_instr_complete = premise retrieval에 있음 ✓
+    · te, e, v = 가설에 있음 ✓
+    · 못 하는 것 = "이 premise lemma를 이 가설들에 apply" 조합
+
+destruct (in_dests _ _ H)
+    · in_dests = premise에 ✓,  H = 가설에 ✓
+    · 못 하는 것 = 둘을 연결(apply)
+
+destruct (Rnd_DN_UP_pt_split F x d u Hxd Hxu g Hg)
+    · lemma = premise ✓,  Hxd/Hxu/Hg = 가설 ✓
+    · 못 하는 것 = 7개 인자를 올바른 lemma에 배치하는 조합
+```
+→ **재료(premise lemma + 가설)가 프롬프트에 다 있음.** [PREMISES]에도 있고 [STATE] 가설에도 있음. 그래도 못 하는 = 조합 능력.
+
 ## 2. 왜 정보 주입이 한계인가
 - [TYPES]: goal당 3개, 커버 87~100%, 노이즈0 — **깨끗하나 destruct-by-변수만**.
 - decider: B1(12%)만 진짜 생성 대상, B2(26%)는 재료가 이미 있음(가설+premise).
