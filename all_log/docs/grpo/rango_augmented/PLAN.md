@@ -32,8 +32,11 @@ rand200/test @300s. baseline(tst1000tr5091-sft) vs augmented. 순 성공률 Δ.
 - **꼬리**: **상위 2% goal이 500+토큰(최대 709)** — 대형 문맥. 여기가 selective 필요 지점.
 
 ## 4. Selective 타입 주입 (사용자 직관 "진짜 필요한 것만" = 맞음)
+
+**★ 정정(2026-08-02)**: 초기 구현은 **가설 `x:T`의 타입만** 뽑았음 → **결론에만 등장하는 inductive 타입을 43% goal에서 놓침**(list/val/positive 등). 수정: canonical `src/tactic_gen/augment.py` `selective_types`가 **가설 + 결론 타입 둘 다** 추출. 검증: 결론타입 1563건 추가, [TYPES] 여전히 중앙 18토큰(예산200), gold destruct 커버 100% 유지. train/infer/스크립트 **동일 모듈 공유**(일관성).
+
 전부 넣지 말고 **관련도 선별**(대형 goal 꼬리 + 낭비 방지):
-1. **destruct 후보 타입만**: goal 결론 등장 or case-split 대상 변수의 타입(전체 가설맥락 아님).
+1. **가설 변수 타입(destruct 대상) + 결론 등장 inductive 타입** 둘 다.
 2. **결정가능·소수 생성자 우선**: 큰 record 제외, eq_dec/소수 constructor 타입 우선.
 3. **관련도 랭킹 + 예산캡**: 타입도 premise처럼 top-K, 총 ≤N토큰(예 200).
 4. **재랭킹된 premise가 쓰는 타입** 우선(선택-구조 정렬).

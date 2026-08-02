@@ -54,7 +54,7 @@ rango baseline(checkpoint-54500) → gold-SFT(gold replay, train 5091) → SFT �
 `all_log/tst1000tr5091_train.sh`가 **비증강 baseline**(rango-tst1000tr5091-sft/-sftgrpo) 생성. hyperparam: SFT `--sft --kl_beta 0 --lr 1e-6 --epochs 2 --micro_bsz 2 --max_len 3072`, GRPO `--kl_beta 0.04 --lr 1e-6 --epochs 2`. 롤아웃 G=8 max_steps20 retries1 @300s.
 
 ### 4b. 증강판 (구현 필요 = 남은 작업)
-1. **[TYPES] collator 섹션 추가** (`ProofPremiseCollator.collate_input`): `RERANK_PREMISES`처럼 env `INJECT_TYPES=1` 가드로 `[TYPES]\n<selective 생성자>\n[DECIDERS]\n<decider>` 를 [STATE] 앞에 삽입, **독립 토큰예산**(≤200, premise 안 뺏게). selective 규칙 = `scripts/test_augmented_dryrun.py`/`render_augmented_examples.py`의 `selective_types`(inductive 변수·≤8생성자·결론우선·top6/200토큰) 그대로.
+1. **[TYPES] collator 섹션 추가** (`ProofPremiseCollator.collate_input`): `RERANK_PREMISES`처럼 env `INJECT_TYPES=1` 가드로 `[TYPES]\n<selective 생성자>\n[DECIDERS]\n<decider>` 를 [STATE] 앞에 삽입, **독립 토큰예산**(≤200, premise 안 뺏게). selective 규칙 = `scripts/test_augmented_dryrun.py`/`render_augmented_examples.py`의 `selective_types`(가설+결론 inductive 타입·≤8생성자·top6/200토큰). src/tactic_gen/augment.py 그대로.
 2. **증강 데이터**: gold/롤아웃 각 step에 위 섹션 추가(학습·추론 **동일 규칙** 필수 — 안 그러면 OOD).
 3. **continue-SFT**: init=base rango, 증강데이터, 위 hyperparam. `RERANK_PREMISES=1 INJECT_TYPES=1`로 학습·평가 모두.
 4. **평가**: (a) gold top-1(teacher-forcing, vs base +2pp 하한) (b) rand200 vs `rango-tst1000tr5091-sft`(비증강).
