@@ -1,20 +1,46 @@
-# 2차 구현 가이드 — [DECIDERS] 프롬프트 주입 (저쪽 서버용)
+# 2차 구현 가이드 — decider 주입 (저쪽 서버용)
 
-작성 2026-08-02. **1차([TYPES]+재랭킹) 이후 decider를 프롬프트에 넣는 2차 구현.**
-이 파일 하나로 헷갈리지 않게 끝내기. 최신 검증 결과·정확한 코드 위치·구현 순서.
+작성 2026-08-02, **개정 2026-08-02(심층분석 후)**. 1차([TYPES]+재랭킹) 이후 decider.
+
+## ⚠️⚠️ 개정 요지 (반드시 먼저) — [[DECIDER_DEEP_DIVE]]
+심층분석 결과 **초기 이 가이드의 "decider 인덱스 조회+랭킹" 접근은 재설계됨**:
+- **"커버 79%"는 주입에 못 씀** — 역방향 측정(gold 알 때)이었음. 정방향(goal만) 조회는 gold **1%**.
+- decider 조회하면 goal당 **89개(노이즈)**. 랭킹+캡 해도 gold 3~5%. **무거운 인덱스+랭킹 = 과설계.**
+- **compound destruct 완전분해**:
+  | 부류 | 비율(gold) | 방법 | 프로젝트독립 |
+  |---|---|---|---|
+  | **A: goal 스캔** | **62%** | goal의 `if E`/`match E`에서 E 추출 → `destruct (E)` | ✅ **완전 독립** |
+  | B1a: decider+인자타입 goal에 | 7% | 타입→sumbool 자동인덱스(AST) | ⚠️ 원리상 독립, 상한 7% |
+  | B1b/B2 | 31% | 타입정보부족 / 도메인lemma | ❌ capacity·표현 |
+- **★ 결론: decider의 주력은 "부류A = goal 스캔"(62%)이고, 이건 이미 `_targeted_cands`의 ②scrutinee가 구현함.**
+  → **[DECIDERS] 전용 프롬프트 섹션·인덱스·랭킹은 낮은 우선순위(과설계).** 아래 §새권장 참조.
+
+## ★ 새 권장 (심층분석 기반)
+"decider 인덱스 조회" 대신:
+1. **부류A(62%, 주력)** = goal의 `if`/`match` scrutinee 추출. **`_targeted_cands`(②)가 이미 함** — src/tactic_gen/grpo_rollout.py `_scrutinees()`/`_targeted_cands()`. **하드코딩 0, 프로젝트·split 독립(train64%≈test62%).**
+2. **부류B1(7%, 선택)** = 타입→sumbool decider 자동인덱스(코퍼스 `{_}+{_}` 추출, AST면 정확). `_targeted_cands` ③ _DEC_* 테이블은 **CompCert 특정(전이 안 됨)** → 자동인덱스로 대체 시 프로젝트독립되나 이득 7%.
+3. **부류B2(29%)** = 포기(capacity, 학습 담당).
+→ **decider를 프롬프트 섹션으로 넣기보다, `_targeted_cands` 후보를 rollout에서 시도**하는 기존 방식이 대부분(부류A) 커버. 별도 인덱스 불필요.
+
+## train/CompCert 공통성 (검증됨)
+부류A 비율: gold train300 **64%** ≈ gold train5091 **62%** (거의 동일) → **train/test(CompCert 전체) 공통**. goal 스캔은 텍스트만이라 프로젝트-독립.
+(단 모델 롤아웃은 37~40%로 낮음 — 모델이 goal에 없는 걸 더 시도. 학습목표=gold라 62%가 관련 수치.)
 
 ---
+
+## [이하 원래 가이드 — decider를 굳이 프롬프트 섹션으로 넣을 경우만 참조. 위 권장이 우선]
 
 ## 0. 먼저 읽을 파일 (순서대로)
 | 파일 | 왜 |
 |---|---|
-| **[INDEX_VS_PROMPT.md](INDEX_VS_PROMPT.md)** | 인덱스(사전) vs 프롬프트(모델이 읽는 것) 구분. **decider 인덱스는 프롬프트 아님** — 조회해서 [DECIDERS] 섹션을 만들어 넣는 것 |
-| **[NOTATION_AND_COVERAGE.md](NOTATION_AND_COVERAGE.md)** §5b | decider 커버 2→79% 만드는 **정확한 레시피**. 아래 §2가 이걸 요약 |
-| [REVIEW.md](REVIEW.md) §R4 | decider를 1차서 뺀 이유(노이즈) — 2차 전제 |
-| `scripts/improve_decider_coverage.py` | 커버 79% 만든 **실측 코드**. 여기서 조회로직 그대로 가져오기 |
-| `scripts/build_decider_index.py` | decider 인덱스(`data/ddr_index.json`) 빌드 |
+| **[DECIDER_DEEP_DIVE.md](DECIDER_DEEP_DIVE.md)** | **★ 최우선** — decider 완전분해(A62%/B1/B2), 프로젝트독립성, 왜 인덱스+랭킹이 과설계인지 |
+| **[INDEX_VS_PROMPT.md](INDEX_VS_PROMPT.md)** | 인덱스(사전) vs 프롬프트 구분 |
+| **[NOTATION_AND_COVERAGE.md](NOTATION_AND_COVERAGE.md)** §5b | 커버 측정(단 79%는 역방향 아티팩트 — DEEP_DIVE §0 정정) |
+| [REVIEW.md](REVIEW.md) §R4 | decider 1차서 뺀 이유(노이즈) |
+| `scripts/improve_decider_coverage.py` | 커버 측정 실측 코드 |
+| `src/tactic_gen/grpo_rollout.py` `_targeted_cands`/`_scrutinees` | **★ 부류A 구현 이미 있음** — 재사용 |
 
-**따라할 패턴 = 재랭킹**: `src/tactic_gen/tactic_data.py`의 `RERANK_PREMISES` 배선(L431, L512)이 **정확히 같은 구조**. decider도 `INJECT_DECIDERS=1` env 가드로 똑같이.
+**따라할 패턴(굳이 프롬프트 섹션 넣을 때) = 재랭킹**: `RERANK_PREMISES` 배선(L431, L512). `INJECT_DECIDERS=1` env 가드.
 
 ---
 
