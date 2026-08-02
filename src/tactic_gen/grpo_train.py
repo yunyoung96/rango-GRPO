@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 from typing import Any, Optional
 
@@ -362,6 +363,8 @@ def train(
     dpo: bool = False,
     dpo_beta: float = 0.1,
     value_pretrain: int = 0,
+    ddp_rank: int = 0,
+    ddp_world: int = 1,
 ):
     if dpo and micro_bsz % 2 != 0:
         micro_bsz += 1  # ★ DPO는 (chosen,rejected) 인접쌍 — 마이크로배치가 짝수여야 쌍이 안 갈림
@@ -433,7 +436,9 @@ def train(
         m_ent_sum = 0.0; m_ent_n = 0           # policy entropy
         m_len_sum = 0; m_len_n = 0             # 응답(tactic) 토큰 길이
         m_la_x = m_la_y = m_la_xy = m_la_xx = m_la_yy = 0.0; m_la_n = 0  # corr(len, adv)
-        for group in groups:
+        # ── DDP: 각 rank가 groups 를 겹치지 않게 샤딩(rank마다 groups[rank::world]). gradient 는 backward서 allreduce. ──
+        _groups_ep = groups[ddp_rank::ddp_world] if ddp_world > 1 else groups
+        for group in _groups_ep:
             # ── 진단: 그룹 단위 통계(학습 스킵 여부와 무관하게 관측) ──
             _onp = [a for a in group["attempts"] if a.get("steps") and not a.get("off_policy")]
             if _onp:
@@ -711,9 +716,11 @@ def train(
         chi = clip_eps_high if clip_eps_high is not None else 0.28
         print(f"[grpo] DAPO: clip-higher(하한 {clip_eps}/상한 {chi}) + token-level loss + "
               f"KL{'제거' if kl_beta==0 else f'={kl_beta}'} + overlong(cap {overlong_cap}/buf {overlong_buffer})")
-    if save_dir is not None:
+    if save_dir is not None and ddp_rank == 0:
+        # DDP: rank0만 저장. DDP 래퍼면 .module 로 실제 PeftModel 접근.
+        _save_model = model.module if hasattr(model, "module") else model
         save_dir.mkdir(parents=True, exist_ok=True)
-        model.save_pretrained(str(save_dir))
+        _save_model.save_pretrained(str(save_dir))
         print(f"[grpo] adapter 저장 → {save_dir}")
 
 
@@ -818,7 +825,21 @@ def main():
     from peft import PeftModel, LoraConfig, get_peft_model
     import copy
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    # ── DDP (DDP_TRAIN=1 + torchrun 시에만). 기본 off = 기존 single-GPU 동작 그대로. ──
+    #   torchrun --nproc_per_node=N -m tactic_gen.grpo_train ... (env RANK/LOCAL_RANK/WORLD_SIZE 세팅됨)
+    _ddp = os.environ.get("DDP_TRAIN", "0") == "1" and "LOCAL_RANK" in os.environ
+    _rank = int(os.environ.get("RANK", "0"))
+    _local_rank = int(os.environ.get("LOCAL_RANK", "0"))
+    _world = int(os.environ.get("WORLD_SIZE", "1"))
+    if _ddp:
+        import torch.distributed as dist
+        dist.init_process_group(backend="nccl")
+        torch.cuda.set_device(_local_rank)
+        device = f"cuda:{_local_rank}"
+        if _rank == 0:
+            print(f"[grpo] DDP 활성 — world_size={_world}, 각 rank가 groups 샤딩·gradient allreduce")
+    else:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
     if collate_fn is not None:
         _tok_holder["tok"] = tokenizer
@@ -848,6 +869,13 @@ def main():
         ref_model = copy.deepcopy(policy).eval()
     for p in ref_model.parameters():
         p.requires_grad_(False)
+
+    # ── DDP 래핑 (ref_model deepcopy 이후 = ref는 순수 정책 복사 유지). ──
+    #   LoRA만 학습되므로 find_unused_parameters=True(동결 base 파라미터 있음).
+    if _ddp:
+        from torch.nn.parallel import DistributedDataParallel as _DDP
+        policy = _DDP(policy, device_ids=[_local_rank], output_device=_local_rank,
+                      find_unused_parameters=True)
 
     # ★ PPO: critic(value head) = base hidden → V(s) 스칼라. LoRA 어댑터와 별도로 학습(eval 배포엔 불필요).
     value_head = None
@@ -905,7 +933,12 @@ def main():
           awac=args.awac, awac_lam=args.awac_lam,
           shape_gold=args.shape_gold, shape_coef=args.shape_coef,
           dpo=args.dpo, dpo_beta=args.dpo_beta,
-          value_pretrain=args.value_pretrain)
+          value_pretrain=args.value_pretrain,
+          ddp_rank=_rank, ddp_world=_world)
+    if _ddp:
+        import torch.distributed as dist
+        dist.barrier()          # rank0 저장 완료까지 대기
+        dist.destroy_process_group()
 
 
 if __name__ == "__main__":
