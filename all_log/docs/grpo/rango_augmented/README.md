@@ -9,7 +9,8 @@
 | [PLAN.md](PLAN.md) | 전체 계획 — training set 위치, 합당성, 프롬프트예산 실측, selective 설계, 파이프라인 |
 | [REVIEW.md](REVIEW.md) | **★ 사전검토** — 렌더링으로 잡은 버그3(수정), 배선검증, 누수분석, 남은리스크, 사전비행 체크리스트 |
 | [NOTATION_AND_COVERAGE.md](NOTATION_AND_COVERAGE.md) | notation 3방법 검증, decider 커버 2→79% 개선(조회base매칭 최대레버), 100% 상한 |
-| [DECIDER_DEEP_DIVE.md](DECIDER_DEEP_DIVE.md) | **★ decider 심층분석** — compound 완전분해(A:goal스캔 62%/B1:decider조회 12%/B2:도메인lemma 26%), 프로젝트독립성, 인덱스+랭킹이 과설계인 이유 |
+| [COMPOSITION_IS_THE_WALL.md](COMPOSITION_IS_THE_WALL.md) | **★★ 최종결론** — 정보 아닌 조합(composition)이 벽. oracle+2pp·B2재료있음·apply인자오류0%가 수렴. 조합 학습법(expert-iter 등) |
+| [DECIDER_DEEP_DIVE.md](DECIDER_DEEP_DIVE.md) | **★ decider 심층분석** — compound 완전분해(A:goal스캔 62%/B1:decider조회 12%/B2:도메인lemma 26%), B1은 어디에도없음(91%)/B2는 재료있음(가설79%+premise54%), 프로젝트독립성 |
 | [PHASE2_DECIDER_GUIDE.md](PHASE2_DECIDER_GUIDE.md) | 2차 구현 가이드(개정) — decider 주력=goal 스캔(`_targeted_cands` 재사용), 프롬프트 섹션은 낮은 우선순위 |
 | [PROMPT_EXAMPLES.md](PROMPT_EXAMPLES.md) | 실제 렌더된 프롬프트 예시(train split) |
 

@@ -68,6 +68,33 @@ B1의 ③ _DEC_* 테이블(Z→zle, R→Rle_or_lt)은 **CompCert/stdlib 특정 �
 
 **결론**: 프로젝트-독립 주력 = **부류A(62%)**. 하드코딩 없이 goal 스캔만으로. B1은 자동인덱스(타입→sumbool)로 원리상 독립이나 상한 7%(AST 필요). **B1 하드코딩 테이블은 전이성 위해 자동인덱스로 대체 권장**(단 이득 7%로 작음).
 
+## 5c. ★ B1/B2 재료가 어디에 있나 (2026-08-02, 후속측정)
+"compound 후보를 뽑고 싶다"의 진짜 대상 = premise/proof retrieval로 안 잡히는 것. 각 부류 재료 위치:
+
+### B1 (결정절차, n=112) — **어디에도 없음(생성 필요)**
+| 위치 | 비율 |
+|---|---|
+| 가설에 있음 | **0%** |
+| premise retrieval에 있음 | 9% |
+| **둘 다 없음(순수 생성/조회)** | **91%** |
+→ B1 decider(`Rle_or_lt`,`zeq`,`eq_dec`)는 goal·가설·premise 어디에도 없음. **모델이 "여기서 0과 x를 비교하자"고 스스로 떠올려 생성**해야. decider는 "사실(fact)"이 아니라 "결정 연산"이라 텍스트에 안 적힘. → **이게 "compound 후보 뽑기"의 진짜 대상**(retrieval 못 잡음). 단 자동생성 상한 1~7%.
+
+### B2 (도메인 lemma, n=288) — **재료는 있으나 조합을 못 함**
+| 요소 | 위치 |
+|---|---|
+| **인자**(te,e,v,H,H') | **가설에 79%**(전부 가설 41%) |
+| **lemma head**(type_instr_complete 등) | **premise retrieval에 54%**, 가설 6% |
+→ B2 = `destruct (lemma 가설)` = **retrieval된 lemma를 가설에 apply**. 예: `Zle_lt_or_eq _ _ H'` = premise의 Zle_lt_or_eq를 가설 H'(≤사실)에 적용. **재료(가설+premise)가 절반쯤 이미 프롬프트에 있음.** 못 하는 이유 = "정보 없어서"가 아니라 **"있는 재료를 조합(lemma선택+가설매칭+apply)할 능력이 없어서"** = capacity 벽(oracle +2pp).
+
+### 종합: 세 부류의 근본 차이
+| 부류 | destruct 대상 | 재료 위치 | 벽 |
+|---|---|---|---|
+| A (62%) | goal의 if/match | **goal에 통째로** | 없음(복사) |
+| B1 (12%) | 결정절차 | **어디에도 없음(91%)** | 생성(타입→decider, 상한 낮음) |
+| B2 (26%) | lemma를 가설에 apply | **가설79%+premise54%** | **조합/선택(capacity)** |
+
+**→ B2는 정보문제 아님(재료 있음). 조합 사고력 문제.** [[COMPOSITION_IS_THE_WALL]] 참조.
+
 ## 6. 함의 (rango-augmented 방향)
 - **decider는 [TYPES]만큼 명확한 이득이 없음.** [TYPES]는 goal당 3개·커버 87~100%·노이즈0. decider는 goal당 89개(노이즈)·순수조회 커버 12%.
 - 굳이 넣는다면 **프롬프트 섹션이 아니라, `_targeted_cands` 후보를 rollout에서 시도**하는 기존 방식이 맞음(opener/subgoal이 이미 함).
