@@ -23,6 +23,82 @@ from data_management.line_dict import LineDict
 from data_management.splits import Split
 from data_management.dataset_file import DPCache, StepID
 
+
+# ── 타입-지향 premise 재랭킹 (RERANK_PREMISES=1). apply 대상 lemma를 결론매칭으로 앞으로. ──
+#   근거: docs/grpo/TYPED_RERANK_AND_COMPOSITION.md (BM25 top-1 22%→재랭킹 36%). AU applyshape의 경량판.
+_RR_LN = re.compile(r'(?:Lemma|Theorem|Definition|Corollary|Remark|Fact|Fixpoint)\s+[A-Za-z_][\w\'\.]*\s*:?\s*(.*)', re.S)
+
+def _rr_goal_concl(goal: str) -> str:
+    parts = (goal or "").split('\n\n', 1)
+    return parts[1] if len(parts) > 1 else (goal or "")
+
+def _rr_prem_concl(ptext: str) -> str:
+    m = _RR_LN.match((ptext or "").strip())
+    body = m.group(1) if m else (ptext or "")
+    depth = 0; last = -1; i = 0
+    while i < len(body) - 1:
+        ch = body[i]
+        if ch == '(': depth += 1
+        elif ch == ')': depth -= 1
+        elif depth == 0 and body[i:i+2] == '->': last = i
+        i += 1
+    return body[last+2:] if last >= 0 else body
+
+def _rr_chead(txt: str):
+    m = re.match(r"\(?\s*([A-Za-z_][\w'\.]*)", (txt or "").strip())
+    return m.group(1).split('.')[-1] if m else None
+
+_RR_KW = {'forall','exists','fun','match','with','end','let','in','if','then','else',
+          'Type','Prop','Set','return','as','fix','cofix'}
+
+# notation → 숨은 연산 이름 (goal은 '^'로 보이지만 lemma는 'Zpower'로 씀 → 매칭 복구).
+#   surgical(흔한 것만) — Set Printing All처럼 goal 전개 안 함(프롬프트 안 터짐). 등식/순서 심볼 제외(너무 흔함).
+_RR_NOTA = {'^': ['Zpower', 'pow', 'Rpower'], '?=': ['compare'], '<?': ['ltb'],
+            '<=?': ['leb'], '=?': ['eqb']}
+
+def _rr_ops(txt: str) -> set:
+    """연산/술어 head 집합 = 대문자시작 or qualified(.) or 소문자라도 길이>1 식별자 중 키워드 제외.
+    (등식 'a=b'에서 첫토큰만 보는 chead의 약점 보완 — 연산 이름 전부를 신호로.) + notation 확장."""
+    out = set()
+    for t in re.findall(r"[A-Za-z_][\w']*(?:\.[A-Za-z_][\w']*)*", txt or ""):
+        s = t.split('.')[-1]
+        if s in _RR_KW or len(s) < 2:
+            continue
+        if t[0].isupper() or '.' in t or len(s) >= 3:
+            out.add(s)
+    for sym, names in _RR_NOTA.items():          # notation 심볼 있으면 숨은 연산이름 추가
+        if sym in (txt or ""):
+            out.update(names)
+    return out
+
+def _rr_score(goal_c: str, prem: str) -> float:
+    pc = _rr_prem_concl(prem)
+    s = 0.0
+    gh, ph = _rr_chead(goal_c), _rr_chead(pc)
+    if gh and ph and gh == ph: s += 3.0                          # 결론 최상위 head 일치
+    go, po = _rr_ops(goal_c), _rr_ops(pc)
+    s += len(go & po) * 1.0                                       # 연산/술어 head 중첩(등식·rewrite 강신호)
+    s += len(set(re.findall(r"[A-Za-z_][\w']*", goal_c)) & set(re.findall(r"[A-Za-z_][\w']*", pc))) * 0.1
+    if ('=' in goal_c) == ('=' in pc): s += 0.3                   # 등식/비등식 형태 일치
+    return s
+
+_RR_ALPHA = 5.0   # 블렌드 가중: BM25순위 prior + α×타입지향점수. (검증: α=5가 gold·rollout 모두 top-1/5 최선)
+
+def rerank_premises(example) -> Optional[list]:
+    """example.premises를 **블렌드**(BM25 원순위 prior + α×타입지향점수)로 재정렬.
+    순수 rerank는 쉬운케이스(gold가 이미 BM25상위)를 흔들어 top-5 저하 → BM25 prior로 방지하면서
+    묻힌 gold를 끌어올림. 검증(7 데이터셋): top-1 +11~18pp, top-5 regression 없음. premises 없으면 None.
+    ※ 안정정렬 아님 주의 — 명시적 tie-break(원순위 i)로 결정성 보장."""
+    prem = getattr(example, "premises", None)
+    if not prem:
+        return prem
+    gc = _rr_goal_concl(getattr(example, "proof_state", "") or "")
+    n = len(prem)
+    # 점수 = (원순위 prior: 앞=높음) + α×타입매칭. 동점은 원순위 i로 결정적 tie-break.
+    scored = [((n - i) + _RR_ALPHA * _rr_score(gc, prem[i]), -i, i) for i in range(n)]
+    scored.sort(key=lambda x: (-x[0], -x[1]))
+    return [prem[i] for _, _, i in scored]
+
 from model_deployment.conf_utils import (
     formatter_conf_to_client_conf,
     start_servers,
@@ -351,7 +427,10 @@ class ProofPremiseCollator:
 
     def collate_input(self, tokenizer: PreTrainedTokenizer, example: LmExample) -> str:
         proof_str = allocate_and_fmt(tokenizer, example.proofs, self.proof_tokens)
-        premise_str = allocate_and_fmt(tokenizer, example.premises, self.premise_tokens)
+        _prem = example.premises
+        if os.environ.get("RERANK_PREMISES", "0") == "1":
+            _prem = rerank_premises(example)   # ★ 타입-지향 재랭킹(결론매칭)로 앞쪽 우선
+        premise_str = allocate_and_fmt(tokenizer, _prem, self.premise_tokens)
         state_str, _ = allocate_tokens(
             tokenizer, example.proof_state, self.state_tokens
         )
@@ -429,7 +508,10 @@ class NoScriptCollator:
 
     def collate_input(self, tokenizer: PreTrainedTokenizer, example: LmExample) -> str:
         proof_str = allocate_and_fmt(tokenizer, example.proofs, self.proof_tokens)
-        premise_str = allocate_and_fmt(tokenizer, example.premises, self.premise_tokens)
+        _prem = example.premises
+        if os.environ.get("RERANK_PREMISES", "0") == "1":
+            _prem = rerank_premises(example)   # ★ 타입-지향 재랭킹(결론매칭)로 앞쪽 우선
+        premise_str = allocate_and_fmt(tokenizer, _prem, self.premise_tokens)
         state_str, _ = allocate_tokens(
             tokenizer, example.proof_state, self.state_tokens
         )

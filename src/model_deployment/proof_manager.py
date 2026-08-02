@@ -225,8 +225,14 @@ class ProofManager:
         for diagnostic in client.lsp_endpoint.diagnostics[self.fast_client.file_uri]:
             if diagnostic.severity == 1:
                 print(diagnostic.message)
+                self._last_error = str(diagnostic.message)   # ★ multi-turn: coq-lsp 에러 저장(재주입용)
                 return False
+        self._last_error = None
         return True
+
+    def last_error(self) -> str:
+        """직전 check_valid에서 잡힌 coq-lsp 에러 메시지(INVALID 원인). multi-turn 재주입용."""
+        return getattr(self, "_last_error", None) or ""
 
     def gather_steps(self, steps: list[CStep]) -> tuple[list[CStep], list[CStep]]:
         agg_str = ""

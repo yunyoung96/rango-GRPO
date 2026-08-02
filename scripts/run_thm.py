@@ -252,11 +252,42 @@ def get_searcher_conf(model_alias: str) -> SearcherConf:
             # rango-grpo-bfs = GRPO 학습 정책 + 최고 탐색(BFS α=1.0) 결합.
             return BFSProverSearchConf(timeout=timeout, alpha=1.0, expand_width=2, print_proofs=True)
 
+        # ── Planner–Executor (PLANNER_EXECUTOR_DESIGN.md): 강한 로컬 planner가 분해 제안,
+        #    우리 1.3B(executor)+coq-lsp가 실행. dense 채점(MC 금지). GPU1 단독(CVD=1→cuda:0).
+        case "rango-planner":            # Qwen2.5-Coder-7B planner (bf16, ~15GB — 32B는 tf5.1 4bit로더 버그로 OOM)
+            # PLANNER_URL 설정 시 persistent planner_server 사용(정리 재로드 방지, w2 가능).
+            return BFSProverSearchConf(
+                timeout=timeout, alpha=0.5, expand_width=4, print_proofs=True,
+                use_planner=True, planner_model="Qwen/Qwen2.5-Coder-7B-Instruct",
+                planner_4bit=False, planner_device="cuda:0", plan_bonus=500.0,
+                planner_url=os.environ.get("PLANNER_URL"), plan_budget=8,  # 32B 속도위해 정리당 호출 20→8
+            )
+        case "rango-planner-6b":         # 6.7B planner (로컬, 배관 스모크)
+            return BFSProverSearchConf(
+                timeout=timeout, alpha=0.5, expand_width=4, print_proofs=True,
+                use_planner=True, planner_model="deepseek-ai/deepseek-coder-6.7b-instruct",
+                planner_4bit=True, planner_device="cuda:0", plan_bonus=500.0,
+            )
+        case "rango-vfsearch":           # value-free MC(대조/ablation, 17% 붕괴 확인용)
+            return BFSProverSearchConf(
+                timeout=timeout, alpha=0.5, expand_width=4, print_proofs=True,
+                use_vfsearch=True, mc_K=4, mc_D=6,
+            )
+
         case "grpo-rollout" | "grpo-rollout-cur":
             # GRPO rollout 수집(binary reward). cur=커리큘럼(run_all --idx-file로 정리 선택).
             return GRPORolloutSearchConf(
                 timeout=timeout, group_size=8, max_steps=20,
                 out="data/grpo_rollouts/rollouts.jsonl",
+            )
+        case "grpo-rollout-pf":
+            # ★ planner-first 실험(dead group 축소): 32B가 opening 분해, 이후 rango.
+            #   PLANNER_FIRST_URL env 설정 시 opening 주입(grpo_rollout.rollout_attempt). out/retry는 env로.
+            import os as _os
+            return GRPORolloutSearchConf(
+                timeout=timeout, group_size=8, max_steps=20,
+                max_retries=int(_os.environ.get("ROLLOUT_RETRY", "1")),
+                out=_os.environ.get("ROLLOUT_OUT", "data/grpo_rollouts/planner_first.jsonl"),
             )
         # ⚠️ 아래 alias 들의 out 경로는 **서로 달라야 한다**. 예전에 전부 rollouts.jsonl 을 공유해
         #   E3 수집이 round-1 원본을 덮어썼다(md5 동일 확인). GRPO_ROLLOUT_ANALYSIS.md §0 참조.
@@ -344,12 +375,14 @@ def get_searcher_conf(model_alias: str) -> SearcherConf:
             )
 
         case "grpo-rollout-goldsft":
-            # ★ gold-SFT 데이터: compcert 300의 gold 참조증명만 replay 기록(on-policy 없음).
-            #   --sft 로 이걸 학습 = rango-style SFT(외부 gold teacher forcing). gold_file=gold_bs2.
+            # ★ gold-SFT 데이터: gold 참조증명만 replay 기록(on-policy 없음).
+            #   --sft 로 이걸 학습 = rango-style SFT(외부 gold teacher forcing).
+            #   GOLD_FILE/ROLLOUT_OUT env 로 커리큘럼·출력 지정(기본=bs2). t1000 등 새 split용.
+            import os as _os
             return GRPORolloutSearchConf(
                 timeout=timeout, group_size=1, max_steps=30, gold_only=True,
-                gold_file="data/curriculum/gold_bs2.json",
-                out="data/grpo_rollouts/goldsft_bs2.jsonl",
+                gold_file=_os.environ.get("GOLD_FILE", "data/curriculum/gold_bs2.json"),
+                out=_os.environ.get("ROLLOUT_OUT", "data/grpo_rollouts/goldsft_bs2.jsonl"),
             )
 
         case "grpo-rollout-bs2sft":
@@ -465,7 +498,10 @@ def get_searcher_conf(model_alias: str) -> SearcherConf:
             return GRPORolloutSearchConf(
                 timeout=timeout, group_size=8, max_steps=20, max_retries=4,
                 curriculum_file="data/curriculum/revcurr.json",
-                out="data/grpo_rollouts/revcurr.jsonl",
+                out=os.environ.get("ROLLOUT_OUT", "data/grpo_rollouts/revcurr.jsonl"),
+                # ★ SUBGOAL_SKIP_S0=1: s0(정리 처음) 그룹 생략 → curriculum(gold subgoal 시작) 그룹만.
+                #   진단(gold subgoal 닫기율)용: 커버 안 된 정리는 빠르게 건너뜀.
+                skip_s0=(os.environ.get("SUBGOAL_SKIP_S0", "0") == "1"),
             )
 
         case "grpo-rollout-luffy":
@@ -663,18 +699,21 @@ def get_tactic_confs(model_alias: str, split: Split) -> list[TacticGenConf]:
             )
             return [DecoderTacticGenConf(Path("models/rango-grpo-fix/adapter"), [formatter])]
 
-        case "rango-grpo" | "rango-grpo-self":
+        case "rango-grpo" | "rango-grpo-self" | "grpo-rollout-pf" | "rango-planner" | "rango-planner-6b" | "rango-vfsearch":
             # GRPO-self: **same-project** RL — CompCert(train idx 200:240)로 학습하고 CompCert(eval 0:40)
             #   를 푼다. 탐색 rollout 기반(정답 proof 미열람)이라 SFT 누출은 아니나, 같은 프로젝트라
             #   sibling 전이 confound가 남는다(→ 향후 rango-grpo-cross 로 대비). `rango-grpo`는 구 alias(동일).
             # GRPO(DeepSeek-Prover-V1.5)로 RL fine-tune한 rango adapter + 동일 retrieval 프롬프트.
+            # rango-planner* / rango-vfsearch = **executor로 이 π₀(37.5%)를 그대로** 쓰고 searcher만 다름.
+            # ★ EXEC_ADAPTER env 로 executor 어댑터 교체 가능(예: leaf-subgoal 모델). 미설정 시 π₀.
             formatter = GeneralFormatterConf(
                 premise_client_conf=tfidf_premise_conf,
                 proof_retriever_conf=bm25_proof_conf,
                 num_premises=50,
                 num_proofs=20,
             )
-            return [DecoderTacticGenConf(Path("models/rango-grpo/adapter"), [formatter])]
+            _exec = os.environ.get("EXEC_ADAPTER", "models/rango-grpo/adapter")
+            return [DecoderTacticGenConf(Path(_exec), [formatter])]
 
         case "rango-grpo-fix":
             # base 정정 재학습: 기존 rango-grpo 는 **base** 위에서 학습되고 **instruct** 위에 배포됐다

@@ -307,6 +307,10 @@ def flatten_group(group: dict, collate_fn=None, process: bool = False, luffy: bo
     for i, a in enumerate(attempts):
         attempt_gold = bool(a.get("off_policy"))       # LUFFY: gold 시도 전체가 off_policy
         for st in a["steps"]:
+            # ★ opener(pre-loop planner_opening) step 은 example=None (opener가 낸 것, frozen).
+            #   executor GRPO 대상 아님 → 건너뜀. (안 그러면 collate_fn(None) 크래시.)
+            if st.get("example") is None or st.get("planner_opening"):
+                continue
             prompts.append(_flatten_prompt(st, collate_fn))
             comps.append(st["tactic"])
             advs_out.append(float(adv[i]))

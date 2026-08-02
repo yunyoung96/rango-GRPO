@@ -22,7 +22,9 @@ Coq 증명 자동생성(Rango: DeepSeek-Coder-1.3B + LoRA + BM25/TF-IDF retrieva
 - **[EI_PROGRESS.md](EI_PROGRESS.md)** — Expert Iteration 진행·mixed 변화율·R3 분해.
 - **[EI_OVERFIT_MITIGATIONS.md](EI_OVERFIT_MITIGATIONS.md)** — EI overfitting 완화책 정확 구현(early-stop/KL→π₀/entropy·clip-higher/lr↓) + 문헌.
 - **[BOTTLENECK_ANALYSIS.md](BOTTLENECK_ANALYSIS.md)** — ★병목 실측 진단(retrieval OK·built-in OK·**초반 분해 divergence 61%·coverage 22%**) + 문헌기반 알고리즘 제안 + 다른서버 handoff.
-- **[VALUE_FREE_SEARCH.md](VALUE_FREE_SEARCH.md)** — ★#1 레버 완전 설계+구현가이드(분해 강제열거+MC value-free scoring+backtrack, critic 불요).
+- **[VALUE_FREE_SEARCH.md](VALUE_FREE_SEARCH.md)** — 분해 강제열거+MC value-free scoring+backtrack. **★결과: 32.5→17% 붕괴**(1.3B가 롤아웃서 QED 못 내 MC 신호 sparse=0). 아래 두 문서로 대체.
+- **[BREAK_BOTTLENECK_LITERATURE.md](BREAK_BOTTLENECK_LITERATURE.md)** — ★병목(분해 generation) 깨는 방법 문헌조사. **planner-executor(분해를 1.3B 밖으로)=최유망**, dense decomposition-score, reward-free value(QEDCartographer). distill→1.3B은 capacity 벽.
+- **[PLANNER_EXECUTOR_DESIGN.md](PLANNER_EXECUTOR_DESIGN.md)** — ★강한 로컬 planner(Qwen2.5-Coder-32B)가 분해 제안 → 1.3B executor 실행. 코드접합(bfs_prover_searcher use_planner)·리소스(w1/공유서버)·실행순서. **positive-number 후보.**
 - **[SUBGOAL_EXPERIMENT_PLAN.md](SUBGOAL_EXPERIMENT_PLAN.md)** — subgoal 실험 계획.
 - **[PASSK_ANALYSIS.md](PASSK_ANALYSIS.md)** — pass@k 분석.
 

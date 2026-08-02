@@ -64,3 +64,12 @@ data/quarry_traces/
 
 # 서버 전용 런타임 토글 (GPU1 강제)
 .gpu1_only
+
+# 타인 미공개 논문 초안 (배포 금지 — 커밋/푸시 안 함)
+AU_CLEAVE_ALGORITHMS.md
+
+# 세션 스크래치·결과 덤프 (재현 불필요, 커밋 제외)
+07_31.txt
+all_log/*_result.txt
+all_log/*.output
+*.output
