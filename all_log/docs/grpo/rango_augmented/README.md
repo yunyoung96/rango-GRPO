@@ -5,8 +5,10 @@
 ## 문서
 | 파일 | 내용 |
 |---|---|
+| [INDEX_VS_PROMPT.md](INDEX_VS_PROMPT.md) | **★ 개념정리** — 인덱스(사전) vs 프롬프트(모델이 읽는 것) 구분, 현재 구현상태 표 |
 | [PLAN.md](PLAN.md) | 전체 계획 — training set 위치, 합당성, 프롬프트예산 실측, selective 설계, 파이프라인 |
 | [REVIEW.md](REVIEW.md) | **★ 사전검토** — 렌더링으로 잡은 버그3(수정), 배선검증, 누수분석, 남은리스크, 사전비행 체크리스트 |
+| [NOTATION_AND_COVERAGE.md](NOTATION_AND_COVERAGE.md) | notation 3방법 검증, decider 커버 2→79% 개선(조회base매칭 최대레버), 100% 상한 |
 | [PROMPT_EXAMPLES.md](PROMPT_EXAMPLES.md) | 실제 렌더된 프롬프트 예시(train split) |
 
 ## 현재 상태 (2026-08-02)
