@@ -120,4 +120,74 @@ per-step shaping:  F(s_t → s_{t+1}) = γ·Φ(s_{t+1}) − Φ(s_t)
 - **정직한 천장 경고**: 모든 알고리즘이 rand200 **~33.5–37.5%로 수렴**, SFT→GRPO 37.5%가 천장([[architecture]]). dense가 **신호 밀도**는 고쳐도, 벽이 조립 위의 **도달성/능력 천장**이면([[SUBGOAL_PAPER_ASSESSMENT]] §10, [[rango_augmented/COMPOSITION_IS_THE_WALL]]) 밀도만으로 test가 안 오를 수 있다. dense-shaping은 **필요조건이지 충분조건이 아님**.
 
 ---
+
+## 8. 우리 문제 세팅에서는 정확히 어떻게 하나 (실전 처방)
+
+우리 세팅: **1.3B + LoRA, 정리당 G=8 rollout, GRPO(critic-free, group-mean baseline), 보상=coq-lsp의 Qed 0/1.** 벽=대부분 그룹이 8개 다 실패(dead)라 gradient 0.
+
+### 8.1 3단계 레시피
+**① potential Φ(s)를 coq-lsp로 정의 (학습 없음)**
+- 가장 단순: `Φ(s) = −(현재 열린 goal 수)`. goal이 닫힐수록 Φ가 0에 가까워짐(=좋아짐).
+- **분기 함정 주의**: `destruct`/`induction`은 goal을 **늘린다**(1→3). 그러면 Φ가 일시적으로 **떨어져** "쪼개기"를 벌하게 됨. 두 보정 중 하나:
+  - (a) `Φ(s) = 닫은 goal 수 / 원래 필요한 총 goal 수` (0→1 진행률) — 분기로 분모가 커져도 단조.
+  - (b) `Φ(s) = −(남은 goal들의 크기 합)` — 큰 goal 하나가 작은 여럿으로 쪼개지면 합이 줄어 **진전으로 인식**.
+- 실무 시작점: (a) 진행률. coq-lsp가 step마다 goal 리스트를 주므로 **공짜**.
+
+**② per-step shaping을 advantage에 더한다 (E2식 균등분배 금지)**
+```
+A_step(s_t, a_t) = A_group(outcome)          # 기존 GRPO: (r−mean)/std, 시도 전체 공유
+                 + β · [ γ·Φ(s_{t+1}) − Φ(s_t) ]   # ★ step별 potential 차분(=PBRS)
+```
+- `A_group`는 지금처럼 시도 단위, `β·F`는 **step마다 다르게** 더함 → 어느 tactic이 진전을 만들었는지 credit이 붙음.
+- **왜 편향 0인가**: `Σ_t γ^t F_t = γ^T Φ(끝) − Φ(시작)` 로 telescoping → 궤적 총점의 순서를 안 바꿈(§2). Qed가 여전히 최고.
+
+**③ β 튜닝 + 검증**
+- `β`는 작게(0.1~0.3). F가 outcome을 압도하면 "진전만" 좇는 편향 재발(E2). GRPO A는 std정규화라 ~1스케일이니 β로 F를 그 아래로.
+- 검증 지표: **dead 그룹(8개 다 실패)이 이제 gradient≠0을 받나?** (`n_dead_revived` 류 로깅). 이게 늘면 densify 성공.
+
+### 8.2 구현 위치 (이미 있는 인프라)
+- `grpo_rollout.py`가 `--process` 경로에서 **step별 result(goal 상태)를 이미 기록**([[IMPLEMENTATION]] §(4)·(5)).
+- 거기서 각 step goal 수 → Φ 계산 → `flatten_group`이 step advantage를 만들 때 `β·F`를 더하면 됨. **새 모델·critic 학습 없음.**
+- 즉 **`--process`를 "raw 부분점수"가 아니라 "potential 차분"으로 바꾸는 소규모 수정**이 전부.
+
+### 8.3 하지 말 것 (우리가 이미 데본 것)
+- ❌ E2식 `0.3·V(끝상태)`를 보상에 통째로 (편향, test ~0).
+- ❌ 학습 critic PPO 단독 (sparse→EV≈0, 학습 실패).
+- ❌ F를 시도 스칼라로 균등분배 (credit 뭉개짐 = E2와 같은 실수).
+
+---
+
+## 9. critic이 꼭 필요한가? → **아니오 (우리 권장 설계에선 불필요)**
+
+| 질문 | 답 |
+|---|---|
+| critic의 역할이 뭔데? | "이 상태가 얼마나 좋은가" `V(s)`를 **추정**하는 학습된 근사기. advantage의 baseline. |
+| 왜 우리는 없어도 되나? | **coq-lsp가 `V(s)`를 정확히 알려주기 때문.** "goal 몇 개 닫혔나"는 **추정할 필요 없이 verifier가 공짜로 주는 grounded 값** → 학습 critic 대신 `Φ`로 직접 계산. |
+| PPO는 왜 critic이 필요했고 왜 실패했나 | PPO는 `V`를 **학습**으로 추정하려 함. 그런데 우리 보상이 sparse(대부분 0)라 V가 **bootstrap할 신호가 없어** explained_var≈0 = 학습 자체 실패([[architecture]]). |
+| GRPO는 이미 critic이 없잖아? | 맞다. GRPO는 group-mean을 baseline으로 써서 **이미 critic-free**. 우리는 거기에 **grounded Φ**만 얹는 것 → 여전히 critic 0개. |
+| 그럼 critic이 *필요한* 경우는? | potential을 verifier로 **못 만들 때**(도메인에 진행 신호가 없음). 그땐 학습 V가 필요 → 하지만 sparse면 어렵다(우리 PPO 교훈). **우리 도메인은 다행히 coq-lsp가 있어 해당 안 됨.** |
+
+**한 줄**: critic은 "progress를 스스로 추정해야 할 때"만 필요하다. 우리는 **coq-lsp라는 완벽·무편향·무료 progress 측정기**가 있으니 **critic이 전혀 필요 없다.** 오히려 critic을 억지로 학습시키려다 실패한 게 PPO였다.
+
+---
+
+## 10. 초등학생도 이해하는 비유 (보물찾기 게임)
+
+숲에서 **보물상자**를 찾는 게임. 상자를 열면 이김(=Qed). 로봇(정책)에게 어디로 갈지 가르치는 중.
+
+- **Sparse 보상(지금 GRPO)**: 상자를 **딱 열었을 때만** "딩동!" 소리. 그 전엔 **아무 말도 안 해줌.** → 로봇이 숲에서 헤매기만 하고 **뭘 잘했는지 몰라서** 못 배움. (우리 벽: 8번 시도해서 8번 다 못 찾으면 힌트가 0개 = 배울 게 없음.)
+
+- **Dense 힌트**: 중간중간 **"따뜻해~ / 차가워~"**를 말해줌. 이게 "progress를 주는 도우미".
+
+- **① 힌트를 상으로 주면 (E2가 한 실수)**: "따뜻해질 때마다 **사탕**!" → 로봇이 **보물은 안 찾고 따뜻한 자리에서 뱅뱅** 돌며 사탕만 먹음. 나쁜 버릇! (=목적이 "보물"에서 "따뜻함"으로 바뀜 = 편향.)
+
+- **② 힌트를 "가까워진 만큼만" 점수로 주고 멀어지면 도로 뺏으면 (올바른 방법=PBRS)**: 보물에 한 걸음 **가까워지면 +1, 멀어지면 −1.** → 왔다갔다 하면 점수가 **서로 상쇄**돼 0. **결국 상자를 열어야 총점 최고.** 나쁜 버릇이 안 생기면서 "이 방향이 맞아"는 배움. ← **우리가 해야 할 것.**
+
+- **③ 심판을 두면 (critic)**: 옆에서 **"지금 위치 7점!"** 외쳐주는 심판. 로봇은 그 점수로 방향을 잡음. **문제**: 우리 게임은 보물을 거의 못 찾아서(sparse), 심판이 **뭘 보고 점수를 매길지 배우질 못함** → 심판이 안 자람(=PPO 실패).
+
+- **우리의 정답**: 우리 게임엔 **coq-lsp라는 완벽한 심판이 공짜로 이미 있다.** "goal 3개 중 1개 닫혔어 = 33% 왔어"를 **정확히** 알려줌. → 심판을 키울 필요 없이(②처럼) **그 정확한 점수의 *차이*를 힌트로** 쓰면 됨.
+
+**한 문장 요약**: "따뜻해"를 **사탕(상)으로 주면 애가 망가지고(E2)**, **가까워진 만큼의 점수차이로 주면 잘 배운다(우리 목표)**. 그리고 그 점수를 매길 **심판(coq-lsp)이 공짜로 있어서 따로 심판을 키울 필요가 없다(critic 불필요).**
+
+---
 관련: [[SUBGOAL_RL_RESEARCH_ALL]] §5(PPO+GRPO 병행) · [[SUBGOAL_PAPER_ASSESSMENT]] §③④·§10 · [[IMPLEMENTATION]] §(3)(4) dense/credit · [[RESULTS_LEADERBOARD]] E2 · [[architecture]] PPO critic · 메모리 [[ppo-bigscale-pending]] · [[rango_augmented/COMPOSITION_IS_THE_WALL]]

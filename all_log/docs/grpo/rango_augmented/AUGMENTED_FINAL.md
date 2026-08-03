@@ -81,6 +81,31 @@ goal 함수 정의가 프롬프트에 **0%** = 불완전한 상태([[STRUCTURAL_
 - **합쳐도 ~450토큰** (중앙 226+0), 헤드룸(~900) 안. 최대여도 300+300+base < 4096.
 - 배선 = 재랭킹 패턴: env 가드 `INJECT_TYPES`/`INJECT_DEFS`, collate_input에 삽입. 학습·추론 **동일 env**.
 
+### 4.1 실행 옵션 — type+def+rerank 다 켜는 법 (env 3종)
+전용 alias/CLI 플래그는 **없다.** 아래 3개를 `=1`로 세팅하면 3종 증강이 다 들어간다. `src/tactic_gen/tactic_data.py`가 읽음. **학습·추론에 반드시 동일하게** 켤 것(한쪽만 켜면 OOD로 성능 하락).
+
+| env | 켜는 것 | 읽는 곳 |
+|---|---|---|
+| `INJECT_TYPES=1` | [TYPES] 재귀 주입(가설+결론 타입, stdlib leaf, 랭킹, ≤300tok) | tactic_data.py:110 |
+| `INJECT_DEFS=1` | [DEFINITIONS] 재귀 주입(결론 함수 정의, ≤300tok) | tactic_data.py:118 |
+| `RERANK_PREMISES=1` | premise 타입-지향 재랭킹(blend α=5) | tactic_data.py:457·540 |
+| `TYPE_INDEX` / `FUNC_INDEX` (선택) | 인덱스 경로 | 기본 `data/type_defs.json` / `data/func_defs.json` (`build_struct_index.py`로 생성) |
+
+**추론(평가)** — augmented adapter + 3종 env:
+```bash
+EXEC_ADAPTER=models/rango-aug-bs2-sft/adapter \
+INJECT_TYPES=1 INJECT_DEFS=1 RERANK_PREMISES=1 \
+python3 scripts/run_all.py --alias rango-grpo --idx-file <test> --timeout 600 --gpus 0,1 --workers 2 --out <out>
+```
+**학습(continue-SFT)** — 동일 3종 env:
+```bash
+INJECT_TYPES=1 INJECT_DEFS=1 RERANK_PREMISES=1 \
+python3 -m tactic_gen.grpo_train --rollouts <gold> --init_adapter <base rango checkpoint> \
+  --collator_conf <conf> --max_len 3072 --save_dir <out>/adapter --sft --kl_beta 0.0 --epochs 2 --lr 1e-6 --micro_bsz 2
+```
+- 3개 미설정(기본 `0`) = **순수 rango(비증강)**. 세 개 다 `=1` = full augmented.
+- 예: `all_log/aug_ddp.sh`가 `export INJECT_TYPES=1 INJECT_DEFS=1 RERANK_PREMISES=1`로 셋 다 켜고 학습·평가에 동일 적용.
+
 ---
 
 ## 5. 인덱스 (오프라인 빌드, proof-독립)
