@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, Optional
 
@@ -438,63 +439,213 @@ def train(
         m_la_x = m_la_y = m_la_xy = m_la_xx = m_la_yy = 0.0; m_la_n = 0  # corr(len, adv)
         # ── DDP: 각 rank가 groups 를 겹치지 않게 샤딩(rank마다 groups[rank::world]). gradient 는 backward서 allreduce. ──
         _groups_ep = groups[ddp_rank::ddp_world] if ddp_world > 1 else groups
-        for group in _groups_ep:
-            # ── 진단: 그룹 단위 통계(학습 스킵 여부와 무관하게 관측) ──
-            _onp = [a for a in group["attempts"] if a.get("steps") and not a.get("off_policy")]
-            if _onp:
-                _rs = [float(a["reward"]) for a in _onp]
-                _sv = sum(1 for r in _rs if r >= 1)
-                dg_n += 1
-                if all(r < 1 for r in _rs): dg_dead += 1
-                elif _sv < len(_rs): dg_mixed += 1
-                dg_solve_hist[min(_sv, 8)] += 1
-                if len(_rs) >= 2:
-                    import statistics as _st
-                    dg_std_sum += _st.pstdev(_rs)
-            prompts, comps, advs, advs_p, golds = flatten_group(
-                group, collate_fn, process, luffy or awac, vine, dapo,
-                overlong_cap, overlong_buffer, sft=sft, ppo=ppo,
-                shape_gold=shape_gold, shape_coef=shape_coef, dpo=dpo
-            )
-            if not prompts:
-                continue
-            if sft:
-                n_gold_rows += len(prompts)  # SFT: 학습한 성공-궤적 step 수
-            outcome_dead = all(abs(a) < 1e-8 for a in advs)
-            process_dead = all(abs(a) < 1e-8 for a in advs_p)
-            # ★ PPO 는 dead group(전부 실패)도 학습한다 — advantage=return−V(s)=−V≠0(critic 신호). 스킵 안 함.
-            if outcome_dead and process_dead and not any(golds) and not ppo:
-                continue  # 신호 전무 → 스킵 (gold 있으면 LUFFY 신호, ppo 면 −V 신호로 유지)
-            if outcome_dead and ep == 0 and (process or luffy):
-                n_dead_revived += 1  # outcome은 죽었지만 process/gold 가 살린 그룹
-            for s in range(0, len(prompts), micro_bsz):
-                bp = prompts[s : s + micro_bsz]
-                bc = comps[s : s + micro_bsz]
-                ba = torch.tensor(advs[s : s + micro_bsz], device=device)
-                bg = golds[s : s + micro_bsz]   # bool per row
-                ids, attn, cmask = build_completion_batch(tokenizer, bp, bc, max_len, device)
-                with torch.no_grad():
-                    logp_ref = sequence_token_logprobs(ref_model, ids, attn)
-                    logp_old = logp_ref  # 온폴리시 첫 라운드: old=ref(시작 정책)
-                if ppo:
-                    # ★ PPO: 한 forward 에서 logp + V(s) 동시 계산(hidden state 필요).
-                    out = model(input_ids=ids, attention_mask=attn, output_hidden_states=True)
-                    _logits = out.logits[:, :-1, :]
-                    _lp = torch.log_softmax(_logits.float(), dim=-1)
-                    _tok = _lp.gather(-1, ids[:, 1:].unsqueeze(-1)).squeeze(-1)
-                    _pad = torch.zeros((ids.shape[0], 1), device=_tok.device)
-                    logp_new = torch.cat([_pad, _tok], dim=1)          # (B,T)
-                    h = out.hidden_states[-1].float()                 # (B,T,H)
-                    m0 = cmask.float()
-                    first_comp = m0.argmax(dim=1)                     # 첫 completion 위치
-                    state_pos = (first_comp - 1).clamp(min=0)         # 그 직전=state(프롬프트 끝)
-                    rows = torch.arange(ids.size(0), device=ids.device)
-                    V = value_head(h[rows, state_pos]).squeeze(-1)    # (B,) critic V(s)
-                    loss, kl = ppo_batch_loss(
-                        logp_new, logp_old, V, ba, cmask,
-                        clip_eps=clip_eps, value_coef=value_coef,
-                        value_bce=(value_arch == "sigmoid"),          # sigmoid critic → BCE
-                    )  # kl 자리에 value_loss 반환(모니터링)
+        _join = model.join() if (ddp_world > 1 and hasattr(model, "join")) else nullcontext()
+        with _join:  # DDP: rank별 backward 횟수 불균형 → join 이 exhausted rank 를 shadow(데드락 방지)
+            for group in _groups_ep:
+                # ── 진단: 그룹 단위 통계(학습 스킵 여부와 무관하게 관측) ──
+                _onp = [a for a in group["attempts"] if a.get("steps") and not a.get("off_policy")]
+                if _onp:
+                    _rs = [float(a["reward"]) for a in _onp]
+                    _sv = sum(1 for r in _rs if r >= 1)
+                    dg_n += 1
+                    if all(r < 1 for r in _rs): dg_dead += 1
+                    elif _sv < len(_rs): dg_mixed += 1
+                    dg_solve_hist[min(_sv, 8)] += 1
+                    if len(_rs) >= 2:
+                        import statistics as _st
+                        dg_std_sum += _st.pstdev(_rs)
+                prompts, comps, advs, advs_p, golds = flatten_group(
+                    group, collate_fn, process, luffy or awac, vine, dapo,
+                    overlong_cap, overlong_buffer, sft=sft, ppo=ppo,
+                    shape_gold=shape_gold, shape_coef=shape_coef, dpo=dpo
+                )
+                if not prompts:
+                    continue
+                if sft:
+                    n_gold_rows += len(prompts)  # SFT: 학습한 성공-궤적 step 수
+                outcome_dead = all(abs(a) < 1e-8 for a in advs)
+                process_dead = all(abs(a) < 1e-8 for a in advs_p)
+                # ★ PPO 는 dead group(전부 실패)도 학습한다 — advantage=return−V(s)=−V≠0(critic 신호). 스킵 안 함.
+                if outcome_dead and process_dead and not any(golds) and not ppo:
+                    continue  # 신호 전무 → 스킵 (gold 있으면 LUFFY 신호, ppo 면 −V 신호로 유지)
+                if outcome_dead and ep == 0 and (process or luffy):
+                    n_dead_revived += 1  # outcome은 죽었지만 process/gold 가 살린 그룹
+                for s in range(0, len(prompts), micro_bsz):
+                    bp = prompts[s : s + micro_bsz]
+                    bc = comps[s : s + micro_bsz]
+                    ba = torch.tensor(advs[s : s + micro_bsz], device=device)
+                    bg = golds[s : s + micro_bsz]   # bool per row
+                    ids, attn, cmask = build_completion_batch(tokenizer, bp, bc, max_len, device)
+                    with torch.no_grad():
+                        logp_ref = sequence_token_logprobs(ref_model, ids, attn)
+                        logp_old = logp_ref  # 온폴리시 첫 라운드: old=ref(시작 정책)
+                    if ppo:
+                        # ★ PPO: 한 forward 에서 logp + V(s) 동시 계산(hidden state 필요).
+                        out = model(input_ids=ids, attention_mask=attn, output_hidden_states=True)
+                        _logits = out.logits[:, :-1, :]
+                        _lp = torch.log_softmax(_logits.float(), dim=-1)
+                        _tok = _lp.gather(-1, ids[:, 1:].unsqueeze(-1)).squeeze(-1)
+                        _pad = torch.zeros((ids.shape[0], 1), device=_tok.device)
+                        logp_new = torch.cat([_pad, _tok], dim=1)          # (B,T)
+                        h = out.hidden_states[-1].float()                 # (B,T,H)
+                        m0 = cmask.float()
+                        first_comp = m0.argmax(dim=1)                     # 첫 completion 위치
+                        state_pos = (first_comp - 1).clamp(min=0)         # 그 직전=state(프롬프트 끝)
+                        rows = torch.arange(ids.size(0), device=ids.device)
+                        V = value_head(h[rows, state_pos]).squeeze(-1)    # (B,) critic V(s)
+                        loss, kl = ppo_batch_loss(
+                            logp_new, logp_old, V, ba, cmask,
+                            clip_eps=clip_eps, value_coef=value_coef,
+                            value_bce=(value_arch == "sigmoid"),          # sigmoid critic → BCE
+                        )  # kl 자리에 value_loss 반환(모니터링)
+                        with torch.no_grad():
+                            _r = torch.exp(logp_new - logp_old); _mf = cmask.float()
+                            _hi = ((_r > 1.0 + clip_eps) * _mf).sum() / _mf.sum().clamp(min=1)
+                            _lo = ((_r < 1.0 - clip_eps) * _mf).sum() / _mf.sum().clamp(min=1)
+                            tot_clip += float(_hi + _lo)
+                            m_cliphi += float(_hi); m_cliplo += float(_lo)
+                            tot_maxr = max(tot_maxr, float((_r * _mf + (1 - _mf)).max()))
+                            # ★ critic 진단: value_loss / V분포 / EV(explained variance) 재료
+                            m_vloss_sum += float(kl)                       # ppo는 kl자리=value_loss
+                            m_v_sum += float(V.sum()); m_v_sq += float((V**2).sum()); m_v_n += V.numel()
+                            m_ret_sum += float(ba.sum()); m_ret_sq += float((ba**2).sum())
+                            m_rv_sq += float(((ba - V)**2).sum())          # Var(return−V) 재료
+                            # entropy / 길이 (collapse·길이편향 진단)
+                            _p = torch.exp(logp_new); _ent = -(logp_new * _p * _mf).sum() / _mf.sum().clamp(min=1)
+                            m_ent_sum += float(_ent); m_ent_n += 1
+                            m_len_sum += int(_mf.sum()); m_len_n += _mf.shape[0]
+                        opt.zero_grad(); loss.backward()
+                        torch.nn.utils.clip_grad_norm_(_opt_params, 1.0)
+                        opt.step()
+                        tot_loss += float(loss); tot_kl += float(kl); n += 1; gstep += 1
+                        continue
+                    logp_new = sequence_token_logprobs(model, ids, attn)
+                    if dpo:
+                        # ★ validity DPO: 짝=VALID(chosen) / 홀=INVALID(rejected) 인접쌍.
+                        loss, margin = dpo_batch_loss(logp_new, logp_ref, cmask, beta=dpo_beta)
+                        kl = torch.zeros((), device=device)
+                        tot_margin += float(margin); n_pairs += 1
+                    elif awac:
+                        # ★ AWAC/AWR: exp(A/λ) 가중 BC — KL-제약 정책개선의 닫힌 해(OOD 차단).
+                        #   gold 포함 모든 데이터 row 를 가중 모방. clip/ratio/KL 없음.
+                        loss = awac_batch_loss(logp_new, ba, cmask, lam=awac_lam)
+                        kl = torch.zeros((), device=device)
+                        n_gold_rows += int(sum(bg))
+                    elif sft:
+                        # ★ RFT/expert-iteration: 순수 MLE(+ KL anchor). 성공 궤적 completion 최대화.
+                        loss, kl = sft_batch_loss(logp_new, logp_ref, cmask, kl_beta=kl_beta)
+                    elif dapg:
+                        # ★ DAPG: on-policy row → 표준 GRPO, gold(off_policy) row → 감쇠 BC(λ₀·λ₁^gstep).
+                        #   gold 기여가 학습 진행에 따라 소멸 → LUFFY 회귀(무제약 gold 견인) 방지.
+                        gmask = torch.tensor(bg, device=device)
+                        w_k = dapg_l0 * (dapg_l1 ** gstep)
+                        kl = torch.zeros((), device=device)
+                        terms = []
+                        if (~gmask).any():
+                            oi = (~gmask).nonzero(as_tuple=True)[0]
+                            loss_on, kl = grpo_batch_loss(
+                                logp_new[oi], logp_old[oi], logp_ref[oi], ba[oi], cmask[oi],
+                                clip_eps=clip_eps, kl_beta=kl_beta,
+                            )
+                            terms.append(loss_on)
+                        if gmask.any():
+                            gi = gmask.nonzero(as_tuple=True)[0]
+                            terms.append(dapg_demo_loss(logp_new[gi], cmask[gi], w_k))
+                            n_gold_rows += int(gi.numel())
+                        loss = sum(terms)
+                    elif luffy and any(bg):
+                        # ★ LUFFY 혼합 목적: 한 micro-batch 안에서
+                        #   - gold(off-policy) row → luffy_batch_loss(clip 없음 + shaping, KL 없음)
+                        #   - 나머지 on-policy row → 표준 clipped GRPO
+                        #   두 항을 더한다(각자 tactic-토큰 평균으로 정규화됨 — LUFFY 원논문과 동일).
+                        gmask = torch.tensor(bg, device=device)
+                        kl = torch.zeros((), device=device)
+                        terms = []
+                        if (~gmask).any():
+                            oi = (~gmask).nonzero(as_tuple=True)[0]
+                            # ★ (2) LUFFY exploration 보존: on-policy 항에 clip-higher 적용(entropy collapse 방지).
+                            loss_on, kl = grpo_batch_loss(
+                                logp_new[oi], logp_old[oi], logp_ref[oi], ba[oi], cmask[oi],
+                                clip_eps=clip_eps, kl_beta=kl_beta, clip_eps_high=clip_eps_high,
+                            )
+                            terms.append(loss_on)
+                        gi = gmask.nonzero(as_tuple=True)[0]
+                        if luffy_kl:
+                            # ★ Conservative: gold 항에 KL(π_θ‖fix) 복원 → 회귀 방지
+                            loss_g, kl_g = luffy_kl_batch_loss(
+                                logp_new[gi], logp_ref[gi], ba[gi], cmask[gi],
+                                gamma=luffy_gamma, kl_beta=kl_beta,
+                            )
+                            terms.append(loss_g)
+                        else:
+                            terms.append(
+                                luffy_batch_loss(logp_new[gi], ba[gi], cmask[gi], gamma=luffy_gamma)
+                            )
+                        n_gold_rows += int(gi.numel())
+                        loss = sum(terms)
+                    elif dapo:
+                        # ★ (3) DAPO: clip-higher(비대칭) + token-level loss + KL 제거.
+                        #   dynamic sampling(rollout dyn_resample)·overlong shaping(flatten)은 이미 반영됨.
+                        #   ★ KL 은 DAPO 정의상 제거 → 전역 kl_beta(기본 0.04) 무시하고 0 고정(리뷰 #2).
+                        loss, kl = dapo_batch_loss(
+                            logp_new, logp_old, logp_ref, ba, cmask,
+                            clip_eps_low=clip_eps,
+                            clip_eps_high=clip_eps_high if clip_eps_high is not None else 0.28,
+                            kl_beta=0.0,
+                        )
+                    elif process:
+                        bap = torch.tensor(advs_p[s : s + micro_bsz], device=device)
+                        # A = A_outcome (완성 토큰 전체) + 1[첫 토큰] · A_process
+                        #   논문 검증: first-token 59.2 > all-tokens 57.8 > last-token 57.5.
+                        #   tactic 의 첫 토큰(=전략을 고르는 키워드)에만 process credit 을 건다.
+                        #   outcome 항은 유지한다 — 논문의 negative result: tactic-only 보상은
+                        #   조기수렴을 부른다.
+                        m = cmask.float()
+                        first = torch.zeros_like(m)
+                        idx = m.argmax(dim=1)                     # 행별 첫 완성토큰 위치
+                        rows = torch.arange(m.size(0), device=m.device)
+                        first[rows, idx] = m[rows, idx]           # 완성토큰이 없는 행은 0 유지
+
+                        # ★ 길이 보정 (없으면 PRM 이 조용히 무력화된다):
+                        #   grpo_batch_loss* 는 시퀀스 목적을 **토큰 평균**(Σ/|a|)으로 낸다(grpo.py:80-83).
+                        #   process advantage 는 첫 토큰 1개에만 걸리므로, 평균을 거치면 유효 가중치가
+                        #   bap/|a| 가 되어 **tactic 길이에 반비례해 희석**된다.
+                        #     3토큰 tactic → 1/3 = 0.333 | 13토큰 → 1/13 = 0.077  (4배 차이)
+                        #   실측: Coq이 거부한 tactic 은 통과한 것보다 평균 2.10배 길다(18.7 vs 8.9 토큰).
+                        #   즉 **가장 강하게 벌줘야 할 tactic 에서 PRM 신호가 가장 약해진다.**
+                        #   → |a| 를 곱해 상쇄한다. 평균을 거친 뒤 유효 가중치가 정확히 bap 이 된다.
+                        n_tok = m.sum(dim=1).clamp(min=1.0)       # |a|
+                        # ★ 곱하는 scale 은 perstep 의 분모와 반드시 일치해야 유효 가중치가 bap 이 된다.
+                        #   denom_const=None → 분모 |a| → n_tok 곱함(상쇄).
+                        #   denom_const=C    → 분모 C  → C 곱해야 상쇄(n_tok 곱하면 길이비례로 재편향).
+                        scale = (
+                            n_tok if denom_const is None
+                            else torch.full_like(n_tok, float(denom_const))
+                        )
+                        adv_tokens = (
+                            ba.unsqueeze(1) * m
+                            + (bap * scale).unsqueeze(1) * first
+                        )
+                        loss, kl = grpo_batch_loss_perstep(
+                            logp_new, logp_old, logp_ref, adv_tokens, cmask,
+                            clip_eps=clip_eps, kl_beta=kl_beta, denom_const=denom_const,
+                        )
+                    else:
+                        if denom_const is not None:
+                            # outcome-only 경로도 상수 정규화를 쓰려면 perstep 로 우회(동일 일반화)
+                            adv_tokens = ba.unsqueeze(1) * cmask.float()
+                            loss, kl = grpo_batch_loss_perstep(
+                                logp_new, logp_old, logp_ref, adv_tokens, cmask,
+                                clip_eps=clip_eps, kl_beta=kl_beta, denom_const=denom_const,
+                            )
+                        else:
+                            # ★ clip_eps_high 전달: LUFFY 의 gold-없는 micro-batch(=on-policy row 대부분)도
+                            #   clip-higher 를 받아야 (2) 가 실효(리뷰 #1). 일반 GRPO 는 None → 대칭(무변화).
+                            loss, kl = grpo_batch_loss(
+                                logp_new, logp_old, logp_ref, ba, cmask,
+                                clip_eps=clip_eps, kl_beta=kl_beta, clip_eps_high=clip_eps_high,
+                            )
+                    # ★ ratio clip 진단(로깅): clip 밖 토큰 비율(상/하 분리) + max ρ. sft 는 clip 없어 참고용.
                     with torch.no_grad():
                         _r = torch.exp(logp_new - logp_old); _mf = cmask.float()
                         _hi = ((_r > 1.0 + clip_eps) * _mf).sum() / _mf.sum().clamp(min=1)
@@ -502,170 +653,22 @@ def train(
                         tot_clip += float(_hi + _lo)
                         m_cliphi += float(_hi); m_cliplo += float(_lo)
                         tot_maxr = max(tot_maxr, float((_r * _mf + (1 - _mf)).max()))
-                        # ★ critic 진단: value_loss / V분포 / EV(explained variance) 재료
-                        m_vloss_sum += float(kl)                       # ppo는 kl자리=value_loss
-                        m_v_sum += float(V.sum()); m_v_sq += float((V**2).sum()); m_v_n += V.numel()
-                        m_ret_sum += float(ba.sum()); m_ret_sq += float((ba**2).sum())
-                        m_rv_sq += float(((ba - V)**2).sum())          # Var(return−V) 재료
-                        # entropy / 길이 (collapse·길이편향 진단)
+                        # entropy / 길이 / len-adv 상관 (collapse·GRPO 토큰길이 편향 진단)
                         _p = torch.exp(logp_new); _ent = -(logp_new * _p * _mf).sum() / _mf.sum().clamp(min=1)
                         m_ent_sum += float(_ent); m_ent_n += 1
-                        m_len_sum += int(_mf.sum()); m_len_n += _mf.shape[0]
-                    opt.zero_grad(); loss.backward()
-                    torch.nn.utils.clip_grad_norm_(_opt_params, 1.0)
+                        _lens = _mf.sum(dim=1)                          # (B,) row별 tactic 토큰수
+                        m_len_sum += int(_lens.sum()); m_len_n += _lens.shape[0]
+                        _x = _lens.float(); _y = ba.float()             # corr(길이, advantage) 재료
+                        m_la_x += float(_x.sum()); m_la_y += float(_y.sum())
+                        m_la_xy += float((_x*_y).sum()); m_la_xx += float((_x**2).sum())
+                        m_la_yy += float((_y**2).sum()); m_la_n += _x.numel()
+                    opt.zero_grad()
+                    loss.backward()
+                    torch.nn.utils.clip_grad_norm_(
+                        [p for p in model.parameters() if p.requires_grad], 1.0
+                    )
                     opt.step()
                     tot_loss += float(loss); tot_kl += float(kl); n += 1; gstep += 1
-                    continue
-                logp_new = sequence_token_logprobs(model, ids, attn)
-                if dpo:
-                    # ★ validity DPO: 짝=VALID(chosen) / 홀=INVALID(rejected) 인접쌍.
-                    loss, margin = dpo_batch_loss(logp_new, logp_ref, cmask, beta=dpo_beta)
-                    kl = torch.zeros((), device=device)
-                    tot_margin += float(margin); n_pairs += 1
-                elif awac:
-                    # ★ AWAC/AWR: exp(A/λ) 가중 BC — KL-제약 정책개선의 닫힌 해(OOD 차단).
-                    #   gold 포함 모든 데이터 row 를 가중 모방. clip/ratio/KL 없음.
-                    loss = awac_batch_loss(logp_new, ba, cmask, lam=awac_lam)
-                    kl = torch.zeros((), device=device)
-                    n_gold_rows += int(sum(bg))
-                elif sft:
-                    # ★ RFT/expert-iteration: 순수 MLE(+ KL anchor). 성공 궤적 completion 최대화.
-                    loss, kl = sft_batch_loss(logp_new, logp_ref, cmask, kl_beta=kl_beta)
-                elif dapg:
-                    # ★ DAPG: on-policy row → 표준 GRPO, gold(off_policy) row → 감쇠 BC(λ₀·λ₁^gstep).
-                    #   gold 기여가 학습 진행에 따라 소멸 → LUFFY 회귀(무제약 gold 견인) 방지.
-                    gmask = torch.tensor(bg, device=device)
-                    w_k = dapg_l0 * (dapg_l1 ** gstep)
-                    kl = torch.zeros((), device=device)
-                    terms = []
-                    if (~gmask).any():
-                        oi = (~gmask).nonzero(as_tuple=True)[0]
-                        loss_on, kl = grpo_batch_loss(
-                            logp_new[oi], logp_old[oi], logp_ref[oi], ba[oi], cmask[oi],
-                            clip_eps=clip_eps, kl_beta=kl_beta,
-                        )
-                        terms.append(loss_on)
-                    if gmask.any():
-                        gi = gmask.nonzero(as_tuple=True)[0]
-                        terms.append(dapg_demo_loss(logp_new[gi], cmask[gi], w_k))
-                        n_gold_rows += int(gi.numel())
-                    loss = sum(terms)
-                elif luffy and any(bg):
-                    # ★ LUFFY 혼합 목적: 한 micro-batch 안에서
-                    #   - gold(off-policy) row → luffy_batch_loss(clip 없음 + shaping, KL 없음)
-                    #   - 나머지 on-policy row → 표준 clipped GRPO
-                    #   두 항을 더한다(각자 tactic-토큰 평균으로 정규화됨 — LUFFY 원논문과 동일).
-                    gmask = torch.tensor(bg, device=device)
-                    kl = torch.zeros((), device=device)
-                    terms = []
-                    if (~gmask).any():
-                        oi = (~gmask).nonzero(as_tuple=True)[0]
-                        # ★ (2) LUFFY exploration 보존: on-policy 항에 clip-higher 적용(entropy collapse 방지).
-                        loss_on, kl = grpo_batch_loss(
-                            logp_new[oi], logp_old[oi], logp_ref[oi], ba[oi], cmask[oi],
-                            clip_eps=clip_eps, kl_beta=kl_beta, clip_eps_high=clip_eps_high,
-                        )
-                        terms.append(loss_on)
-                    gi = gmask.nonzero(as_tuple=True)[0]
-                    if luffy_kl:
-                        # ★ Conservative: gold 항에 KL(π_θ‖fix) 복원 → 회귀 방지
-                        loss_g, kl_g = luffy_kl_batch_loss(
-                            logp_new[gi], logp_ref[gi], ba[gi], cmask[gi],
-                            gamma=luffy_gamma, kl_beta=kl_beta,
-                        )
-                        terms.append(loss_g)
-                    else:
-                        terms.append(
-                            luffy_batch_loss(logp_new[gi], ba[gi], cmask[gi], gamma=luffy_gamma)
-                        )
-                    n_gold_rows += int(gi.numel())
-                    loss = sum(terms)
-                elif dapo:
-                    # ★ (3) DAPO: clip-higher(비대칭) + token-level loss + KL 제거.
-                    #   dynamic sampling(rollout dyn_resample)·overlong shaping(flatten)은 이미 반영됨.
-                    #   ★ KL 은 DAPO 정의상 제거 → 전역 kl_beta(기본 0.04) 무시하고 0 고정(리뷰 #2).
-                    loss, kl = dapo_batch_loss(
-                        logp_new, logp_old, logp_ref, ba, cmask,
-                        clip_eps_low=clip_eps,
-                        clip_eps_high=clip_eps_high if clip_eps_high is not None else 0.28,
-                        kl_beta=0.0,
-                    )
-                elif process:
-                    bap = torch.tensor(advs_p[s : s + micro_bsz], device=device)
-                    # A = A_outcome (완성 토큰 전체) + 1[첫 토큰] · A_process
-                    #   논문 검증: first-token 59.2 > all-tokens 57.8 > last-token 57.5.
-                    #   tactic 의 첫 토큰(=전략을 고르는 키워드)에만 process credit 을 건다.
-                    #   outcome 항은 유지한다 — 논문의 negative result: tactic-only 보상은
-                    #   조기수렴을 부른다.
-                    m = cmask.float()
-                    first = torch.zeros_like(m)
-                    idx = m.argmax(dim=1)                     # 행별 첫 완성토큰 위치
-                    rows = torch.arange(m.size(0), device=m.device)
-                    first[rows, idx] = m[rows, idx]           # 완성토큰이 없는 행은 0 유지
-
-                    # ★ 길이 보정 (없으면 PRM 이 조용히 무력화된다):
-                    #   grpo_batch_loss* 는 시퀀스 목적을 **토큰 평균**(Σ/|a|)으로 낸다(grpo.py:80-83).
-                    #   process advantage 는 첫 토큰 1개에만 걸리므로, 평균을 거치면 유효 가중치가
-                    #   bap/|a| 가 되어 **tactic 길이에 반비례해 희석**된다.
-                    #     3토큰 tactic → 1/3 = 0.333 | 13토큰 → 1/13 = 0.077  (4배 차이)
-                    #   실측: Coq이 거부한 tactic 은 통과한 것보다 평균 2.10배 길다(18.7 vs 8.9 토큰).
-                    #   즉 **가장 강하게 벌줘야 할 tactic 에서 PRM 신호가 가장 약해진다.**
-                    #   → |a| 를 곱해 상쇄한다. 평균을 거친 뒤 유효 가중치가 정확히 bap 이 된다.
-                    n_tok = m.sum(dim=1).clamp(min=1.0)       # |a|
-                    # ★ 곱하는 scale 은 perstep 의 분모와 반드시 일치해야 유효 가중치가 bap 이 된다.
-                    #   denom_const=None → 분모 |a| → n_tok 곱함(상쇄).
-                    #   denom_const=C    → 분모 C  → C 곱해야 상쇄(n_tok 곱하면 길이비례로 재편향).
-                    scale = (
-                        n_tok if denom_const is None
-                        else torch.full_like(n_tok, float(denom_const))
-                    )
-                    adv_tokens = (
-                        ba.unsqueeze(1) * m
-                        + (bap * scale).unsqueeze(1) * first
-                    )
-                    loss, kl = grpo_batch_loss_perstep(
-                        logp_new, logp_old, logp_ref, adv_tokens, cmask,
-                        clip_eps=clip_eps, kl_beta=kl_beta, denom_const=denom_const,
-                    )
-                else:
-                    if denom_const is not None:
-                        # outcome-only 경로도 상수 정규화를 쓰려면 perstep 로 우회(동일 일반화)
-                        adv_tokens = ba.unsqueeze(1) * cmask.float()
-                        loss, kl = grpo_batch_loss_perstep(
-                            logp_new, logp_old, logp_ref, adv_tokens, cmask,
-                            clip_eps=clip_eps, kl_beta=kl_beta, denom_const=denom_const,
-                        )
-                    else:
-                        # ★ clip_eps_high 전달: LUFFY 의 gold-없는 micro-batch(=on-policy row 대부분)도
-                        #   clip-higher 를 받아야 (2) 가 실효(리뷰 #1). 일반 GRPO 는 None → 대칭(무변화).
-                        loss, kl = grpo_batch_loss(
-                            logp_new, logp_old, logp_ref, ba, cmask,
-                            clip_eps=clip_eps, kl_beta=kl_beta, clip_eps_high=clip_eps_high,
-                        )
-                # ★ ratio clip 진단(로깅): clip 밖 토큰 비율(상/하 분리) + max ρ. sft 는 clip 없어 참고용.
-                with torch.no_grad():
-                    _r = torch.exp(logp_new - logp_old); _mf = cmask.float()
-                    _hi = ((_r > 1.0 + clip_eps) * _mf).sum() / _mf.sum().clamp(min=1)
-                    _lo = ((_r < 1.0 - clip_eps) * _mf).sum() / _mf.sum().clamp(min=1)
-                    tot_clip += float(_hi + _lo)
-                    m_cliphi += float(_hi); m_cliplo += float(_lo)
-                    tot_maxr = max(tot_maxr, float((_r * _mf + (1 - _mf)).max()))
-                    # entropy / 길이 / len-adv 상관 (collapse·GRPO 토큰길이 편향 진단)
-                    _p = torch.exp(logp_new); _ent = -(logp_new * _p * _mf).sum() / _mf.sum().clamp(min=1)
-                    m_ent_sum += float(_ent); m_ent_n += 1
-                    _lens = _mf.sum(dim=1)                          # (B,) row별 tactic 토큰수
-                    m_len_sum += int(_lens.sum()); m_len_n += _lens.shape[0]
-                    _x = _lens.float(); _y = ba.float()             # corr(길이, advantage) 재료
-                    m_la_x += float(_x.sum()); m_la_y += float(_y.sum())
-                    m_la_xy += float((_x*_y).sum()); m_la_xx += float((_x**2).sum())
-                    m_la_yy += float((_y**2).sum()); m_la_n += _x.numel()
-                opt.zero_grad()
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(
-                    [p for p in model.parameters() if p.requires_grad], 1.0
-                )
-                opt.step()
-                tot_loss += float(loss); tot_kl += float(kl); n += 1; gstep += 1
         print(f"[grpo] epoch {ep}: loss={tot_loss/max(n,1):.4f} kl={tot_kl/max(n,1):.4f} "
               f"steps={int(n)} clip_frac={tot_clip/max(n,1):.3f} max_ρ={tot_maxr:.2f}"
               + (f" dpo_margin={tot_margin/max(n_pairs,1):.3f}" if dpo else ""))
