@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="850" viewBox="0 0 1600 850">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0 0 L0 6 L9 3 Z" fill="#263238"/>
+    </marker>
+    <style>
+      .state{fill:#eef6ff;stroke:#1565c0;stroke-width:3}.branch{fill:#fff8e1;stroke:#e65100;stroke-width:3}.terminal{fill:#e8f5e9;stroke:#1b5e20;stroke-width:4}
+      .true{fill:#e8f5e9;stroke:#2e7d32;stroke-width:2}.false{fill:#fff3e0;stroke:#e65100;stroke-width:2}
+      .title{font:700 27px Helvetica,Arial,sans-serif;fill:#101820}
+      .sid{font:700 24px Helvetica,Arial,sans-serif;fill:#0d47a1}
+      .meta{font:700 18px Helvetica,Arial,sans-serif;fill:#37474f}
+      .goal{font:18px Consolas,"Liberation Mono",monospace;fill:#101820}
+      .goal-s{font:17px Consolas,"Liberation Mono",monospace;fill:#101820}
+      .case{font:700 17px Helvetica,Arial,sans-serif;fill:#101820}
+      .arrow{fill:none;stroke:#263238;stroke-width:3;marker-end:url(#arrow)}
+      .actbox{fill:#ffebee;stroke:#c62828;stroke-width:2}
+      .action{font:700 18px Consolas,"Liberation Mono",monospace;fill:#b71c1c}
+      .reward0{fill:#eceff1;stroke:#607d8b;stroke-width:2}.reward1{fill:#c8e6c9;stroke:#1b5e20;stroke-width:4}
+      .r0{font:700 22px Helvetica,Arial,sans-serif;fill:#455a64}
+      .r1{font:700 30px Helvetica,Arial,sans-serif;fill:#b71c1c}
+      .qedlab{font:700 21px Helvetica,Arial,sans-serif;fill:#b71c1c}
+      .caption{font:700 23px Helvetica,Arial,sans-serif;fill:#b71c1c}
+    </style>
+  </defs>
+  <rect x="0" y="0" width="1600" height="850" fill="#ffffff"/>
+  <text x="800" y="40" text-anchor="middle" class="title">bool_cases: the entire goal set G is one state; reward = 1 only at QED</text>
+
+  <!-- Row 1: s0 -> s1 -> s2  (left to right) -->
+  <rect x="30" y="70" width="320" height="175" rx="8" class="state"/>
+  <text x="50" y="104" class="sid">s0</text><text x="330" y="103" text-anchor="end" class="meta">|G|=1 · r=0</text>
+  <text x="50" y="147" class="goal">G = [ forall b : bool,</text><text x="50" y="181" class="goal">      b=true \/ b=false ]</text>
+
+  <path d="M350 157 H525" class="arrow"/>
+  <rect x="382" y="118" width="116" height="36" rx="5" class="actbox"/>
+  <text x="440" y="143" text-anchor="middle" class="action">intros b</text>
+
+  <rect x="530" y="70" width="320" height="175" rx="8" class="state"/>
+  <text x="550" y="104" class="sid">s1</text><text x="830" y="103" text-anchor="end" class="meta">|G|=1 · r=0</text>
+  <text x="550" y="147" class="goal">G = [ b : bool |-</text><text x="550" y="181" class="goal">      b=true \/ b=false ]</text>
+
+  <path d="M850 157 H1025" class="arrow"/>
+  <rect x="871" y="118" width="138" height="36" rx="5" class="actbox"/>
+  <text x="940" y="143" text-anchor="middle" class="action">destruct b</text>
+
+  <rect x="1030" y="60" width="530" height="195" rx="8" class="branch"/>
+  <text x="1050" y="94" class="sid">s2</text><text x="1540" y="93" text-anchor="end" class="meta">|G|=2 · r=0</text>
+  <rect x="1048" y="110" width="494" height="57" rx="5" class="true"/>
+  <text x="1062" y="133" class="case">FOCUS · b = true</text><text text-anchor="end" x="1528" y="153" class="goal-s">true=true \/ true=false</text>
+  <rect x="1048" y="179" width="494" height="57" rx="5" class="false"/>
+  <text x="1062" y="202" class="case">WAITING · b = false</text><text text-anchor="end" x="1528" y="222" class="goal-s">false=true \/ false=false</text>
+
+  <!-- s2 -> s3 (wrap down) -->
+  <path d="M1295 255 V305" class="arrow"/>
+  <rect x="1315" y="262" width="72" height="34" rx="5" class="actbox"/>
+  <text x="1351" y="286" text-anchor="middle" class="action">left</text>
+
+  <!-- Row 2: s3 -> s4 -> s5  (right to left) -->
+  <rect x="1030" y="310" width="530" height="195" rx="8" class="branch"/>
+  <text x="1050" y="344" class="sid">s3</text><text x="1540" y="343" text-anchor="end" class="meta">|G|=2 · r=0</text>
+  <rect x="1048" y="360" width="494" height="57" rx="5" class="true"/>
+  <text x="1062" y="383" class="case">FOCUS · b = true</text><text text-anchor="end" x="1528" y="403" class="goal-s">true = true</text>
+  <rect x="1048" y="429" width="494" height="57" rx="5" class="false"/>
+  <text x="1062" y="452" class="case">WAITING · b = false</text><text text-anchor="end" x="1528" y="472" class="goal-s">false=true \/ false=false</text>
+
+  <path d="M1030 407 H855" class="arrow"/>
+  <rect x="872" y="368" width="145" height="36" rx="5" class="actbox"/>
+  <text x="944" y="393" text-anchor="middle" class="action">reflexivity</text>
+
+  <rect x="530" y="320" width="320" height="175" rx="8" class="state"/>
+  <text x="550" y="354" class="sid">s4</text><text x="830" y="353" text-anchor="end" class="meta">|G|=1 · r=0</text>
+  <text x="550" y="399" class="goal">G = [ false=true \/</text><text x="550" y="433" class="goal">      false=false ]</text>
+
+  <path d="M530 407 H335" class="arrow"/>
+  <rect x="388" y="368" width="86" height="36" rx="5" class="actbox"/>
+  <text x="431" y="393" text-anchor="middle" class="action">right</text>
+
+  <rect x="30" y="320" width="300" height="175" rx="8" class="state"/>
+  <text x="50" y="354" class="sid">s5</text><text x="310" y="353" text-anchor="end" class="meta">|G|=1 · r=0</text>
+  <text x="50" y="419" class="goal">G = [ false = false ]</text>
+
+  <!-- s5 -> s6 (QED) -->
+  <path d="M180 495 V560" class="arrow"/>
+  <rect x="200" y="510" width="145" height="36" rx="5" class="actbox"/>
+  <text x="272" y="535" text-anchor="middle" class="action">reflexivity</text>
+
+  <rect x="30" y="565" width="300" height="140" rx="8" class="terminal"/>
+  <text x="50" y="605" class="sid">s6 · QED</text><text x="310" y="606" text-anchor="end" class="r1">r = 1</text>
+  <text x="50" y="652" class="goal">G = [ ] · |G| = 0</text><text x="50" y="684" class="meta">terminal</text>
+
+  <!-- Reward trajectory -->
+  <text x="390" y="575" class="title">Reward trajectory</text>
+  <path d="M405 632 H1420" stroke="#607d8b" stroke-width="4"/>
+  <g class="reward0"><circle cx="430" cy="632" r="26"/><circle cx="580" cy="632" r="26"/><circle cx="730" cy="632" r="26"/><circle cx="880" cy="632" r="26"/><circle cx="1030" cy="632" r="26"/><circle cx="1180" cy="632" r="26"/></g>
+  <g class="r0" text-anchor="middle"><text x="430" y="640">0</text><text x="580" y="640">0</text><text x="730" y="640">0</text><text x="880" y="640">0</text><text x="1030" y="640">0</text><text x="1180" y="640">0</text></g>
+  <circle cx="1415" cy="632" r="40" class="reward1"/><text x="1415" y="643" text-anchor="middle" class="r1">1</text>
+  <g class="meta" text-anchor="middle"><text x="430" y="682">s0</text><text x="580" y="682">s1</text><text x="730" y="682">s2</text><text x="880" y="682">s3</text><text x="1030" y="682">s4</text><text x="1180" y="682">s5</text></g>
+  <text x="1415" y="697" text-anchor="middle" class="qedlab">s6 = QED</text>
+
+  <rect x="390" y="740" width="1170" height="66" rx="8" fill="#ffebee" stroke="#c62828" stroke-width="3"/>
+  <text x="975" y="781" text-anchor="middle" class="caption">Reward stays 0 all the way; it becomes 1 only when QED is reached.</text>
+</svg>

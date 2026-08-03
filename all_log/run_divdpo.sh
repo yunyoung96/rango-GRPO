@@ -15,10 +15,10 @@ cpconf(){ cp models/rango-grpo/training_conf.yaml models/rango-grpo/lm-example-c
 [ -s "$PAIRS" ] || { say "✗ divergence pairs 없음 — build_divergence_dpo.py 먼저"; exit 1; }
 say "════ divergence-DPO 학습 (init=π₀, GPU1, β=0.1, lr5e-7, ep2) · 쌍 $(wc -l < "$PAIRS")개 ════"
 [ -f models/rango-grpo-divdpo/adapter/adapter_model.safetensors ] || \
-  CUDA_VISIBLE_DEVICES=1 python3 src/tactic_gen/dpo_train.py \
+  CUDA_VISIBLE_DEVICES=1 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True python3 src/tactic_gen/dpo_train.py \
     --pairs "$PAIRS" --model_name "$BASE" --init_adapter "$PI0" \
-    --collator_conf "$CONF" --max_len 3072 --save_dir models/rango-grpo-divdpo/adapter \
-    --epochs 2 --lr 5e-7 --beta 0.1 --micro_bsz 2 >> "$LOG" 2>&1
+    --collator_conf "$CONF" --max_len 2048 --save_dir models/rango-grpo-divdpo/adapter \
+    --epochs 2 --lr 5e-7 --beta 0.1 --micro_bsz 1 >> "$LOG" 2>&1   # OOM방지: seq/batch 축소
 cpconf models/rango-grpo-divdpo
 say "  학습 완료. dpo loss/acc:"; grep '\[dpo\] epoch' "$LOG" | tail -3 | sed 's/^/    /' | tee -a "$LOG"
 

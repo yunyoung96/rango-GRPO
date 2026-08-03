@@ -1,0 +1,5 @@
+# Marp 설정 — slides.md 를 슬라이드로 빌드할 때 쓰임
+# 빌드:  cd presentation && npx --yes @marp-team/marp-cli slides.md -o slides.pdf
+#        (PDF/PPTX 출력은 Chrome/Chromium 필요. VS Code 의 Marp 확장으로 미리보기하면 불필요)
+html: true            # slides.md 안의 <table> 2열 레이아웃을 렌더링하려면 필수
+allowLocalFiles: true # figures/*.png 를 읽기 위해 필요
