@@ -5,6 +5,7 @@
 ## 문서
 | 파일 | 내용 |
 |---|---|
+| [AUGMENTED_FINAL.md](AUGMENTED_FINAL.md) | **★★ 최종 설계** — 넣을것 확정(재랭킹+[TYPES]재귀+[DEFINITIONS]재귀), stdlib leaf·랭킹·예산캡, 실측(커버100%·안터짐), 구현순서 |
 | [INDEX_VS_PROMPT.md](INDEX_VS_PROMPT.md) | **★ 개념정리** — 인덱스(사전) vs 프롬프트(모델이 읽는 것) 구분, 현재 구현상태 표 |
 | [PLAN.md](PLAN.md) | 전체 계획 — training set 위치, 합당성, 프롬프트예산 실측, selective 설계, 파이프라인 |
 | [REVIEW.md](REVIEW.md) | **★ 사전검토** — 렌더링으로 잡은 버그3(수정), 배선검증, 누수분석, 남은리스크, 사전비행 체크리스트 |

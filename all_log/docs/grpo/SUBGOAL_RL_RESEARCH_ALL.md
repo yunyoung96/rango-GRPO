@@ -224,6 +224,8 @@ L = L_GRPO(전체정리 그룹)  +  λ·L_PPO(subgoal chain, critic baseline)
 - **우리 도메인 최근접**: Process-Verified RL for TP via Lean (Kim&Yun 2026, [2606.20068](https://arxiv.org/abs/2606.20068)) — sequence-level GRPO 그룹 + tactic-level process advantage 결합. **당신 아이디어의 Lean 판이나 critic 대신 process reward**(둘 다 그룹/MC 기반, 학습 critic 없음).
 - **결론**: 분야가 critic-free 그룹 계열 vs value 기반 계열로 **갈라져 경쟁**, 합치질 않음. "그룹 baseline ⊕ 학습 V(s)를 LLM에서 병행 학습"은 **search miss가 아니라 진짜 open direction.** → 참신성 있으나, 유일 선례가 synthetic만 검증 = LLM 작동 미지수.
 
+> ▶ **"dense가 sparse(Qed)를 이끈다" 전용 정리**: [[DENSE_GUIDES_SPARSE]] — dense를 *어디에* 넣느냐(목적①/shaping②/critic③)로 편향 여부가 갈림, PBRS(Ng 1999)로 본 **우리 E2-dense 실패 원인**(① raw bonus라 편향) vs PPO 실패(③ 자리는 맞으나 critic 못 배움), 미시도 sweet spot(verifier-grounded potential Φ=닫은 goal 수).
+
 ## 6. 애초에 GRPO는 이론적으로 타당한가? → **부분적으로. mean은 건전, /std는 휴리스틱(편향)**
 
 정직하게 나눠야 합니다.

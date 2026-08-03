@@ -99,6 +99,32 @@ def rerank_premises(example) -> Optional[list]:
     scored.sort(key=lambda x: (-x[0], -x[1]))
     return [prem[i] for _, _, i in scored]
 
+
+# ── [TYPES]/[DEFINITIONS] 구조컨텍스트 주입 (INJECT_TYPES=1 / INJECT_DEFS=1). ──
+#   재귀+랭킹+stdlib leaf+예산캡. augment.py canonical 로직. 학습·추론 동일 env 필수.
+def structured_context(tokenizer, example) -> str:
+    """[TYPES]\\n... [DEFINITIONS]\\n... 문자열. env off면 "". [STATE] 앞에 삽입용."""
+    goal = getattr(example, "proof_state", "") or ""
+    parts = []
+    _ntok = lambda s: len(tokenizer.tokenize(s)) if s else 0
+    if os.environ.get("INJECT_TYPES", "0") == "1":
+        try:
+            from tactic_gen.augment import selective_types
+            lines = selective_types(goal, budget_tok=int(os.environ.get("TYPES_BUDGET", "300")), ntok=_ntok)
+            if lines:
+                parts.append("[TYPES]\n" + "\n".join(l for _, l in lines))
+        except Exception:
+            pass
+    if os.environ.get("INJECT_DEFS", "0") == "1":
+        try:
+            from tactic_gen.augment import definitions
+            dl = definitions(goal, budget_tok=int(os.environ.get("DEFS_BUDGET", "300")), ntok=_ntok)
+            if dl:
+                parts.append("[DEFINITIONS]\n" + "\n".join(l for _, l in dl))
+        except Exception:
+            pass
+    return ("\n".join(parts) + "\n") if parts else ""
+
 from model_deployment.conf_utils import (
     formatter_conf_to_client_conf,
     start_servers,
@@ -437,11 +463,13 @@ class ProofPremiseCollator:
         script_str, _ = allocate_tokens(
             tokenizer, example.proof_script, self.script_tokens
         )
+        _struct = structured_context(tokenizer, example)   # ★ [TYPES]/[DEFINITIONS] (env 가드, [STATE] 앞)
         combined_str = (
             self.PREMISE_SEP
             + premise_str
             + self.PROOF_SEP
             + proof_str
+            + "\n" + _struct
             + self.STATE_SEP
             + state_str
             + self.SCRIPT_SEP

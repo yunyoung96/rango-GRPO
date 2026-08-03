@@ -1,72 +1,141 @@
-"""rango-augmented 구조컨텍스트 생성 — 학습·추론·스크립트가 공유하는 canonical 로직.
-train/infer 동일 규칙 보장(REVIEW.md R1). CPU only.
-
-selective_types(goal): goal의 **가설 + 결론** 양쪽에서 inductive 타입을 뽑아 생성자 주입.
-  - 가설 `x : T`의 T (destruct 대상)
-  - 결론에 literal로 등장하는 inductive 타입명 (43% goal이 결론에만 있는 타입 보유 — 가설만 보면 놓침)
-  - 소수생성자(≤8) 필터, 결론관련 우선, top-K + 토큰예산 캡.
+"""rango-augmented 구조컨텍스트 — 학습·추론·스크립트 공유 canonical 로직. CPU only.
+[TYPES]: goal(가설+결론) 타입 → **재귀**(stdlib leaf) → 랭킹(가설변수 우선) → 예산캡.
+[DEFINITIONS]: goal 결론 함수 → **재귀**(stdlib leaf) → 예산캡. (전이: 인덱스는 전체 코퍼스)
+근거: docs/grpo/rango_augmented/AUGMENTED_FINAL.md (실측 커버100%·안터짐).
 """
-import re
+import re, json, os
 
-_KW = {'forall', 'exists', 'fun', 'match', 'if', 'then', 'else', 'let', 'in', 'with', 'end',
-       'Type', 'Prop', 'Set', 'return', 'as', 'is', 'and', 'or', 'of', 'at', 'struct', 'fix', 'cofix'}
+_KW = {'Type', 'Set', 'Prop', 'Inductive', 'Definition', 'Record', 'Variant', 'Fixpoint',
+       'forall', 'exists', 'fun', 'match', 'with', 'end', 'let', 'in', 'if', 'then', 'else',
+       'return', 'as', 'struct', 'fix', 'cofix', 'is', 'of', 'at'}
 
-def _bad_head(h):
-    s = (h or '').split('.')[-1]
-    return (s in _KW) or len(s) < 2
+# 인덱스 lazy-load (env로 경로 override 가능)
+_TYPE_IDX = None   # {name: [def, is_stdlib]}
+_FUNC_IDX = None
+def _load():
+    global _TYPE_IDX, _FUNC_IDX
+    if _TYPE_IDX is None:
+        try:
+            _TYPE_IDX = json.load(open(os.environ.get("TYPE_INDEX", "data/type_defs.json")))
+        except Exception:
+            _TYPE_IDX = {}
+    if _FUNC_IDX is None:
+        try:
+            _FUNC_IDX = json.load(open(os.environ.get("FUNC_INDEX", "data/func_defs.json")))
+        except Exception:
+            _FUNC_IDX = {}
+    return _TYPE_IDX, _FUNC_IDX
 
-def _split_goal(goal):
+def _split(goal):
     parts = (goal or '').split('\n\n', 1)
-    hyp = parts[0]
-    concl = parts[1] if len(parts) > 1 else (goal or '')
-    return hyp, concl
+    return parts[0], (parts[1] if len(parts) > 1 else (goal or ''))
 
-def hyp_types(goal):
-    """가설 블록의 (변수명, 타입head) 목록."""
-    hyp, _ = _split_goal(goal)
-    out = []
-    for ln in hyp.split('\n'):
-        m = re.match(r"^\s*([\w', ]+?)\s*:\s*(.+)$", ln)
-        if not m:
-            continue
-        typ = m.group(2).strip()
-        head = typ.split()[0].split('.')[-1] if typ.split() else typ
-        for nm in re.split(r"[,\s]+", m.group(1).strip()):
-            if nm:
-                out.append((nm, head))
-    return out
+def _ids(txt):
+    return set(x.split('.')[-1] for x in re.findall(r"[A-Za-z_][\w'\.]*", txt or ''))
 
-def selective_types(goal, ind_index, max_types=6, max_ctors=8, budget_tok=200, ntok=None):
-    """가설+결론에서 inductive 타입 뽑아 '[T := c1 | c2 ...]' 라인 리스트 반환.
-    ind_index: {타입명: [생성자...]}. ntok(s)->int 토큰카운터(없으면 단어수 근사).
-    반환: [(head, line), ...] (예산·개수 캡 적용)."""
+def _short(defn, ntok, cap):
+    return defn if ntok(defn) <= cap else ' '.join(defn.split()[:cap-10]) + ' ...'
+
+def _refs(defn, index):
+    """정의 안에서 참조하는 (index에 있는) 이름들 — 재귀 대상."""
+    return {x for x in _ids(defn) if x in index and x not in _KW}
+
+
+def selective_types(goal, ind_index=None, max_types=8, max_ctors=8,
+                    budget_tok=300, ntok=None, max_depth=1):
+    """[TYPES]: 가설+결론 타입 → 재귀(stdlib leaf) → 랭킹 → 캡. 반환 [(name, line), ...].
+    ind_index 인자는 하위호환용(무시하고 _TYPE_IDX 사용). max_depth=1 권장(실측)."""
     if ntok is None:
         ntok = lambda s: max(1, len(re.findall(r'\S+', s or '')))
-    hyp, concl = _split_goal(goal)
-    concl_ids = set(re.findall(r"[A-Za-z_][\w']*", concl))
-    cands, seen = [], set()
-    # ① 가설 변수의 타입 (destruct 대상)
-    for nm, head in hyp_types(goal):
-        if head in seen or _bad_head(head):
-            continue
-        if head in ind_index and len(ind_index[head]) <= max_ctors:
-            seen.add(head)
-            score = (2 if nm in concl_ids else 1) - 0.05 * len(ind_index[head])
-            cands.append((score, head))
-    # ② 결론에 literal 등장하는 inductive 타입명 (가설에 없어도 — 43% goal이 여기 해당)
-    for name in concl_ids:
-        if name in seen or _bad_head(name):
-            continue
-        if name in ind_index and len(ind_index[name]) <= max_ctors:
-            seen.add(name)
-            cands.append((1.5 - 0.05 * len(ind_index[name]), name))   # 결론 등장 타입도 포함
-    cands.sort(key=lambda x: (-x[0], x[1]))   # 점수순, 동점은 이름순(결정적)
+    tidx, _ = _load()
+    if not tidx:
+        return []
+    hyp, concl = _split(goal)
+    hyp_types = set()
+    for m in re.finditer(r':\s*([A-Za-z_][\w\'\.]*)', hyp):
+        hyp_types.add(m.group(1).split('.')[-1])
+    concl_ids = _ids(concl)
+    # 시드 = 가설 + 결론 타입
+    seed = [t for t in (hyp_types | concl_ids) if t in tidx]
+    # 재귀 수집 (stdlib은 정의 넣되 재귀 안 함 = leaf; 여기선 stdlib는 주입도 제외)
+    seen, order, frontier, depth = set(), [], list(seed), 0
+    while frontier and depth <= max_depth:
+        nxt = []
+        for t in frontier:
+            if t in seen:
+                continue
+            seen.add(t)
+            defn, is_std = tidx[t]
+            if is_std:
+                continue                      # stdlib = leaf + 주입 제외 (모델이 앎)
+            order.append((t, depth))
+            for r in _refs(defn, tidx):
+                if r not in seen and r not in nxt:
+                    nxt.append(r)
+        frontier = nxt
+        depth += 1
+    # 랭킹: 가설변수 타입(+10) > 결론등장(+5) > depth 낮음 > 생성자 적음
+    def score(t, d):
+        defn = tidx[t][0]
+        ctors = defn.count('|') + 1
+        return (10 if t in hyp_types else 0) + (5 if t in concl_ids else 0) \
+               + (max_depth - d) * 2 + max(0, 3 - ctors * 0.2)
+    order.sort(key=lambda x: -score(x[0], x[1]))
     lines, tot = [], 0
-    for _, head in cands[:max_types]:
-        line = f"{head} := {' | '.join(ind_index[head])}"
-        t = ntok(line)
-        if tot + t > budget_tok:
+    for t, _ in order[:max_types * 3]:
+        defn = tidx[t][0]
+        if defn.count('|') + 1 > max_ctors and t not in hyp_types:
+            pass  # 큰 타입도 가설변수면 넣음
+        line = _short(defn, ntok, 50)
+        tk = ntok(line)
+        if tot + tk > budget_tok:
             break
-        lines.append((head, line))
-        tot += t
+        lines.append((t, line))
+        tot += tk
+        if len(lines) >= max_types:
+            break
+    return lines
+
+
+def definitions(goal, budget_tok=300, ntok=None, max_depth=1, max_defs=6):
+    """[DEFINITIONS]: goal 결론의 정의된 함수 → 재귀(stdlib leaf) → 캡. 반환 [(name, line), ...]."""
+    if ntok is None:
+        ntok = lambda s: max(1, len(re.findall(r'\S+', s or '')))
+    _, fidx = _load()
+    if not fidx:
+        return []
+    _, concl = _split(goal)
+    # 시드 = 결론의 함수적용/대문자 (도메인 함수만)
+    seed = set()
+    for m in re.finditer(r"([A-Za-z_][\w'\.]*)\s*\(", concl):
+        seed.add(m.group(1).split('.')[-1])
+    for m in re.finditer(r"\b([A-Z][\w'\.]*)", concl):
+        seed.add(m.group(1).split('.')[-1])
+    seed = [f for f in seed if f in fidx and not fidx[f][1] and len(f) > 1 and f not in _KW]
+    seen, order, frontier, depth = set(), [], list(seed), 0
+    while frontier and depth <= max_depth:
+        nxt = []
+        for f in frontier:
+            if f in seen:
+                continue
+            seen.add(f)
+            defn, is_std = fidx[f]
+            if is_std:
+                continue
+            order.append(f)
+            for r in _refs(defn, fidx):
+                if not fidx.get(r, ['', True])[1] and r not in seen and r not in nxt:
+                    nxt.append(r)
+        frontier = nxt
+        depth += 1
+    lines, tot = [], 0
+    for f in order:
+        line = _short(fidx[f][0], ntok, 60)
+        tk = ntok(line)
+        if tot + tk > budget_tok:
+            break
+        lines.append((f, line))
+        tot += tk
+        if len(lines) >= max_defs:
+            break
     return lines
