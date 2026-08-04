@@ -10,7 +10,7 @@ say(){ echo "[$(TZ=Asia/Seoul date '+%m-%d %H:%M')] $*" | tee -a "$LOG"; }
 BASE=deepseek-ai/deepseek-coder-1.3b-instruct
 CONF=models/deepseek-bm25-proof-tfidf-proj-thm-prem-final/training_conf.yaml
 SFTM=models/rango-${TAG}-sft
-SFTROLL=data/grpo_rollouts/${TAG}_sftroll.jsonl
+SFTROLL=data/grpo_rollouts/${TAG}_sftroll_mixed.jsonl
 FINM=models/rango-${TAG}-sftgrpo
 freemem(){ nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits -i "$1" 2>/dev/null; }
 wait_gpu(){ local need=${1:-24000} w=0; while :; do local f0=$(freemem 0) f1=$(freemem 1);f0=${f0:-0};f1=${f1:-0}
