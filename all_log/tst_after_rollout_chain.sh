@@ -64,26 +64,8 @@ cpconf "$FINM"
 say "  GRPO: $([ -f "$FINM/adapter/adapter_model.safetensors" ] && echo OK || echo 실패)"
 [ -f "$FINM/adapter/adapter_model.safetensors" ] || { say "GRPO 실패 — 중단"; exit 1; }
 
-# ── 3) rand200 @600s w2 평가 ──
-say "▶ rand200 @600s w2 평가 (비증강)"
-GPUS=$(wait_gpus 13000)
-rm -rf "$RES"
-EXEC_ADAPTER=$FINM/adapter HF_HUB_OFFLINE=1 \
-  python3 scripts/run_all.py --alias rango-grpo --idx-file "$RAND" --timeout 600 --gpus "$GPUS" --workers 2 \
-  --out "$RES" --description "tst1000tr5091 SFT→GRPO rand200 @600s" >> "$LOG" 2>&1
-pkill -9 -f 'tactic_gen_server.py' 2>/dev/null
-say "  ★ rand200 full-200: $(sumline $RES)"
-# held-out 169 (train유출 31 제외) 재집계
-python3 -c "
-import json,os
-train=set(int(x) for x in open('data/compcert_${TAG}_train_idx.txt').read().split())
-d=json.load(open('$RES/summary.json'))
-res=d.get('results',[])
-held=[r for r in res if r['idx'] not in train]
-leak=[r for r in res if r['idx'] in train]
-hs=sum(1 for r in held if r.get('success'))
-ls=sum(1 for r in leak if r.get('success'))
-print(f'  ★ held-out-169: {hs}/{len(held)} ({100*hs/max(len(held),1):.1f}%) | 유출31: {ls}/{len(leak)}')
-print(f'  비교(rand200@600s): base rango 67/200 · bs2 SFT→GRPO 75/200')
-" | tee -a "$LOG"
-say "=== ${TAG}_AFTER_ROLLOUT_DONE ==="
+# ── 3) 모델A GRPO 완료 → GPU0 해제(모델B가 양쪽 GPU 사용). rand200 비교는 모델B 완료 후 일괄 ──
+rm -f /tmp/gpu0_foreign
+say "모델A GRPO 완료 → /tmp/gpu0_foreign 제거 = GPU0 해제. 이제 모델B가 양쪽 GPU 사용."
+say "  (rand200 비교는 모델B 51라운드 완료 후 chunk_grpo.sh가 모델A+모델B 일괄 실행)"
+say "=== ${TAG}_AFTER_ROLLOUT_DONE (모델A GRPO 완료, GPU0 해제) ==="
