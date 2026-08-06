@@ -285,7 +285,9 @@ def get_searcher_conf(model_alias: str) -> SearcherConf:
             #   PLANNER_FIRST_URL env 설정 시 opening 주입(grpo_rollout.rollout_attempt). out/retry는 env로.
             import os as _os
             return GRPORolloutSearchConf(
-                timeout=timeout, group_size=8, max_steps=20,
+                timeout=timeout,
+                group_size=int(_os.environ.get("GROUP_SIZE", "8")),   # ★ env override(기본 8). chunk=16.
+                max_steps=int(_os.environ.get("MAX_STEPS", "20")),    # ★ env override(기본 20). bc=40.
                 max_retries=int(_os.environ.get("ROLLOUT_RETRY", "1")),
                 out=_os.environ.get("ROLLOUT_OUT", "data/grpo_rollouts/planner_first.jsonl"),
             )

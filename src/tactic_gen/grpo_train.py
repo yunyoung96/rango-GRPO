@@ -366,6 +366,7 @@ def train(
     value_pretrain: int = 0,
     ddp_rank: int = 0,
     ddp_world: int = 1,
+    full_batch: bool = False,
 ):
     if dpo and micro_bsz % 2 != 0:
         micro_bsz += 1  # ★ DPO는 (chosen,rejected) 인접쌍 — 마이크로배치가 짝수여야 쌍이 안 갈림
@@ -422,6 +423,10 @@ def train(
         print(f"[grpo] anneal-to-s0: {len(groups)}그룹 near-goal→s0 정렬 "
               f"(remaining {min(bands)}~{'s0' if max(bands)>=10**9 else max(bands)})")
     for ep in range(epochs):
+        if full_batch:
+            # ★ full-batch: chunk 전체 loss 를 gradient 누적 → epoch당 opt.step() 1번(의사코드식).
+            #   single-round mini-batch(step마다 update)와 달리 chunk rollout당 1 update = 더 on-policy.
+            opt.zero_grad(); _n_accum = 0
         tot_loss = tot_kl = n = 0.0
         tot_margin = 0.0; n_pairs = 0  # ★ DPO margin 진단
         tot_clip = tot_maxr = 0.0  # ★ ratio clip 진단: clip 밖 토큰 비율 + max ρ
@@ -662,13 +667,23 @@ def train(
                         m_la_x += float(_x.sum()); m_la_y += float(_y.sum())
                         m_la_xy += float((_x*_y).sum()); m_la_xx += float((_x**2).sum())
                         m_la_yy += float((_y**2).sum()); m_la_n += _x.numel()
-                    opt.zero_grad()
-                    loss.backward()
-                    torch.nn.utils.clip_grad_norm_(
-                        [p for p in model.parameters() if p.requires_grad], 1.0
-                    )
-                    opt.step()
+                    if full_batch:
+                        loss.backward(); _n_accum += 1   # ★ gradient 누적(step 안 함, epoch 끝에 1번)
+                    else:
+                        opt.zero_grad()
+                        loss.backward()
+                        torch.nn.utils.clip_grad_norm_(
+                            [p for p in model.parameters() if p.requires_grad], 1.0
+                        )
+                        opt.step()
                     tot_loss += float(loss); tot_kl += float(kl); n += 1; gstep += 1
+        if full_batch and _n_accum > 0:
+            # ★ 누적된 gradient 를 평균(1/_n_accum) → clip → opt.step() 1번 = chunk 전체 1 update.
+            for _p in model.parameters():
+                if _p.grad is not None:
+                    _p.grad /= _n_accum
+            torch.nn.utils.clip_grad_norm_([p for p in model.parameters() if p.requires_grad], 1.0)
+            opt.step()
         print(f"[grpo] epoch {ep}: loss={tot_loss/max(n,1):.4f} kl={tot_kl/max(n,1):.4f} "
               f"steps={int(n)} clip_frac={tot_clip/max(n,1):.3f} max_ρ={tot_maxr:.2f}"
               + (f" dpo_margin={tot_margin/max(n_pairs,1):.3f}" if dpo else ""))
@@ -742,6 +757,9 @@ def main():
         help="KL 기준 정책(고정). 지정 시 ref_model을 이 어댑터(예 π₀)에서 로드 → EI 누적 drift 차단. "
              "미지정 시 init_adapter(직전 라운드) 동결 복사=기존 동작.")
     ap.add_argument("--micro_bsz", type=int, default=4)
+    ap.add_argument("--full_batch_update", action="store_true",
+                    help="chunk 전체 loss 를 gradient 누적 → epoch당 opt.step() 1번(의사코드식 full-batch). "
+                         "micro_bsz 는 forward 메모리 단위로만 쓰임. chunk GRPO 용(더 on-policy).")
     ap.add_argument("--collator_conf", default=None,
                     help="example_collator yaml(rango training_conf). example 기반 rollout 재현용.")
     ap.add_argument("--denom_const", type=float, default=None,
@@ -937,7 +955,8 @@ def main():
           shape_gold=args.shape_gold, shape_coef=args.shape_coef,
           dpo=args.dpo, dpo_beta=args.dpo_beta,
           value_pretrain=args.value_pretrain,
-          ddp_rank=_rank, ddp_world=_world)
+          ddp_rank=_rank, ddp_world=_world,
+          full_batch=args.full_batch_update)
     if _ddp:
         import torch.distributed as dist
         dist.barrier()          # rank0 저장 완료까지 대기

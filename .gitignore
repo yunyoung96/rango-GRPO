@@ -73,3 +73,6 @@ AU_CLEAVE_ALGORITHMS.md
 all_log/*_result.txt
 all_log/*.output
 *.output
+
+# 런타임 nohup 출력
+*.nohup
