@@ -262,8 +262,8 @@ def rollout_attempt(
                 "retry": attempt_i,                  # 0=첫 샘플, 1+=재샘플
                 "opener_step": (tactic in _oc),      # opener-every가 제안한 tactic(SFT서 제외)
                 **({"rango_topk": _rango_topk} if _rango_topk is not None else {}),  # RECORD_TOPK: rango 후보 랭킹
-                **({"coq_error": proof_manager.last_error()[:300]}                    # ★ MULTITURN 점검: coq-lsp 에러
-                   if os.environ.get("RECORD_ERROR", "0") == "1" and res.tactic_result == TacticResult.INVALID else {}),
+                **({"coq_error": proof_manager.last_error()[:600]}                    # ★ 왜 INVALID인지(coq-lsp 에러) 기본 저장 — hallucination(없는 참조) vs 타입불일치(틀린 인자) 분류용. 끄려면 RECORD_ERROR=0
+                   if os.environ.get("RECORD_ERROR", "1") == "1" and res.tactic_result == TacticResult.INVALID else {}),
             })
             # ★ MT_PROBE: 정리당 첫 (executor) INVALID에서 A0/A1 에러피드백 프로브 1회. 관찰만.
             if (os.environ.get("MT_PROBE", "0") == "1" and not _mt_done

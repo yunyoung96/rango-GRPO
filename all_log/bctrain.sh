@@ -6,7 +6,12 @@
 #   GPU 0,1 각 workers 10(20병렬), rollout timeout 120. 초대형 자동제외. 재개 가능(progress 파일).
 cd /app/coq-modeling || exit 1
 TAG=tst1000tr5091
-LOG=all_log/${TAG}_bc.log
+B=100; G=8; KL=0.015; CLIP=0.2; MAXEP=3; ROLLTO=180; WK=8    # ★ROLLTO 300→180(dead 꼬리컷). WK=8(GPU1 단독=8워커≈31코어, 코어<36 제약 준수. WK=10은 39코어라 초과였음). 속도이득=타임아웃컷.
+GPUS="1"    # ★사용자 지정: GPU1만 사용. 코어 36개 이상 금지.
+LR_HI=1e-3; LR_LO=1e-4      # ★ cosine decay: 1e-3 → 1e-4 (화끈 테스트. 이전 실험=3e-4→3e-5, probe 29→30 정체)
+# ★ hyperparameter별 저장: 실험태그(lr 포함)를 로그·모델·결과·롤아웃 경로에 다 붙여 서로 안 덮어씀
+EXP="lr${LR_HI}_kl${KL}_B${B}_G${G}"
+LOG=all_log/${TAG}_bc_${EXP}.log            # ★ 로그도 lr 포함(당시 lr이 이름에)
 say(){ echo "[$(TZ=Asia/Seoul date '+%m-%d %H:%M')] $*" | tee -a "$LOG"; }
 BASE=deepseek-ai/deepseek-coder-1.3b-instruct
 CONF=models/deepseek-bm25-proof-tfidf-proj-thm-prem-final/training_conf.yaml
@@ -14,11 +19,6 @@ SFTM=models/rango-${TAG}-sft/adapter          # π0 = init & KL 앵커
 TRAINPOOL=data/${TAG}_trainpool_idx.txt        # 4560
 VALID=data/${TAG}_valid500_idx.txt             # 500
 TEST=data/compcert_${TAG}_test_idx.txt          # 1000 (아래 B= 블록에서 재확인)
-B=100; G=8; KL=0.015; CLIP=0.2; MAXEP=3; ROLLTO=300; WK=12
-GPUS="1"    # 외부가 GPU0 점유 시 "1"로. gpu0_foreign 플래그로도 GRPO 회피
-LR_HI=3e-4; LR_LO=3e-5      # ★ cosine decay: 3e-4 → 3e-5 (현재 실험)
-# ★ hyperparameter별 저장: 실험태그를 모델·결과 경로에 붙여 서로 안 덮어씀
-EXP="lr${LR_HI}_kl${KL}_B${B}_G${G}"
 MROOT=models/rango-${TAG}-bc_${EXP}
 CUR=$MROOT/cur/adapter                          # 현재 정책(batch마다 덮어씀)
 NEW=$MROOT/new/adapter                          # 임시 저장
@@ -87,8 +87,8 @@ print(n)
     if [ "$GBID" -le "$DONE_GB" ]; then continue; fi   # 재개 skip
     bi=$(printf "%03d" $BI)
     CHUNK="$CKDIR/b_${bi}.txt"
-    ROLL="data/grpo_rollouts/${TAG}_bc_ep${EP}_b${bi}_roll.jsonl"
-    MIXED="data/grpo_rollouts/${TAG}_bc_ep${EP}_b${bi}_mixed.jsonl"
+    ROLL="data/grpo_rollouts/${TAG}_bc_${EXP}_ep${EP}_b${bi}_roll.jsonl"    # ★ 롤아웃도 lr 포함
+    MIXED="data/grpo_rollouts/${TAG}_bc_${EXP}_ep${EP}_b${bi}_mixed.jsonl"
     rm -f "$ROLL"
     # rollout (현재정책 PREV, G=16, gpu 0,1 w8)
     say "  ep$EP b$bi 롤아웃: $(wc -l < $CHUNK)×G$G @${ROLLTO}s (정책=$([ "$PREV" = "$SFTM" ] && echo SFT || echo cur))"

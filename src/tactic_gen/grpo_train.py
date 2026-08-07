@@ -442,8 +442,17 @@ def train(
         m_ent_sum = 0.0; m_ent_n = 0           # policy entropy
         m_len_sum = 0; m_len_n = 0             # 응답(tactic) 토큰 길이
         m_la_x = m_la_y = m_la_xy = m_la_xx = m_la_yy = 0.0; m_la_n = 0  # corr(len, adv)
+        # ── (선택) epoch마다 group 순서 셔플: SHUFFLE_GROUPS=1. seeded(전 rank 동일)라 DDP 샤딩 일관·재현가능.
+        #    상관배치(정리블록·고정순서) 완화용. 기본 off=기존 동작 그대로. ──
+        if os.environ.get("SHUFFLE_GROUPS", "0") == "1":
+            import random as _rnd
+            _order = list(range(len(groups)))
+            _rnd.Random(1234 + ep).shuffle(_order)
+            _groups_all = [groups[i] for i in _order]
+        else:
+            _groups_all = groups
         # ── DDP: 각 rank가 groups 를 겹치지 않게 샤딩(rank마다 groups[rank::world]). gradient 는 backward서 allreduce. ──
-        _groups_ep = groups[ddp_rank::ddp_world] if ddp_world > 1 else groups
+        _groups_ep = _groups_all[ddp_rank::ddp_world] if ddp_world > 1 else _groups_all
         _join = model.join() if (ddp_world > 1 and hasattr(model, "join")) else nullcontext()
         with _join:  # DDP: rank별 backward 횟수 불균형 → join 이 exhausted rank 를 shadow(데드락 방지)
             for group in _groups_ep:
