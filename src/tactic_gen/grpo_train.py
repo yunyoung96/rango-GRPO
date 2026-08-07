@@ -300,8 +300,24 @@ def flatten_group(group: dict, collate_fn=None, process: bool = False, luffy: bo
 
     phis: list[float] = []
     if process:
-        for a in attempts:
-            phis.extend(checker_process_rewards(a))
+        import os as _os
+        _mode = _os.environ.get("REWARD_MODE", "checker")   # checker | dense_valid | potential
+        if _mode == "dense_valid":
+            from tactic_gen.process_reward import dense_valid_process_rewards as _densef
+            _rv = float(_os.environ.get("DENSE_R_VALID", "0.1"))
+            _ri = -abs(float(_os.environ.get("DENSE_R_INVALID", "0.1")))
+            _rc = float(_os.environ.get("DENSE_R_COMPLETE", "1.0"))
+            _ao = _os.environ.get("DENSE_ARG_ONLY", "1") == "1"
+            for a in attempts:
+                phis.extend(_densef(a, _rv, _ri, _rc, _ao))
+        elif _mode == "potential":
+            from tactic_gen.process_reward import potential_shaping_rewards as _potf
+            _g = float(_os.environ.get("POTENTIAL_GAMMA", "1.0"))
+            for a in attempts:
+                phis.extend(_potf(a, _g))
+        else:                                               # checker (기존 기본)
+            for a in attempts:
+                phis.extend(checker_process_rewards(a))
         phis = normalize_process(phis)                    # 그룹 단위 표준화
 
     prompts, comps, advs_out, advs_proc, golds = [], [], [], [], []

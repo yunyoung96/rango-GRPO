@@ -10,6 +10,7 @@ tree(state-merge)나 여러 rollout이 state를 공유할 때 graded label이 �
 ★OCaml 무관.
 """
 from __future__ import annotations
+import re
 from collections import defaultdict
 
 
@@ -118,6 +119,117 @@ def checker_process_rewards(
             out.append(PHI_SUCCESS)
         else:
             out.append(PHI_SOUND_BUT_FAILED)
+    return out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Dense-VALID reward — "인자 생성 성공(=valid tactic)"을 직접 보상 (sparse 처방).
+#
+# 동기: 벽 = apply/rewrite 등에서 **타입 맞는 인자(lemma/term) 생성 실패**(INVALID).
+#   sparse(Qed=1)는 "이 tactic이 valid한지"에 신호가 0 → 인자 생성을 학습할 gradient가 없다.
+#   → 인자-필요 tactic이 **VALID면 +보상(타입 맞는 인자 생성 성공), INVALID면 −보상.**
+#   자동화/구조 tactic(auto/intros/simpl…)은 중립(0) — 항상-valid를 남발해 farming 하는 것 방지.
+#
+# potential 관점: 순수 raw 보너스라 Ng1999 potential-shaping(최적정책 불변)과 다르다.
+#   → 완화책: (a) ARG tactic만(auto-spam 차단), (b) COMPLETE=+1로 종결이 지배, (c) 그룹 정규화.
+#   엄밀 potential 변형(Φ=닫힌 goal 수 차분)은 DESIGN.md 참조.
+
+# 인자(lemma/term/식)를 생성해야 하는 tactic — "인자 생성 성공/실패"에 dense 신호.
+ARG_HEADS = {
+    "apply", "eapply", "rewrite", "erewrite", "destruct", "induction", "exists",
+    "specialize", "replace", "assert", "elim", "case", "inversion", "injection",
+    "generalize", "pose", "set", "remember", "change", "unfold", "fold",
+}
+
+
+def _tactic_head(tac: str) -> str:
+    t = re.sub(r"^[\-\+\*\d\.\)\s]+", "", (tac or "").strip())
+    m = re.match(r"([A-Za-z_]+)", t)
+    return m.group(1) if m else ""
+
+
+def dense_valid_process_rewards(
+    attempt: dict,
+    r_valid: float = 0.1,
+    r_invalid: float = -0.1,
+    r_complete: float = 1.0,
+    arg_only: bool = True,
+) -> list[float]:
+    """인자-필요 tactic의 '유효 인자 생성'을 dense 보상. checker_process_rewards 대체용.
+
+        COMPLETE(any tactic)      → r_complete   (+1.0, 증명 종결이 지배)
+        ARG tactic + VALID        → r_valid      (+, 타입 맞는 인자 생성 성공)
+        ARG tactic + INVALID      → r_invalid    (−, 틀린 인자)
+        비-ARG(auto/intros/simpl…) → 0            (gaming 방지 — 항상-valid 남발 무보상)
+
+    arg_only=False 면 모든 tactic에 valid/invalid 신호(비추천 — auto-spam 위험).
+    ※ 재샘플(max_retries>0)이면 성공 시도 안 INVALID 도 그대로 r_invalid(에러 강화 방지).
+    """
+    steps = attempt.get("steps", [])
+    if not steps:
+        return []
+    out: list[float] = []
+    for st in steps:
+        res = st.get("result")
+        if res == "COMPLETE":
+            out.append(r_complete)
+            continue
+        is_arg = (not arg_only) or (_tactic_head(st.get("tactic", "")) in ARG_HEADS)
+        if not is_arg:
+            out.append(0.0)
+        elif res == "INVALID":
+            out.append(r_invalid)
+        elif res == "VALID":
+            out.append(r_valid)
+        else:
+            out.append(0.0)
+    return out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 진짜 potential-based shaping (Ng, Harada, Russell 1999) — Φ는 **state s**에 정의.
+#   F(s→s') = γ·Φ(s') − Φ(s).   telescoping → 최적정책 불변(invariance).
+#   Φ(s) = −(goal 복잡도).  goal이 작아질수록(닫힐수록) Φ↑ → 진전에 +.
+#   COMPLETE: Φ(terminal)=0(최대). INVALID: s'=s → F≈0(γ=1, state 안 바뀜).
+#   ★ dense_valid 와의 차이: 이건 **state 진전**을 보상(불변), 'valid 인자 생성'을 직접 보상하진 않음.
+#     validity 는 (s,a) 전이 속성이라 Φ(s) 로 표현 불가 → dense_valid 는 raw 보너스일 수밖에 없음.
+
+
+def _goal_complexity(state_key: str | None) -> float:
+    """Φ 재료: goal 복잡도. 여러 goal 을 세되(개수), 폴백은 길이. 작을수록 done 에 가까움."""
+    if not state_key:
+        return 0.0
+    # coq-lsp goals 문자열: 각 goal 앞의 '⊢' 또는 목표줄 개수로 goal 수 근사. 없으면 길이/500.
+    n_goals = state_key.count("⊢")
+    if n_goals >= 1:
+        return float(n_goals) + len(state_key) / 5000.0   # 주 신호=goal 수, 미세=크기
+    return len(state_key) / 500.0                          # ⊢ 없으면 크기 프록시
+
+
+def potential_shaping_rewards(attempt: dict, gamma: float = 1.0) -> list[float]:
+    """진짜 PBRS: F_t = γ·Φ(s_{t+1}) − Φ(s_t), Φ(s) = −goal_complexity(s).
+    checker_process_rewards/dense_valid 대체용. 최적정책 불변(Ng1999)."""
+    steps = attempt.get("steps", [])
+    if not steps:
+        return []
+
+    def phi(sk):
+        return -_goal_complexity(sk)
+
+    out: list[float] = []
+    n = len(steps)
+    for i, st in enumerate(steps):
+        s = st.get("state_key")
+        res = st.get("result")
+        if res == "COMPLETE":
+            phi_next = 0.0                                  # 종결 = 최대 potential(0)
+        elif res == "INVALID":
+            phi_next = phi(s)                               # state 안 바뀜 → F≈0
+        elif i + 1 < n:
+            phi_next = phi(steps[i + 1].get("state_key"))   # 다음 state
+        else:
+            phi_next = phi(s)                               # 마지막 valid·미완
+        out.append(gamma * phi_next - phi(s))
     return out
 
 
