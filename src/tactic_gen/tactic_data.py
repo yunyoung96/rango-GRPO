@@ -405,15 +405,6 @@ class BasicCollator:
             target = "".join(example.next_steps)
         else:
             target = example.next_steps[0]
-        # ★ CITE_TARGET=1: 타깃 앞에 '[USES] <쓴 정의>' 를 붙인다.
-        #   ablation 결론(clean vs wrong 차이 ±0, p=1.000)이 "모델이 섹션을 안 읽는다"였다.
-        #   원인은 loss 가 tactic 토큰에서만 계산되고 대부분의 tactic 은 섹션 없이도 예측되기 때문.
-        #   인용을 타깃에 넣으면 **섹션을 읽지 않으면 loss 가 오르므로** gradient 압력이 생긴다.
-        if os.environ.get("CITE_TARGET", "0") == "1":
-            from tactic_gen.cite_target import make_cite
-            cite = make_cite(target, getattr(example, "proof_state", "") or "",
-                             dict(_LAST_INJECTED))
-            target = cite + "\n" + target
         out_str, _ = allocate_tokens(
             tokenizer, target, self.out_tokens, truncate_front=False
         )
@@ -656,11 +647,21 @@ class ProofPremiseCollator:
         return combined_str
 
     def collate(self, tokenizer: PreTrainedTokenizer, example: LmExample) -> str:
-        input_str = self.collate_input(tokenizer, example)
+        input_str = self.collate_input(tokenizer, example)   # ← _LAST_INJECTED 가 여기서 채워진다
         if self.whole_proof:
             target = "".join(example.next_steps)
         else:
             target = example.next_steps[0]
+        # ★ CITE_TARGET=1: 타깃 앞에 '[USES] <쓴 정의>' 인용을 붙인다.
+        #   ablation 결론(clean vs wrong 차이 ±0, McNemar p=1.000)이 "모델이 섹션을 안 읽는다"였다.
+        #   원인은 loss 가 tactic 토큰에서만 계산되는데 gold 가 destruct/induction 인 비율이 10.5%뿐이라
+        #   나머지 89.5% 는 섹션 없이 예측되기 때문 → **무시하는 것이 최적해**.
+        #   인용을 타깃에 넣으면 섹션을 읽지 않을 때 loss 가 오르므로 gradient 압력이 생긴다.
+        if os.environ.get("CITE_TARGET", "0") == "1":
+            from tactic_gen.cite_target import make_cite
+            cite = make_cite(target, getattr(example, "proof_state", "") or "",
+                             dict(_LAST_INJECTED))
+            target = cite + "\n" + target
         out_str, _ = allocate_tokens(
             tokenizer, target, self.out_tokens, truncate_front=False
         )
