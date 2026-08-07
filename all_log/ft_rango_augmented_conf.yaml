@@ -1,0 +1,90 @@
+# rango 1.3B fine-tuning **완전 재학습** — 새 augment 세팅(재랭킹 랭커 + [TYPES] 프롬프트) 적용판.
+#   원본 rango 레시피(arXiv:2412.14063 / models/deepseek-bm25-proof-tfidf-proj-thm-prem-final/training_conf.yaml):
+#     LoRA r=64 α=16, LR 1e-3, max_steps 60000, eff_batch 32, hard_seq_len 4096, proof-premise collator.
+#   여기서 바뀌는 것은 **프롬프트 구성뿐**: 학습 시 env RERANK_PREMISES=1 INJECT_TYPES=1
+#     → ProofPremiseCollator 가 (a) premise 를 타입지향 블렌드로 재랭킹 (b) [TYPES] 섹션을 독립예산으로 주입.
+#   ※ 이 collator 는 학습·추론이 같은 코드 → 평가 때도 같은 env 를 켜야 한다(REVIEW R1).
+model_name: "deepseek-ai/deepseek-coder-1.3b-instruct"
+output_dir: "models/rango-1.3b-augmented-ft"
+
+# ── 데이터 ──
+#   (A) on-the-fly 검색 모드(raw 코퍼스만 있으면 됨) = 아래 tactic_data. 7B FULL 학습과 같은 방식.
+#   (B) 전처리 DB 모드로 쓰려면 tactic_data 를 지우고 아래 2줄을 켠다(더 빠름):
+# data_path: "data/bm25-proof-tfidf-proj-thm-prem-final-clean"     # train.db / val.db (ExampleDB)
+# example_collator: {alias: proof-premise, state_tokens: 1024, script_tokens: 512, proof_tokens: 1024, premise_tokens: 512, out_tokens: 128}
+tactic_data:
+  data_loc: /tmp/coq-dataset
+  sentence_db_loc: /tmp/coq-dataset/sentences.db
+  shuffled_index_loc: data/ft6.7b-shuffled-index.json   # 예제 순서=모델무관, 재사용
+  model_name: "deepseek-ai/deepseek-coder-1.3b-instruct"
+  cache_loc: /tmp/ft-rango-aug-cache
+  hard_seq_len: 4096
+  formatter_conf:
+    alias: general
+    num_proofs: 20
+    num_premises: 50
+    n_step_conf:
+      alias: one
+    proof_ret:
+      alias: sparse
+      kind: bm25
+      max_examples: 20
+      data_loc: /tmp/coq-dataset
+      sentence_db_loc: /tmp/coq-dataset/sentences.db
+    premise:
+      alias: sparse
+      kind: tfidf
+      context_format_alias: basic
+      premise_format_alias: basic
+      sentence_db_loc: /tmp/coq-dataset/sentences.db
+      premise_filter:
+        known_filter: proj-thm
+  collator_conf:
+    alias: proof-premise
+    state_tokens: 1024
+    script_tokens: 512
+    proof_tokens: 1024
+    premise_tokens: 512
+    out_tokens: 128
+
+# ── ★ 추론(평가) 서버용 최상위 키 ──
+#   model_deployment/model_wrapper.py:from_checkpoint 는 <checkpoint>/../training_conf.yaml 의
+#   **최상위** hard_seq_len / example_collator 를 읽는다(copy_configs 가 이 파일을 output_dir 에 복사).
+#   tactic_data 안의 값과 동일하게 맞춰둔다 — 없으면 학습은 되는데 rand200 평가에서 KeyError 로 죽는다.
+#   (학습 경로는 data_path 키가 없으면 tactic_data 를 쓰므로 아래 두 키는 학습에 영향 없음.)
+hard_seq_len: 4096
+example_collator:
+  alias: proof-premise
+  state_tokens: 1024
+  script_tokens: 512
+  proof_tokens: 1024
+  premise_tokens: 512
+  out_tokens: 128
+
+# ── 학습 하이퍼파라미터 (rango parity) ──
+load_in_4bit: false                    # 96GB GPU: bf16 풀 베이스(4bit dequant 오버헤드 제거). LoRA 는 동일.
+bf16: true
+per_device_train_batch_size: 4
+gradient_accumulation_steps: 4         # eff_batch = 4 × 4 × 2GPU = 32 (rango 동일)
+learning_rate: 1.0e-3                  # rango 1.3B 원본 값
+num_train_epochs: 1
+max_steps: 60000                       # rango parity
+peft_lora_r: 64
+peft_lora_alpha: 16
+
+# ── 중단복구 정책: 1000 step 마다 저장, 5000 배수만 영구 보존 ──
+save_steps: 1000
+keep_every: 5000                       # CheckpointRotationCallback: 5000 배수 도달 시 그 이전 비-배수 삭제
+save_total_limit: null                 # ★ 반드시 null — Trainer 의 limit 은 오래된 것부터 지워 마일스톤을 날림
+load_best_model_at_end: false          # eval_loss 기반 best 로딩 끔(회전 정책과 충돌 + eval NaN 사례)
+eval_steps: 5000
+eval_accumulation_steps: 1
+per_device_eval_batch_size: 1
+num_eval_examples: 100
+
+# ── 처리량(병목 방지) ──
+logging_steps: 20
+gradient_checkpointing: false          # 1.3B/96GB 는 불필요 — 끄는 편이 빠름
+dataloader_num_workers: 12             # ×2 DDP = 24 (32코어). 프롬프트 렌더+검색이 GPU 를 굶기지 않게
+dataloader_persistent_workers: true
+dataloader_prefetch_factor: 4

@@ -99,6 +99,44 @@ def sequence_token_logprobs(
     return torch.cat([pad, tok_logp], dim=1)             # (B,T): 위치 t=token_t logp
 
 
+_RENDER: dict = {}
+
+
+def _render_one(ex_json):
+    return _RENDER["fn"](ex_json)
+
+
+def prerender_prompts(groups: list[dict], collate_fn, workers: int, sft: bool = False) -> int:
+    """step 의 example → prompt 문자열을 **학습 전에 병렬 렌더**해 st['prompt'] 에 채운다.
+
+    _flatten_prompt 이 'prompt' 를 우선 사용하므로 (a) GPU 루프에서 CPU 렌더링이 사라지고
+    (b) epoch 마다 같은 프롬프트를 다시 렌더하지 않는다. 문자열은 순차 렌더와 동일
+    (RERANK_PREMISES/INJECT_TYPES 는 fork 로 자식에 상속 → 규칙 동일) → 학습 결과 불변."""
+    targets = []
+    for g in groups:
+        for a in g["attempts"]:
+            if sft and float(a.get("reward", 0)) < 1.0:
+                continue                       # SFT 는 성공궤적만 학습 → 나머지 렌더 낭비
+            for st in a.get("steps", []):
+                if "prompt" not in st and st.get("example") is not None and not st.get("planner_opening"):
+                    targets.append(st)
+    if not targets:
+        return 0
+    import multiprocessing as mp
+    import time
+    t0 = time.time()
+    _RENDER["fn"] = collate_fn
+    if workers <= 1:
+        outs = [collate_fn(st["example"]) for st in targets]
+    else:
+        with mp.get_context("fork").Pool(workers) as pool:   # 자식은 CPU(토크나이저)만 사용
+            outs = pool.map(_render_one, [st["example"] for st in targets], chunksize=8)
+    for st, s in zip(targets, outs):
+        st["prompt"] = s
+    print(f"[grpo] 프롬프트 사전렌더 {len(targets)}개 (workers={workers}, {time.time()-t0:.1f}s)")
+    return len(targets)
+
+
 def load_groups(path: Path) -> list[dict]:
     """rollout jsonl: 각 줄 = {theorem, attempts:[{steps:[{prompt,tactic}], reward}]}."""
     groups = []
@@ -362,6 +400,13 @@ def train(
     dpo: bool = False,
     dpo_beta: float = 0.1,
     value_pretrain: int = 0,
+    save_every: int = 0,
+    ckpt_dir: Optional[Path] = None,
+    keep_every: int = 5000,
+    log_every: int = 50,
+    loss_log: Optional[Path] = None,
+    resume_state: Optional[dict] = None,
+    opt_state: Optional[dict] = None,
 ):
     if dpo and micro_bsz % 2 != 0:
         micro_bsz += 1  # ★ DPO는 (chosen,rejected) 인접쌍 — 마이크로배치가 짝수여야 쌍이 안 갈림
@@ -370,6 +415,59 @@ def train(
     if ppo and value_head is not None:
         _opt_params = _opt_params + list(value_head.parameters())  # critic 도 함께 업데이트
     opt = torch.optim.AdamW(_opt_params, lr=lr)
+    if opt_state is not None:                       # ★ resume: optimizer(Adam moment) 복원
+        try:
+            opt.load_state_dict(opt_state)
+            print("[ckpt] optimizer state 복원")
+        except (ValueError, KeyError) as e:
+            print(f"[ckpt] optimizer state 복원 실패({e}) — 새 optimizer 로 계속")
+
+    # ── ★ 중간 체크포인트(save_every step) + 마일스톤 보존 정리 ──
+    #   GPU 가 끊겨도 최대 save_every step 만 잃는다. keep_every(기본 5000) 배수는 영구 보존,
+    #   그 사이 중간본은 다음 마일스톤 도달 시 삭제(디스크 관리). ckpt_rotate 를 학습 안에서 수행.
+    import shutil as _shutil
+
+    def _prune_ckpts(cur: int):
+        if ckpt_dir is None or keep_every <= 0 or cur % keep_every:
+            return
+        gone = []
+        for d in sorted(ckpt_dir.glob("step-*")):
+            try:
+                s = int(d.name.split("-")[1])
+            except (IndexError, ValueError):
+                continue
+            if s < cur and s % keep_every:          # 마일스톤(5000배수) 아닌 중간본만 삭제
+                _shutil.rmtree(d, ignore_errors=True)
+                gone.append(s)
+        if gone:
+            print(f"[ckpt] 마일스톤 {cur} 도달 → 중간 체크포인트 삭제: {gone}")
+
+    def _save_ckpt(cur: int, ep_i: int, gi: int, tag: str = ""):
+        if ckpt_dir is None:
+            return
+        d = ckpt_dir / f"step-{cur}"
+        d.mkdir(parents=True, exist_ok=True)
+        model.save_pretrained(str(d))
+        torch.save(opt.state_dict(), d / "optimizer.pt")
+        (d / "trainer_state.json").write_text(json.dumps(
+            {"step": cur, "epoch": ep_i, "group_idx": gi, "epochs": epochs}), encoding="utf-8")
+        (ckpt_dir / "latest.json").write_text(json.dumps(
+            {"step": cur, "epoch": ep_i, "group_idx": gi, "path": str(d)}), encoding="utf-8")
+        print(f"[ckpt] step {cur} 저장 → {d}{tag}", flush=True)
+        _prune_ckpts(cur)
+
+    # resume: 저장 시점(epoch, group_idx) 까지 건너뛴다(그룹 순서 결정적).
+    _rs_ep = int(resume_state.get("epoch", 0)) if resume_state else 0
+    _rs_gi = int(resume_state.get("group_idx", -1)) if resume_state else -1
+    _rs_step = int(resume_state.get("step", 0)) if resume_state else 0
+    if resume_state:
+        print(f"[ckpt] resume: step {_rs_step} (epoch {_rs_ep}, group_idx {_rs_gi} 이후부터)")
+    _loss_fp = None
+    if loss_log is not None:
+        loss_log.parent.mkdir(parents=True, exist_ok=True)
+        _loss_fp = open(loss_log, "a", encoding="utf-8")
+    _win: list[float] = []          # 최근 log_every step loss(추세 확인용)
+    _pending_save = False           # save_every 도달 표식(저장은 그룹 경계에서)
     # ── ★ VAPO value-pretraining: 정책 업데이트 전에 critic(value head)만 먼저 fit ──
     #   single-round PPO 는 V 가 랜덤에서 출발해 안 여무는 문제(→ easy-완화 효과 약함).
     #   VAPO(2504.05118) 의 핵심 = value-pretraining. 정책 freeze, MSE(V,return)만 warmup.
@@ -401,7 +499,7 @@ def train(
             print(f"[grpo] value-pretrain epoch {vp}: value_loss={vl_sum/max(vn,1):.4f}")
     n_dead_revived = 0
     n_gold_rows = 0
-    gstep = 0  # DAPG 감쇠용 전역 step 카운터 (λ₁^gstep)
+    gstep = _rs_step  # DAPG 감쇠용 전역 step 카운터 (λ₁^gstep) / resume 시 이어서 셈
     # ★ (1) anneal-to-s0 (R³/Florensa): 학습 순서를 near-goal(작은 remaining) → s0(전체) 로.
     #   시작상태 분포를 점진적으로 s0 까지 넓혀 커버 → endgame 스킬을 s0 전이로 잇는다.
     #   start 라벨에서 remaining 파싱: "curr_r3"/"adapt_r3"→3, "s0"→∞(맨 뒤). 정적 revcurr 의 개선.
@@ -418,6 +516,9 @@ def train(
         print(f"[grpo] anneal-to-s0: {len(groups)}그룹 near-goal→s0 정렬 "
               f"(remaining {min(bands)}~{'s0' if max(bands)>=10**9 else max(bands)})")
     for ep in range(epochs):
+        if ep < _rs_ep:                     # ★ resume: 이미 끝난 epoch 건너뜀
+            print(f"[ckpt] epoch {ep} 는 체크포인트 이전 — 건너뜀")
+            continue
         tot_loss = tot_kl = n = 0.0
         tot_margin = 0.0; n_pairs = 0  # ★ DPO margin 진단
         tot_clip = tot_maxr = 0.0  # ★ ratio clip 진단: clip 밖 토큰 비율 + max ρ
@@ -433,7 +534,9 @@ def train(
         m_ent_sum = 0.0; m_ent_n = 0           # policy entropy
         m_len_sum = 0; m_len_n = 0             # 응답(tactic) 토큰 길이
         m_la_x = m_la_y = m_la_xy = m_la_xx = m_la_yy = 0.0; m_la_n = 0  # corr(len, adv)
-        for group in groups:
+        for _gi, group in enumerate(groups):
+            if ep == _rs_ep and _gi <= _rs_gi:   # ★ resume: 저장 시점 그룹까지 건너뜀
+                continue
             # ── 진단: 그룹 단위 통계(학습 스킵 여부와 무관하게 관측) ──
             _onp = [a for a in group["attempts"] if a.get("steps") and not a.get("off_policy")]
             if _onp:
@@ -661,6 +764,24 @@ def train(
                 )
                 opt.step()
                 tot_loss += float(loss); tot_kl += float(kl); n += 1; gstep += 1
+                # ── ★ step 단위 loss 로깅(추세 확인) + 중간 체크포인트 ──
+                _win.append(float(loss))
+                if log_every > 0 and gstep % log_every == 0:
+                    _w = sum(_win) / max(len(_win), 1)
+                    print(f"[step] gstep={gstep} ep={ep} loss(win{len(_win)})={_w:.4f} "
+                          f"loss(ep평균)={tot_loss/max(n,1):.4f} kl={tot_kl/max(n,1):.4f}", flush=True)
+                    if _loss_fp is not None:
+                        _loss_fp.write(json.dumps({"step": gstep, "epoch": ep,
+                                                   "loss_win": round(_w, 5),
+                                                   "loss_ep": round(tot_loss/max(n, 1), 5),
+                                                   "kl": round(tot_kl/max(n, 1), 5)}) + "\n")
+                        _loss_fp.flush()
+                    _win = []
+                if save_every > 0 and gstep % save_every == 0:
+                    _pending_save = True     # ★ 실제 저장은 그룹 끝에서(=resume 이 그룹경계로 정확)
+            if _pending_save:
+                _save_ckpt(gstep, ep, _gi)
+                _pending_save = False
         print(f"[grpo] epoch {ep}: loss={tot_loss/max(n,1):.4f} kl={tot_kl/max(n,1):.4f} "
               f"steps={int(n)} clip_frac={tot_clip/max(n,1):.3f} max_ρ={tot_maxr:.2f}"
               + (f" dpo_margin={tot_margin/max(n_pairs,1):.3f}" if dpo else ""))
@@ -715,6 +836,11 @@ def train(
         save_dir.mkdir(parents=True, exist_ok=True)
         model.save_pretrained(str(save_dir))
         print(f"[grpo] adapter 저장 → {save_dir}")
+    if ckpt_dir is not None:                      # 마지막 step 체크포인트(+resume 표식 갱신)
+        _save_ckpt(gstep, epochs - 1, len(groups) - 1, tag="  (final)")
+        (ckpt_dir / "DONE").write_text(json.dumps({"step": gstep, "epochs": epochs}), encoding="utf-8")
+    if _loss_fp is not None:
+        _loss_fp.close()
 
 
 def main():
@@ -795,7 +921,44 @@ def main():
                          "gold 주입 rollout(luffy.jsonl) 사용.")
     ap.add_argument("--dapg_l0", type=float, default=0.1, help="DAPG demo 초기 가중 λ₀.")
     ap.add_argument("--dapg_l1", type=float, default=0.999, help="DAPG 감쇠율 λ₁ (step 당). 0.999≈완만.")
+    # ── 중단복구(GPU 끊김 대비) / 진행 관측 / CPU 병목 제거 ──
+    ap.add_argument("--save_every", type=int, default=0,
+                    help="N step 마다 중간 체크포인트 저장(0=끔). 끊겨도 최대 N step 손실.")
+    ap.add_argument("--ckpt_dir", default=None,
+                    help="중간 체크포인트 디렉토리(기본 <save_dir>/checkpoints). step-N/ 마다 adapter+optimizer.")
+    ap.add_argument("--keep_every", type=int, default=5000,
+                    help="마일스톤 간격. 이 배수 step 도달 시 그 이전의 비-배수 중간본 삭제(영구보존=배수).")
+    ap.add_argument("--log_every", type=int, default=50, help="N step 마다 loss 출력(추세 확인).")
+    ap.add_argument("--loss_log", default=None, help="step 별 loss jsonl 경로(기본 <ckpt_dir>/loss.jsonl).")
+    ap.add_argument("--resume", action="store_true",
+                    help="ckpt_dir/latest.json 에서 이어서 학습(adapter+optimizer+step 위치 복원).")
+    ap.add_argument("--render_workers", type=int, default=0,
+                    help="프롬프트(collate_input)를 학습 전에 N개 프로세스로 미리 렌더(0=끔). "
+                         "GPU 루프에서 CPU 렌더링을 제거 + epoch 마다 재렌더 안 함.")
     args = ap.parse_args()
+
+    # ── 중간 체크포인트 위치 결정 + resume(끊긴 학습 이어가기) ──
+    ckpt_dir = None
+    if args.ckpt_dir:
+        ckpt_dir = Path(args.ckpt_dir)
+    elif args.save_every > 0:
+        ckpt_dir = Path(args.save_dir) / "checkpoints"
+    resume_state = opt_state = None
+    if args.resume:
+        latest = ckpt_dir / "latest.json" if ckpt_dir is not None else None
+        if latest is not None and latest.exists():
+            st = json.loads(latest.read_text())
+            p = Path(st["path"])
+            if (p / "adapter_model.safetensors").exists():
+                args.init_adapter = str(p)          # ★ 정책을 체크포인트에서 시작
+                resume_state = st
+                if (p / "optimizer.pt").exists():
+                    opt_state = torch.load(p / "optimizer.pt", map_location="cpu", weights_only=False)
+                print(f"[ckpt] resume: {p} (step {st['step']}, epoch {st['epoch']})")
+            else:
+                print(f"[ckpt] resume 대상 손상({p}) — 처음부터 학습")
+        else:
+            print("[ckpt] resume 요청됐지만 latest.json 없음 — 처음부터 학습")
 
     # example 기반 rollout이면 서버와 동일한 collate_input 재현 함수 구성.
     collate_fn = None
@@ -860,6 +1023,8 @@ def main():
 
     groups = load_groups(Path(args.rollouts))
     print(f"[grpo] 그룹 {len(groups)}개 로드")
+    if args.render_workers > 0 and collate_fn is not None:
+        prerender_prompts(groups, collate_fn, args.render_workers, sft=args.sft)
     if args.process:
         n_res = sum(
             1 for g in groups for a in g["attempts"] for s in a["steps"] if "result" in s
@@ -905,7 +1070,12 @@ def main():
           awac=args.awac, awac_lam=args.awac_lam,
           shape_gold=args.shape_gold, shape_coef=args.shape_coef,
           dpo=args.dpo, dpo_beta=args.dpo_beta,
-          value_pretrain=args.value_pretrain)
+          value_pretrain=args.value_pretrain,
+          save_every=args.save_every, ckpt_dir=ckpt_dir, keep_every=args.keep_every,
+          log_every=args.log_every,
+          loss_log=(Path(args.loss_log) if args.loss_log
+                    else (ckpt_dir / "loss.jsonl" if ckpt_dir is not None else None)),
+          resume_state=resume_state, opt_state=opt_state)
 
 
 if __name__ == "__main__":

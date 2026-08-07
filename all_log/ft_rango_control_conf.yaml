@@ -1,0 +1,70 @@
+# 통제군: rango-augmented 와 **완전히 같은 파이프라인·같은 데이터·같은 초기값**, 증강만 끔.
+#   목적: loss 격차(+0.21)가 (a)증강 때문인지 (b)on-the-fly 검색 파이프라인 때문인지 분리.
+#   실행 시 env: RERANK_PREMISES=0 INJECT_TYPES=0 INJECT_DEFS=0 (증강 3종 모두 끔)
+#   비교 대상: 우리 증강 학습의 첫 2000 step 평균 0.8628 / 원본 rango 같은 구간 0.7986
+model_name: deepseek-ai/deepseek-coder-1.3b-instruct
+output_dir: models/rango-1.3b-control-ft
+tactic_data:
+  data_loc: /tmp/coq-dataset
+  sentence_db_loc: /tmp/coq-dataset/sentences.db
+  shuffled_index_loc: data/ft6.7b-shuffled-index.json
+  model_name: deepseek-ai/deepseek-coder-1.3b-instruct
+  cache_loc: /tmp/ft-rango-aug-cache
+  hard_seq_len: 4096
+  formatter_conf:
+    alias: general
+    num_proofs: 20
+    num_premises: 50
+    n_step_conf:
+      alias: one
+    proof_ret:
+      alias: sparse
+      kind: bm25
+      max_examples: 20
+      data_loc: /tmp/coq-dataset
+      sentence_db_loc: /tmp/coq-dataset/sentences.db
+    premise:
+      alias: sparse
+      kind: tfidf
+      context_format_alias: basic
+      premise_format_alias: basic
+      sentence_db_loc: /tmp/coq-dataset/sentences.db
+      premise_filter:
+        known_filter: proj-thm
+  collator_conf:
+    alias: proof-premise
+    state_tokens: 1024
+    script_tokens: 512
+    proof_tokens: 1024
+    premise_tokens: 512
+    out_tokens: 128
+hard_seq_len: 4096
+example_collator:
+  alias: proof-premise
+  state_tokens: 1024
+  script_tokens: 512
+  proof_tokens: 1024
+  premise_tokens: 512
+  out_tokens: 128
+load_in_4bit: false
+bf16: true
+per_device_train_batch_size: 4
+gradient_accumulation_steps: 4
+learning_rate: 0.001
+num_train_epochs: 1
+max_steps: 2000
+peft_lora_r: 64
+peft_lora_alpha: 16
+save_steps: 2000
+keep_every: 0
+save_total_limit: null
+load_best_model_at_end: false
+eval_steps: 2000
+eval_accumulation_steps: 1
+per_device_eval_batch_size: 1
+num_eval_examples: 100
+logging_steps: 20
+gradient_checkpointing: false
+dataloader_num_workers: 12
+dataloader_persistent_workers: true
+dataloader_prefetch_factor: 4

@@ -1,0 +1,70 @@
+# rango-augmented **v2** — [TYPES]=정의문+생성자 시그니처+재귀 / [DEFINITIONS]=우리 시드+재귀,
+#   두 섹션을 프롬프트 **맨 뒤**(응답템플릿 직전)에 붙이고 남은 자리에 맞춰 **섹션만** 잘라낸다.
+#   env: AUGMENT_V2=1 RERANK_PREMISES=1 INJECT_TYPES=1 INJECT_DEFS=1 (학습·추론 동일 필수)
+#   ★ v1 과 같게 유지: 코퍼스·셔플순서·LoRA·LR·max_steps 60000·유효배치 32(4x4x2GPU). 다른 건 프롬프트뿐.
+model_name: deepseek-ai/deepseek-coder-1.3b-instruct
+output_dir: models/rango-1.3b-augmented-v2-ft
+tactic_data:
+  data_loc: /tmp/coq-dataset
+  sentence_db_loc: /tmp/coq-dataset/sentences.db
+  shuffled_index_loc: data/ft6.7b-shuffled-index.json
+  model_name: deepseek-ai/deepseek-coder-1.3b-instruct
+  cache_loc: /tmp/ft-rango-aug-cache
+  hard_seq_len: 4096
+  formatter_conf:
+    alias: general
+    num_proofs: 20
+    num_premises: 50
+    n_step_conf:
+      alias: one
+    proof_ret:
+      alias: sparse
+      kind: bm25
+      max_examples: 20
+      data_loc: /tmp/coq-dataset
+      sentence_db_loc: /tmp/coq-dataset/sentences.db
+    premise:
+      alias: sparse
+      kind: tfidf
+      context_format_alias: basic
+      premise_format_alias: basic
+      sentence_db_loc: /tmp/coq-dataset/sentences.db
+      premise_filter:
+        known_filter: proj-thm
+  collator_conf:
+    alias: proof-premise
+    state_tokens: 1024
+    script_tokens: 512
+    proof_tokens: 1024
+    premise_tokens: 512
+    out_tokens: 128
+hard_seq_len: 4096
+example_collator:
+  alias: proof-premise
+  state_tokens: 1024
+  script_tokens: 512
+  proof_tokens: 1024
+  premise_tokens: 512
+  out_tokens: 128
+load_in_4bit: false
+bf16: true
+per_device_train_batch_size: 4
+gradient_accumulation_steps: 4
+learning_rate: 0.001
+num_train_epochs: 1
+max_steps: 60000
+peft_lora_r: 64
+peft_lora_alpha: 16
+save_steps: 1000
+keep_every: 5000
+save_total_limit: null
+load_best_model_at_end: false
+eval_steps: 5000
+eval_accumulation_steps: 1
+per_device_eval_batch_size: 1
+num_eval_examples: 100
+logging_steps: 20
+gradient_checkpointing: false
+dataloader_num_workers: 12
+dataloader_persistent_workers: true
+dataloader_prefetch_factor: 4

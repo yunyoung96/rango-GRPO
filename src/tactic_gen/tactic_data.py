@@ -15,6 +15,8 @@ from torch.utils.data import Dataset
 
 from transformers import AutoTokenizer, PreTrainedTokenizer, BatchEncoding
 from tactic_gen.data_collator_compat import DataCollatorForCompletionOnlyLM
+from tactic_gen.augment import (selective_types, definitions, project_of,
+                                types_v2, definitions_v2)   # rango-augmented: [TYPES]/[DEFINITIONS] canonical 규칙(train/infer 공유)
 import jsonlines
 from data_management.dataset_file import DatasetFile
 from data_management.sentence_db import SentenceDB
@@ -99,6 +101,171 @@ def rerank_premises(example) -> Optional[list]:
     scored.sort(key=lambda x: (-x[0], -x[1]))
     return [prem[i] for _, _, i in scored]
 
+
+# ── [TYPES] 구조컨텍스트 주입 (INJECT_TYPES=1). rango-augmented 1차 구성의 두번째 레버. ──
+#   근거: docs/grpo/rango_augmented/{PLAN,REVIEW}.md — selective 규칙(가설+결론 inductive 타입,
+#   ≤8생성자, top-6, ≤200토큰)은 canonical `tactic_gen.augment.selective_types` 하나만 쓴다
+#   (학습·추론·검증스크립트 공유 = R1 포맷불일치 방지).
+#   ★ 독립 토큰예산: premise/state/proof 예산을 건드리지 않고 [TYPES] 자체 캡(TYPES_TOKENS, 기본 200)만
+#     적용 → premise 를 밀어내지 않음(REVIEW R2). dry-run 실측 중앙 +50토큰(4096 budget 초과 +0.4pp).
+_IT_INDEX: Optional[dict] = None
+
+
+def _it_index() -> dict:
+    """inductive 생성자 인덱스(정제본) 지연로드. 없으면 {} → [TYPES] 자동 비활성(프롬프트=base)."""
+    global _IT_INDEX
+    if _IT_INDEX is None:
+        path = os.environ.get("IND_INDEX_PATH", "data/ind_constructors_clean.json")
+        try:
+            with open(path) as f:
+                _IT_INDEX = json.load(f)
+            _logger.info(f"[TYPES] inductive 인덱스 {len(_IT_INDEX)}타입 로드: {path}")
+        except OSError:
+            _logger.warning(f"[TYPES] 인덱스 없음({path}) — INJECT_TYPES 무시(base 프롬프트)")
+            _IT_INDEX = {}
+    return _IT_INDEX
+
+
+_FD_INDEX: Optional[dict] = None
+
+
+def _fd_index() -> dict:
+    """함수 정의 인덱스 지연로드(scripts/build_func_defs.py 산출). 없으면 {} → [DEFINITIONS] 비활성."""
+    global _FD_INDEX
+    if _FD_INDEX is None:
+        path = os.environ.get("FUNC_DEFS_PATH", "data/func_defs.json")
+        try:
+            with open(path) as f:
+                _FD_INDEX = json.load(f)
+            _logger.info(f"[DEFINITIONS] 함수정의 인덱스 {len(_FD_INDEX)}개 로드: {path}")
+        except OSError:
+            _logger.warning(f"[DEFINITIONS] 인덱스 없음({path}) — INJECT_DEFS 무시")
+            _FD_INDEX = {}
+    return _FD_INDEX
+
+
+TYPES_SEP = "\n[TYPES]\n"
+DEFS_SEP = "\n[DEFINITIONS]\n"
+
+
+def defs_section(tokenizer: PreTrainedTokenizer, example: LmExample,
+                 exclude: Optional[set] = None) -> str:
+    """INJECT_DEFS=1 이면 '\\n[DEFINITIONS]\\n<함수 정의문>...' 섹션, 아니면 "".
+
+    goal 결론의 함수 정의를 복원해 상태를 완전하게 만든다(PHASE2_DECIDER_GUIDE §D).
+    ★ 너무 긴 정의는 시그니처만, 시그니처도 길면 아예 넣지 않는다(DEFS_MAX_BODY/DEFS_MAX_SIG).
+    [TYPES] 와 **별도의 독립 예산**(DEFS_TOKENS, 기본 200) — premise 를 밀어내지 않는다."""
+    if os.environ.get("INJECT_DEFS", "0") != "1":
+        return ""
+    # ★ ablation(ABLATE_DEFS=1): 섹션 **헤더는 유지**하고 내용만 비운다.
+    #   그냥 INJECT_DEFS=0 으로 끄면 프롬프트 포맷 자체가 달라져(=학습과 불일치, OOD) 성능이 떨어져도
+    #   "정보가 필요했다"의 증거가 못 된다. 포맷을 고정해야 **정보의 기여**만 분리된다.
+    if os.environ.get("ABLATE_DEFS", "0") == "1":
+        return DEFS_SEP + "(none)"
+    idx = _fd_index()
+    if not idx:
+        return ""
+
+    def _ntok(s: str) -> int:
+        return len(tokenizer(s or "", add_special_tokens=False)["input_ids"])
+
+    lines = definitions(
+        getattr(example, "proof_state", "") or "", idx,
+        project=getattr(example, "file_name", None),   # ★ 파일 경로 전체 — 같은 파일→디렉토리→프로젝트 순 선택
+        max_defs=int(os.environ.get("DEFS_MAX", "5")),
+        budget_tok=int(os.environ.get("DEFS_TOKENS", "200")),
+        max_body=int(os.environ.get("DEFS_MAX_BODY", "80")),
+        max_sig=int(os.environ.get("DEFS_MAX_SIG", "40")),
+        ntok=_ntok,
+        exclude=exclude,                                   # [TYPES] 에 이미 나온 이름은 제외
+    )
+    if not lines:
+        return ""
+    return DEFS_SEP + "\n".join(line for _, line in lines)
+
+
+def augment_v2_section(tokenizer: PreTrainedTokenizer, example: LmExample,
+                       base_str: str) -> str:
+    """AUGMENT_V2=1 일 때 프롬프트 **맨 뒤**(응답 템플릿 직전)에 붙일 [TYPES]/[DEFINITIONS] 블록.
+
+    v1 과 다른 점:
+      · 위치: [STATE] 앞 → **맨 뒤**. 생성 지점에 가까워 recency 이득, 잘라낼 때 경계도 명확.
+      · 내용: [TYPES] 가 생성자 이름만이 아니라 **정의문**(인자 타입 포함) + 재귀 depth1.
+      · ★ 길이 보장: 남은 자리를 계산해 **이 블록만 잘라낸다**. 프롬프트 한도를 넘겨서
+        토크나이저가 앞쪽(premise)을 잘라내는 일이 없도록, 여기서 먼저 예산을 맞춘다.
+    """
+    if os.environ.get("AUGMENT_V2", "0") != "1":
+        return ""
+    # ★ ablation: 섹션 **헤더는 유지**하고 내용만 비운다(포맷 고정 → 정보의 기여만 분리).
+    #   그냥 INJECT_*=0 으로 끄면 프롬프트 형식 자체가 학습과 달라져(OOD) 성능이 떨어져도
+    #   "정보가 필요했다"의 증거가 못 된다.
+    ab_t = os.environ.get("ABLATE_TYPES", "0") == "1"
+    ab_d = os.environ.get("ABLATE_DEFS", "0") == "1"
+    if ab_t and ab_d:
+        return (TYPES_SEP + "(none)") + (DEFS_SEP + "(none)")
+    idx = _fd_index()
+    if not idx:
+        return ""
+
+    def _ntok(s: str) -> int:
+        return len(tokenizer(s or "", add_special_tokens=False)["input_ids"])
+
+    hard = int(os.environ.get("HARD_SEQ_LEN", "4096"))
+    out_tokens = int(os.environ.get("AUG_OUT_TOKENS", "128"))   # 정답(tactic) 자리
+    margin = 16
+    room = hard - _ntok(base_str) - out_tokens - margin
+    if room <= 32:
+        return ""                       # 자리가 없으면 아예 안 넣는다(프롬프트 보호)
+    t_budget = min(int(os.environ.get("TYPES_TOKENS", "300")), room)
+    goal = getattr(example, "proof_state", "") or ""
+    proj = getattr(example, "file_name", None)   # ★ 파일 경로 전체(pick_def 가 거리순으로 좁힘)
+    parts = []
+    used = 0
+    if os.environ.get("INJECT_TYPES", "0") == "1":
+        if ab_t:
+            parts.append(TYPES_SEP + "(none)")
+        else:
+            tl = types_v2(goal, idx, project=proj, budget_tok=t_budget, ntok=_ntok)
+            if tl:
+                blk = TYPES_SEP + "\n".join(l for _, l in tl)
+                parts.append(blk)
+                used += _ntok(blk)
+    if os.environ.get("INJECT_DEFS", "0") == "1":
+        if ab_d:
+            parts.append(DEFS_SEP + "(none)")
+        else:
+            d_budget = min(int(os.environ.get("DEFS_TOKENS", "300")), max(0, room - used))
+            if d_budget > 16:
+                dl = definitions_v2(goal, idx, project=proj, budget_tok=d_budget, ntok=_ntok)
+                if dl:
+                    parts.append(DEFS_SEP + "\n".join(l for _, l in dl))
+    return "".join(parts)
+
+
+def types_section(tokenizer: PreTrainedTokenizer, example: LmExample) -> str:
+    """INJECT_TYPES=1 이면 '\\n[TYPES]\\n<T := c1 | c2>...' 섹션, 아니면 "" (=base 프롬프트 그대로).
+    ※ 결정적(점수 동점은 타입명순) — 학습·추론이 같은 goal 에 같은 섹션을 만든다."""
+    if os.environ.get("INJECT_TYPES", "0") != "1":
+        return ""
+    # ★ ablation(ABLATE_TYPES=1): 헤더 유지, 내용만 비움(defs_section 과 같은 이유 — 포맷 고정).
+    if os.environ.get("ABLATE_TYPES", "0") == "1":
+        return TYPES_SEP + "(none)"
+    idx = _it_index()
+    if not idx:
+        return ""
+    budget = int(os.environ.get("TYPES_TOKENS", "200"))
+
+    def _ntok(s: str) -> int:
+        return len(tokenizer(s or "", add_special_tokens=False)["input_ids"])
+
+    lines = selective_types(
+        getattr(example, "proof_state", "") or "", idx, budget_tok=budget, ntok=_ntok
+    )
+    if not lines:
+        return ""
+    return TYPES_SEP + "\n".join(line for _, line in lines)
+
+
 from model_deployment.conf_utils import (
     formatter_conf_to_client_conf,
     start_servers,
@@ -118,6 +285,9 @@ from util.shuffled_idx import ShuffledIndex
 from util.constants import DATA_POINTS_NAME
 
 _logger = get_basic_logger(__name__)
+
+# 동적 패딩(패딩 낭비 제거). 기본 꺼짐 — 기존 동작 보존.
+_DYN_PAD = os.environ.get("DYNAMIC_PADDING", "0") == "1"
 
 # FROM HERE: https://huggingface.co/docs/trl/sft_trainer#train-on-completions-only
 RESPONSE_TEMPLATE = "[TACTIC]"
@@ -437,11 +607,27 @@ class ProofPremiseCollator:
         script_str, _ = allocate_tokens(
             tokenizer, example.proof_script, self.script_tokens
         )
+        # ★ 구조컨텍스트: [TYPES](생성자) + [DEFINITIONS](정의). 각각 독립예산 — premise 안 뺏음.
+        #   v1(기본): [STATE] 앞에 삽입.  v2(AUGMENT_V2=1): 맨 뒤(응답 템플릿 직전) + 길이 보장.
+        if os.environ.get("AUGMENT_V2", "0") == "1":
+            base_str = (
+                self.PREMISE_SEP + premise_str
+                + self.PROOF_SEP + proof_str
+                + self.STATE_SEP + state_str
+                + self.SCRIPT_SEP + script_str
+            )
+            return base_str + augment_v2_section(tokenizer, example, base_str) + NEWLINE_RESPONSE_TEMPLATE
+        types_str = types_section(tokenizer, example)   # INJECT_TYPES=0 이면 ""
+        _tnames = {ln.split(" :=")[0].strip()            # [TYPES] 가 이미 보여준 타입명
+                   for ln in types_str.split("\n") if " :=" in ln}
+        defs_str = defs_section(tokenizer, example, exclude=_tnames)   # INJECT_DEFS=0 이면 ""
         combined_str = (
             self.PREMISE_SEP
             + premise_str
             + self.PROOF_SEP
             + proof_str
+            + types_str
+            + defs_str
             + self.STATE_SEP
             + state_str
             + self.SCRIPT_SEP
@@ -752,7 +938,10 @@ class LmProcessedDataset(Dataset):
             clean_example,
             max_length=self.hard_seq_len,
             truncation=True,
-            padding="max_length",
+            # ★ DYNAMIC_PADDING=1 이면 여기서 패딩하지 않고 collator 가 배치 최장길이로 맞춘다.
+            #   프롬프트 중앙이 ~1700 토큰인데 전부 4096 으로 채우면 연산의 절반 이상이 패딩이다
+            #   (loss 는 pad 를 -100 으로 마스크하므로 **수학적으로 동일**, 속도만 개선).
+            padding=(False if _DYN_PAD else "max_length"),
         )
 
 
@@ -842,6 +1031,19 @@ class ExampleCache:
         else:
             dp_loc = data_loc / DATA_POINTS_NAME / step_id.file
             dp = DatasetFile.load(dp_loc, sentence_db)
+            # ★ 거대 파일 방어: 캐시 미스면 원래 **파일 전체**(모든 proof × step)를 빌드하는데,
+            #   예제당 검색이 수 초인 파일(gaia 계열 등)에선 페이지 하나에 수 시간이 걸린다.
+            #   그 사이 dataloader 워커가 멈추고 → HF DataLoader 는 워커 순서를 기다리므로 학습 전체가 정지.
+            #   그런 파일은 **요청된 예제만** 만들어 돌려준다(캐시엔 안 남김 — 다음에 또 만들지만 수 초).
+            _pairs = sum(len(p.steps) for p in dp.proofs)
+            if _pairs > int(os.environ.get("CACHE_MAX_PAGE", "600")):
+                if step_id.proof_idx < len(dp.proofs) and step_id.step_idx < len(
+                    dp.proofs[step_id.proof_idx].steps
+                ):
+                    return formatter.example_from_step(
+                        step_id.step_idx, step_id.proof_idx, dp, training=True
+                    )
+                return None
             num_examples = 0
             new_page_dict: dict[int, dict[int, LmExample]] = {}
             for proof_idx, proof in enumerate(dp.proofs):
@@ -854,8 +1056,14 @@ class ExampleCache:
                     num_examples += 1
             new_page = ExamplePage(step_id.file, new_page_dict)
             self.num_cached += num_examples
-            with file_loc.open("wb") as f:
+            # ★ 원자적 쓰기(tmp → rename): 저장 도중 죽어도 반쪽 페이지가 캐시에 남지 않는다.
+            #   (반쪽이 남으면 다음 실행이 그걸 읽다 UnpicklingError 로 죽는다. DDP 다중워커도 안전.)
+            #   ※ tmp 이름은 **짧게** — data_point 파일명이 255자인 것이 195개 있어 접미사를 붙이면
+            #     ENAMETOOLONG 으로 죽는다(같은 디렉토리라 rename 은 그대로 원자적).
+            tmp_loc = file_loc.parent / f".tmp-{os.getpid()}-{abs(hash(step_id.file)) % 10**8}"
+            with tmp_loc.open("wb") as f:
                 pickle.dump(new_page, f)
+            os.replace(tmp_loc, file_loc)
             if (
                 step_id.proof_idx in new_page_dict
                 and step_id.step_idx in new_page_dict[step_id.proof_idx]
@@ -901,27 +1109,32 @@ class LmDataset(Dataset):
             return self.max_n_examples
         return self.shuffled_idx.split_length(self.split)
 
-    def __getitem__(self, index: int) -> Any:
+    def raw_example(self, index: int) -> LmExample:
+        """index 번째 원본 LmExample(프롬프트 렌더 전). 사전점검·디버깅이 학습과 같은 예제를 보게 한다."""
         step_id = self.shuffled_idx.get_idx(self.split, index)
         get_cached = self.example_cache.get(
             step_id, self.formatter, self.data_loc, self.sentence_db
         )
         if get_cached is not None:
-            example = get_cached
-        else:
-            dp = DatasetFile.load(
-                self.data_loc / DATA_POINTS_NAME / step_id.file, self.sentence_db
-            )
-            example = self.formatter.example_from_step(
-                step_id.step_idx, step_id.proof_idx, dp, training=True
-            )
+            return get_cached
+        dp = DatasetFile.load(
+            self.data_loc / DATA_POINTS_NAME / step_id.file, self.sentence_db
+        )
+        return self.formatter.example_from_step(
+            step_id.step_idx, step_id.proof_idx, dp, training=True
+        )
 
+    def __getitem__(self, index: int) -> Any:
+        example = self.raw_example(index)
         clean_example = self.example_collator.collate(self.tokenizer, example)
         return self.tokenizer(
             clean_example,
             max_length=self.hard_seq_len,
             truncation=True,
-            padding="max_length",
+            # ★ DYNAMIC_PADDING=1 이면 여기서 패딩하지 않고 collator 가 배치 최장길이로 맞춘다.
+            #   프롬프트 중앙이 ~1700 토큰인데 전부 4096 으로 채우면 연산의 절반 이상이 패딩이다
+            #   (loss 는 pad 를 -100 으로 마스크하므로 **수학적으로 동일**, 속도만 개선).
+            padding=(False if _DYN_PAD else "max_length"),
         )
 
     @classmethod

@@ -20,6 +20,17 @@ def _lemma_name(text: str) -> Optional[str]:
 
 
 import subprocess as _sp
+
+# ── 검색 진단 출력(예제마다 goal/쿼리/top5 를 전부 찍음) ──
+#   학습은 예제가 200만 개라 이걸 켜두면 stdout 이 수억 줄이 된다(로그 폭주·감속).
+#   기본 끔. 조사·디버깅 때만 SHOW_RETRIEVAL=1 로 켠다.
+_RETRIEVAL_VERBOSE = os.environ.get("SHOW_RETRIEVAL", "0") == "1"
+
+
+def _rp(*a, **k):
+    if _RETRIEVAL_VERBOSE:
+        print(*a, **k)
+
 import tempfile as _tf
 
 _SEARCH_REQUIRES = "From Coq Require Import Bool Arith ZArith List Lia.\n"
@@ -279,35 +290,35 @@ class GeneralFormatter:
 
         # ── 현재 상태 출력 ──────────────────────────────────────────────
         script_so_far = proof.proof_prefix_to_string(step).strip()
-        print(f"\n  ── 현재 증명 script (step_idx={step_idx}) ──")
+        _rp(f"\n  ── 현재 증명 script (step_idx={step_idx}) ──")
         for line in script_so_far.splitlines():
-            print(f"    {line}")
-        print(f"  ── 현재 Goal state ──")
+            _rp(f"    {line}")
+        _rp(f"  ── 현재 Goal state ──")
         for gi, g in enumerate(step.goals):
-            print(f"    [Goal {gi}]")
+            _rp(f"    [Goal {gi}]")
             for h in g.hyps:
-                print(f"      hyp: {h}")
-            print(f"      ⊢   {g.goal}")
+                _rp(f"      hyp: {h}")
+            _rp(f"      ⊢   {g.goal}")
 
         def print_query_state(indent: str, goals: list[Goal]) -> None:
             """아래 top5가 '지금까지 어떤 tactic까지 실행됐고, 현재 어떤 goal
             상태인지'(= 검색 쿼리로 쓰인 상태)에서 뽑힌 것임을 top5 바로 앞에
             다시 보여준다."""
-            print(f"{indent}── 이 top5를 뽑은 기준 상태 ──")
-            print(f"{indent}· 지금까지 실행한 tactic (step_idx={step_idx}):")
+            _rp(f"{indent}── 이 top5를 뽑은 기준 상태 ──")
+            _rp(f"{indent}· 지금까지 실행한 tactic (step_idx={step_idx}):")
             if script_so_far:
                 for line in script_so_far.splitlines():
-                    print(f"{indent}    {line}")
+                    _rp(f"{indent}    {line}")
             else:
-                print(f"{indent}    (아직 실행한 tactic 없음 — 증명 시작 지점)")
-            print(f"{indent}· 위 tactic들을 실행한 뒤의 현재 goal (총 {len(goals)}개, 이걸 쿼리로 검색):")
+                _rp(f"{indent}    (아직 실행한 tactic 없음 — 증명 시작 지점)")
+            _rp(f"{indent}· 위 tactic들을 실행한 뒤의 현재 goal (총 {len(goals)}개, 이걸 쿼리로 검색):")
             if not goals:
-                print(f"{indent}    (남은 goal 없음)")
+                _rp(f"{indent}    (남은 goal 없음)")
             for gi, g in enumerate(goals):
-                print(f"{indent}    [Goal {gi}]")
+                _rp(f"{indent}    [Goal {gi}]")
                 for h in g.hyps:
-                    print(f"{indent}      hyp: {h}")
-                print(f"{indent}      ⊢   {g.goal}")
+                    _rp(f"{indent}      hyp: {h}")
+                _rp(f"{indent}      ⊢   {g.goal}")
 
         def print_retrieved(rank: int, text: str, query_set: set[str]) -> None:
             """검색된 증명/전제 전체를 (줄바꿈 유지하여) 출력한다.
@@ -316,12 +327,12 @@ class GeneralFormatter:
             text = text.strip()
             item_ids = set(_ID_FORM.findall(text))
             matched = sorted(query_set & item_ids)
-            print(f"      Top{rank}:")
+            _rp(f"      Top{rank}:")
             for line in text.splitlines():
-                print(f"          {line}")
+                _rp(f"          {line}")
             id_preview = sorted(item_ids)[:15]
-            print(f"              item_ids(전체): {id_preview}{'...' if len(item_ids) > 15 else ''}")
-            print(f"              매칭 IDs      : {matched}")
+            _rp(f"              item_ids(전체): {id_preview}{'...' if len(item_ids) > 15 else ''}")
+            _rp(f"              매칭 IDs      : {matched}")
 
         if self.proof_retriever is not None:
             assert self.num_proofs is not None
@@ -335,17 +346,17 @@ class GeneralFormatter:
             proof_query_set = set(proof_query_hyp_ids + proof_query_goal_ids)
             retriever_type = type(self.proof_retriever).__name__
             kind = getattr(self.proof_retriever, "kind", "?")
-            print(f"\n  [Proof Retrieval ({retriever_type}, {kind})]")
+            _rp(f"\n  [Proof Retrieval ({retriever_type}, {kind})]")
             print_query_state("    ", step.goals)
-            print(f"    쿼리 hyp_ids : {proof_query_hyp_ids}")
-            print(f"    쿼리 goal_ids: {proof_query_goal_ids}")
+            _rp(f"    쿼리 hyp_ids : {proof_query_hyp_ids}")
+            _rp(f"    쿼리 goal_ids: {proof_query_goal_ids}")
             all_similar_proofs = self.proof_retriever.get_similar_proofs(
                 step_idx,
                 proof,
                 dp_obj,
                 training,
             )
-            print(f"    전체 후보: {len(all_similar_proofs)}개  →  top5:")
+            _rp(f"    전체 후보: {len(all_similar_proofs)}개  →  top5:")
             for j, p in enumerate(all_similar_proofs[:5]):
                 print_retrieved(j + 1, p.proof_text_to_string(), proof_query_set)
             simliar_proofs = all_similar_proofs[: self.num_proofs]
@@ -368,9 +379,9 @@ class GeneralFormatter:
                             # 주석(* *) 대신 실제 tactic을 그대로 최상단에 주입 —
                             # 모델이 따라 해도 유효 Coq이라 안전. 유사증명 스니펫처럼 취급됨.
                             similar_proof_strs = [aligned] + similar_proof_strs
-                            print(f"  [Align hint] {aligned}")
+                            _rp(f"  [Align hint] {aligned}")
                 except Exception as _e:
-                    print(f"  [Align hint] skipped ({_e})")
+                    _rp(f"  [Align hint] skipped ({_e})")
         else:
             similar_proof_strs = None
 
@@ -385,7 +396,7 @@ class GeneralFormatter:
             # 쿼리 ID 계산 (focused_goal = goals[0])
             premise_type = type(self.premise_client).__name__
             kind = getattr(self.premise_client, "kind", "?")
-            print(f"\n  [Premise Retrieval ({premise_type}, {kind})]")
+            _rp(f"\n  [Premise Retrieval ({premise_type}, {kind})]")
             # premise 검색은 focused_goal(goals[0]) 하나만 쿼리로 사용
             print_query_state("    ", step.goals[:1])
             prem_query_set: set[str] = set()
@@ -393,13 +404,13 @@ class GeneralFormatter:
                 focused_goal = step.goals[0]
                 prem_hyp_ids, prem_goal_ids = focused_goal.get_ids()
                 prem_query_set = set(prem_hyp_ids + prem_goal_ids)
-                print(f"    쿼리 focused_goal ⊢ {focused_goal.goal}")
-                print(f"    쿼리 hyp_ids : {prem_hyp_ids}")
-                print(f"    쿼리 goal_ids: {prem_goal_ids}")
+                _rp(f"    쿼리 focused_goal ⊢ {focused_goal.goal}")
+                _rp(f"    쿼리 hyp_ids : {prem_hyp_ids}")
+                _rp(f"    쿼리 goal_ids: {prem_goal_ids}")
             all_relevant_premises = self.premise_client.get_ranked_premises(
                 step_idx, proof, dp_obj, filtered_result.avail_premises, training
             )
-            print(f"    전체 후보: {len(all_relevant_premises)}개  →  top5:")
+            _rp(f"    전체 후보: {len(all_relevant_premises)}개  →  top5:")
             for j, p in enumerate(all_relevant_premises[:5]):
                 print_retrieved(j + 1, p.text, prem_query_set)
             relevant_premises = all_relevant_premises[: self.num_premises]
@@ -413,7 +424,7 @@ class GeneralFormatter:
                     if name and name not in self.forced_premises:
                         self.forced_premises.append(name)
                 if self.forced_premises:
-                    print(f"  [Apply hint] 강제 apply 대상: {self.forced_premises}")
+                    _rp(f"  [Apply hint] 강제 apply 대상: {self.forced_premises}")
         else:
             relevant_premise_strs = None
 
@@ -429,7 +440,7 @@ class GeneralFormatter:
                 if name not in self.forced_premises:
                     self.forced_premises.append(name)
             if found:
-                print(f"  [Search hint] stdlib lemma: {found}")
+                _rp(f"  [Search hint] stdlib lemma: {found}")
 
         script = proof.proof_prefix_to_string(step)
         goals = fmt_goals(step.goals)

@@ -1,0 +1,68 @@
+# Qwen2.5-Coder-7B-Instruct LoRA — rango FULL parity 학습 (arXiv:2412.14063 recipe)
+#  rango: 60,000 step, eff_batch 32, LR 1e-3, LoRA r=64, 4×A100. 데이터=2M train(CompCert held-out).
+#  여기: base Qwen부터 fresh, eff_batch 32(per_device 2×accum 8×2GPU), max_steps 60000(=0.956 epoch).
+#  on-the-fly retrieval + ExampleCache(/tmp/ftqwen7b-cache, 58% 워밍 재사용). num_workers 24(58코어 총동원).
+model_name: "Qwen/Qwen2.5-Coder-7B-Instruct"
+output_dir: "models/rango-qwen7b-ft"
+
+tactic_data:
+  data_loc: /tmp/coq-dataset
+  sentence_db_loc: /tmp/coq-dataset/sentences.db
+  shuffled_index_loc: data/ft6.7b-shuffled-index.json
+  model_name: "Qwen/Qwen2.5-Coder-7B-Instruct"
+  cache_loc: /tmp/ftqwen7b-cache
+  hard_seq_len: 4096
+  formatter_conf:
+    alias: general
+    num_proofs: 20
+    num_premises: 50
+    n_step_conf:
+      alias: one
+    proof_ret:
+      alias: sparse
+      kind: bm25
+      max_examples: 20
+      data_loc: /tmp/coq-dataset
+      sentence_db_loc: /tmp/coq-dataset/sentences.db
+    premise:
+      alias: sparse
+      kind: tfidf
+      context_format_alias: basic
+      premise_format_alias: basic
+      sentence_db_loc: /tmp/coq-dataset/sentences.db
+      premise_filter:
+        known_filter: proj-thm
+  collator_conf:
+    alias: proof-premise
+    state_tokens: 1024
+    script_tokens: 512
+    proof_tokens: 1024
+    premise_tokens: 512
+    out_tokens: 128
+
+load_in_4bit: false                   # ★ 96GB: bf16 full base(4-bit dequant 오버헤드 제거 → 26s→수s/step)
+per_device_train_batch_size: 2        # eff_batch = 2×8×2GPU = 32 (rango 동일). 96GB라 vocab OOM 여유
+gradient_accumulation_steps: 8
+gradient_checkpointing: true          # per_device 2 + vocab 151936 logits는 no-checkpoint시 OOM(실측). 유지.
+learning_rate: 1.0e-4                  # ★ 1e-3(rango 1.3B값)은 7B에서 발산(loss·gradnorm 단조증가 실측). 검증된 1e-4로.
+num_train_epochs: 1
+max_steps: 60000                       # rango parity: 60000×32/2008543 = 0.956 epoch
+load_best_model_at_end: false          # ★ eval_loss가 NaN이라 무용 + save1000/eval5000 배수제약 회피. 평가는 rand200 외부.
+peft_lora_r: 64
+peft_lora_alpha: 16
+eval_steps: 5000
+save_steps: 1000                       # ★ 2026-08-02 변경: 5000 -> 1000.
+                                       #   실측 속도 140 step/h 기준 5000 step = 약 36시간이라,
+                                       #   8/1 사고처럼 죽으면 최대 36시간을 잃는다. 1000 이면 최대 ~7시간.
+save_total_limit: null                 # ★ 끔. Trainer 의 "최근 N개만 유지"는 오래된 것부터 지우므로
+                                       #   5000 배수 마일스톤까지 날려버린다(예: 20000 시점에 5000 삭제).
+                                       #   대신 ~/slurm/ckpt_rotate.sh 가 매시간 정리한다:
+                                       #     5000 배수는 영구 보존, 그 사이 1000 단위는 다음 5000 도달 시 삭제.
+                                       #   동시 보관 최대 = 마일스톤 12개 + 진행중 4개 = 16개 x ~2GB = 약 32GB.
+eval_accumulation_steps: 1
+per_device_eval_batch_size: 1
+num_eval_examples: 100
+logging_steps: 20
+dataloader_num_workers: 8              # ★ 8/1 shm bus error 후 24→8 (×2 DDP=16). GPU가 병목이라 8이면 충분히 GPU 굶기지 않음. file_system 공유전략과 함께 shm 붕괴 방지.
+dataloader_persistent_workers: true
+dataloader_prefetch_factor: 2          # ★ 4→2 (shm 압박 완화)

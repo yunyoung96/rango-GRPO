@@ -78,12 +78,19 @@ def copy_configs(conf_path: Path, conf: dict[str, Any], train_type: TrainType) -
 
 
 def make_output_dir(conf: dict[str, Any]) -> None:
+    """출력 디렉토리 준비. **기존 학습 결과 덮어쓰기 방지**가 목적이다.
+
+    ★ 판정 기준을 '생성시각 30분'에서 '체크포인트 존재'로 바꿨다. 이유:
+      · DDP 다중 랭크가 동시에 이 함수를 부르면 한 랭크가 만든 디렉토리를 다른 랭크가 보고 죽는다.
+      · NFS 는 ctime 이 캐시돼 방금 만든 디렉토리도 오래된 것으로 보일 수 있다(실측).
+      · 정작 지키려는 것은 "이미 학습된 체크포인트"이지 빈 디렉토리가 아니다.
+    """
     output_dir = get_required_arg("output_dir", conf)
     if os.path.exists(output_dir):
-        time_since_created = time.time() - os.path.getctime(output_dir)
-        thirty_mins = 1800
-        if thirty_mins < time_since_created:
-            print(f"{output_dir} already exists.")
+        ckpts = [d for d in os.listdir(output_dir) if d.startswith("checkpoint-")]
+        if ckpts:
+            print(f"{output_dir} already has checkpoints {sorted(ckpts)[:3]}... "
+                  f"(덮어쓰기 방지 — 이어서 학습하려면 conf 의 checkpoint_name 을 쓰세요)")
             exit(1)
     else:
         os.makedirs(output_dir, exist_ok=True)
@@ -120,6 +127,12 @@ def get_train_val_path(data_path: Path) -> tuple[Path, Path]:
 def get_training_args(
     conf: dict[str, Any], local_rank: Optional[int]
 ) -> TrainingArguments:
+    # transformers 5.x 에서 evaluation_strategy → eval_strategy 로 개명. 설치 버전에 맞춰 키 선택.
+    import inspect
+
+    _params = inspect.signature(TrainingArguments.__init__).parameters
+    _eval_key = "eval_strategy" if "eval_strategy" in _params else "evaluation_strategy"
+    _extra: dict[str, Any] = {_eval_key: "steps"}
     return TrainingArguments(
         output_dir=get_required_arg("output_dir", conf),
         per_device_train_batch_size=get_required_arg(
@@ -136,11 +149,21 @@ def get_training_args(
         save_strategy="steps",
         save_steps=get_required_arg("save_steps", conf),
         save_total_limit=get_required_arg("save_total_limit", conf),
-        evaluation_strategy="steps",
+        **_extra,
         eval_steps=get_required_arg("eval_steps", conf),
         per_device_eval_batch_size=get_required_arg("per_device_eval_batch_size", conf),
         eval_accumulation_steps=get_optional_arg("eval_accumulation_steps", conf, 1),
-        load_best_model_at_end=True,
+        # ★ load_best_model_at_end: 기본 True(기존 동작). eval_loss 가 NaN 이거나
+        #   save_total_limit=null + 마일스톤 회전을 쓸 땐 conf 에서 false 로 끈다.
+        load_best_model_at_end=get_optional_arg("load_best_model_at_end", conf, True),
+        # ── 처리량(GPU 굶기지 않기): dataloader 워커/프리페치, bf16, gradient checkpointing ──
+        bf16=get_optional_arg("bf16", conf, False),
+        gradient_checkpointing=get_optional_arg("gradient_checkpointing", conf, False),
+        dataloader_num_workers=get_optional_arg("dataloader_num_workers", conf, 0),
+        dataloader_persistent_workers=get_optional_arg(
+            "dataloader_persistent_workers", conf, False
+        ),
+        dataloader_prefetch_factor=get_optional_arg("dataloader_prefetch_factor", conf, None),
         # deepspeed=__get_required_arg("deepspeed", conf),
         local_rank=(local_rank if local_rank else -1),
         ddp_find_unused_parameters=False,

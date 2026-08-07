@@ -1349,13 +1349,24 @@ def get_result(model_alias: str, thm: EvalTheorem) -> Result:
     raise ValueError(f"Do not have a results for {model_alias}")
 
 
-def get_orig_result(model_alias: str, split: Split, idx: int) -> Result:
+class _NoOrigResult:
+    """results/*.json(참고용 비교 결과)이 없을 때 쓰는 빈 결과 — 출력 전용이라 평가엔 영향 없음."""
+    proof = None
+    time = None
+
+
+def get_orig_result(model_alias: str, split: Split, idx: int):
+    """참고용 이전 결과. **화면 출력에만 쓴다.**
+
+    ★ results/*.json 은 논문 배포 결과라 서버에 없을 수 있다. 없다고 평가가 죽으면 안 되므로
+      빈 결과로 대체한다(성공/실패 판정과 무관 — 판정은 실제 Coq 실행 결과로만 한다)."""
     thm = get_theorem(split, idx, COQSTOQ_LOC)
-    try:
-        return get_result(model_alias, thm)
-    except ValueError:
-        # 새로 만든 alias(rango-mem 등)는 결과 json이 없으므로 rango 기준으로 대체
-        return get_result("rango", thm)
+    for alias in (model_alias, "rango"):
+        try:
+            return get_result(alias, thm)
+        except (ValueError, FileNotFoundError, OSError):
+            continue
+    return _NoOrigResult()
 
 
 def print_info():

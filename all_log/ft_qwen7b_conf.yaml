@@ -1,0 +1,60 @@
+# Qwen2.5-Coder-7B-Instruct QLoRA 파인튜닝 (rango 레시피 동일: bm25 proof + tfidf premise, proof-premise collator).
+# base만 DeepSeek-Coder-1.3B → Qwen2.5-Coder-7B로 교체. 토크나이저 호환 확인됨(pad≠eos, add_eos 작동).
+# cached_proof_loc/cached_premise_loc 생략 → on-the-fly 검색(sentences.db) + ExampleCache. rango train_decoder.py 그대로.
+model_name: "Qwen/Qwen2.5-Coder-7B-Instruct"
+output_dir: "models/rango-qwen7b-ft"
+
+tactic_data:
+  data_loc: raw-data/coq-dataset
+  sentence_db_loc: raw-data/coq-dataset/sentences.db
+  shuffled_index_loc: data/ft6.7b-shuffled-index.json   # 예제 순서=모델무관, 재사용
+  model_name: "Qwen/Qwen2.5-Coder-7B-Instruct"
+  cache_loc: /tmp/ftqwen7b-cache
+  hard_seq_len: 4096
+  formatter_conf:
+    alias: general
+    num_proofs: 20
+    num_premises: 50
+    n_step_conf:
+      alias: one
+    proof_ret:
+      alias: sparse
+      kind: bm25
+      max_examples: 20
+      data_loc: raw-data/coq-dataset
+      sentence_db_loc: raw-data/coq-dataset/sentences.db
+    premise:
+      alias: sparse
+      kind: tfidf
+      context_format_alias: basic
+      premise_format_alias: basic
+      sentence_db_loc: raw-data/coq-dataset/sentences.db
+      premise_filter:
+        known_filter: proj-thm
+  collator_conf:
+    alias: proof-premise
+    state_tokens: 1024
+    script_tokens: 512
+    proof_tokens: 1024
+    premise_tokens: 512
+    out_tokens: 128
+
+per_device_train_batch_size: 1        # Qwen vocab 151936 loss OOM 회피 (+gradient_checkpointing)
+gradient_accumulation_steps: 8        # 유효배치 8 유지
+gradient_checkpointing: true          # activation 메모리 대폭 절감 (Qwen 큰 vocab OOM 대응)
+learning_rate: 1.0e-4                  # 파인튜닝 보수 LR(1.3B 1e-3보다 낮게)
+num_train_epochs: 1
+max_steps: 2500                        # 밤샘 완료 가능(~9h, on-the-fly 검색 13s/step). 부분-SFT 첫 신호
+                                       # (full 20000은 검색바운드로 ~72h — 캐시 빌드 후에나 가능)
+peft_lora_r: 64                        # rango 레시피와 동일(r=64)
+peft_lora_alpha: 16
+eval_steps: 1000
+save_steps: 1000
+eval_accumulation_steps: 1
+per_device_eval_batch_size: 1
+num_eval_examples: 100
+logging_steps: 20
+save_total_limit: 2
+dataloader_num_workers: 8
+dataloader_persistent_workers: true
+dataloader_prefetch_factor: 4
