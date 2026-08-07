@@ -147,6 +147,11 @@ def _fd_index() -> dict:
 TYPES_SEP = "\n[TYPES]\n"
 DEFS_SEP = "\n[DEFINITIONS]\n"
 
+# augment_v2_section 이 방금 주입한 {이름: 정의문}. 인용 타깃(cite_target)이 참조한다.
+#   ※ 같은 예제에 대해 collate_input → collate 가 연달아 불리므로 모듈 전역으로 충분하다
+#     (dataloader 워커는 프로세스가 분리되어 서로 간섭하지 않음).
+_LAST_INJECTED: dict = {}
+
 
 def defs_section(tokenizer: PreTrainedTokenizer, example: LmExample,
                  exclude: Optional[set] = None) -> str:
@@ -221,6 +226,7 @@ def augment_v2_section(tokenizer: PreTrainedTokenizer, example: LmExample,
     proj = getattr(example, "file_name", None)   # ★ 파일 경로 전체(pick_def 가 거리순으로 좁힘)
     parts = []
     used = 0
+    injected = {}          # ★ 실제로 프롬프트에 들어간 {이름: 정의문} — 인용 타깃 생성에 쓴다
     if os.environ.get("INJECT_TYPES", "0") == "1":
         if ab_t:
             parts.append(TYPES_SEP + "(none)")
@@ -230,6 +236,7 @@ def augment_v2_section(tokenizer: PreTrainedTokenizer, example: LmExample,
                 blk = TYPES_SEP + "\n".join(l for _, l in tl)
                 parts.append(blk)
                 used += _ntok(blk)
+                injected.update(dict(tl))
     if os.environ.get("INJECT_DEFS", "0") == "1":
         if ab_d:
             parts.append(DEFS_SEP + "(none)")
@@ -239,6 +246,9 @@ def augment_v2_section(tokenizer: PreTrainedTokenizer, example: LmExample,
                 dl = definitions_v2(goal, idx, project=proj, budget_tok=d_budget, ntok=_ntok)
                 if dl:
                     parts.append(DEFS_SEP + "\n".join(l for _, l in dl))
+                    injected.update(dict(dl))
+    _LAST_INJECTED.clear()
+    _LAST_INJECTED.update(injected)      # collate 가 바로 뒤에서 읽는다(같은 스레드·같은 예제)
     return "".join(parts)
 
 
@@ -395,6 +405,15 @@ class BasicCollator:
             target = "".join(example.next_steps)
         else:
             target = example.next_steps[0]
+        # ★ CITE_TARGET=1: 타깃 앞에 '[USES] <쓴 정의>' 를 붙인다.
+        #   ablation 결론(clean vs wrong 차이 ±0, p=1.000)이 "모델이 섹션을 안 읽는다"였다.
+        #   원인은 loss 가 tactic 토큰에서만 계산되고 대부분의 tactic 은 섹션 없이도 예측되기 때문.
+        #   인용을 타깃에 넣으면 **섹션을 읽지 않으면 loss 가 오르므로** gradient 압력이 생긴다.
+        if os.environ.get("CITE_TARGET", "0") == "1":
+            from tactic_gen.cite_target import make_cite
+            cite = make_cite(target, getattr(example, "proof_state", "") or "",
+                             dict(_LAST_INJECTED))
+            target = cite + "\n" + target
         out_str, _ = allocate_tokens(
             tokenizer, target, self.out_tokens, truncate_front=False
         )

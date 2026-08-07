@@ -1,0 +1,85 @@
+# rango-augmented **v3** — ablation 결론을 반영한 학습 레시피.
+#
+# ★ v2 까지의 문제: 모델이 [TYPES]/[DEFINITIONS] 를 **안 읽는다**(실측).
+#     clean(올바른 정의) 63/191=33.0%  vs  wrong(틀린 정의) 66/194=34.0%
+#     같은 정리 187개에서 차이 ±0, clean만 8 / wrong만 8, McNemar p=1.000
+#     → 올바른 정의를 줘도 틀린 정의를 줘도 결과가 같다 = 내용을 안 본다.
+#   원인: loss 가 tactic 토큰에서만 계산되는데 대부분의 tactic 은 섹션 없이 예측된다
+#         (`intros.`, `simpl.`, `auto.`) → **무시하는 것이 최적해**.
+#
+# ★ v3 의 변경: CITE_TARGET=1 — 타깃 앞에 '[USES] <쓴 정의>' 인용을 붙인다.
+#     [TACTIC]
+#     [USES] Lst(2 ctors)
+#     destruct x as [| n l].
+#   정답을 내려면 프롬프트의 [TYPES] 에서 Lst 를 찾아 생성자를 세야 하므로,
+#   섹션을 읽지 않으면 loss 가 오른다 = gradient 압력이 생긴다.
+#   (아이디어 목록 12 'CoT 중간표현 강제' + 10 'RAFT: 답 앞에 정의 인용' 의 결합)
+#
+# ★ 인덱스도 교체: func_defs_v3.json (파일 단위 — 같은 저장소 안 동명 정의 충돌 해결)
+# ★ 나머지는 v2 와 동일(코퍼스·셔플·LoRA·LR·max_steps 60000·유효배치 32) — 비교 가능하게.
+model_name: deepseek-ai/deepseek-coder-1.3b-instruct
+output_dir: models/rango-1.3b-augmented-v3-ft
+tactic_data:
+  data_loc: /tmp/coq-dataset
+  sentence_db_loc: /tmp/coq-dataset/sentences.db
+  shuffled_index_loc: data/ft6.7b-shuffled-index.json
+  model_name: deepseek-ai/deepseek-coder-1.3b-instruct
+  cache_loc: /tmp/ft-rango-aug-cache
+  hard_seq_len: 4096
+  formatter_conf:
+    alias: general
+    num_proofs: 20
+    num_premises: 50
+    n_step_conf:
+      alias: one
+    proof_ret:
+      alias: sparse
+      kind: bm25
+      max_examples: 20
+      data_loc: /tmp/coq-dataset
+      sentence_db_loc: /tmp/coq-dataset/sentences.db
+    premise:
+      alias: sparse
+      kind: tfidf
+      context_format_alias: basic
+      premise_format_alias: basic
+      sentence_db_loc: /tmp/coq-dataset/sentences.db
+      premise_filter:
+        known_filter: proj-thm
+  collator_conf:
+    alias: proof-premise
+    state_tokens: 1024
+    script_tokens: 512
+    proof_tokens: 1024
+    premise_tokens: 512
+    out_tokens: 128
+hard_seq_len: 4096
+example_collator:
+  alias: proof-premise
+  state_tokens: 1024
+  script_tokens: 512
+  proof_tokens: 1024
+  premise_tokens: 512
+  out_tokens: 128
+load_in_4bit: false
+bf16: true
+per_device_train_batch_size: 4
+gradient_accumulation_steps: 4
+learning_rate: 0.001
+num_train_epochs: 1
+max_steps: 60000
+peft_lora_r: 64
+peft_lora_alpha: 16
+save_steps: 1000
+keep_every: 5000
+save_total_limit: null
+load_best_model_at_end: false
+eval_steps: 5000
+eval_accumulation_steps: 1
+per_device_eval_batch_size: 1
+num_eval_examples: 100
+logging_steps: 20
+gradient_checkpointing: false
+dataloader_num_workers: 12
+dataloader_persistent_workers: true
+dataloader_prefetch_factor: 4
