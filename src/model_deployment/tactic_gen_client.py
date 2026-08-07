@@ -476,6 +476,16 @@ class LocalTacticGenClient:
             _logger.error("ID MISMATCH IN REQUESTS")
         assert response["id"] == request_id
         result = ModelResult.from_json(response["result"])
+        # ★ 환각 lemma 이름 필터(FILTER_UNKNOWN_NAMES=1) — Coq 에 보내기 전에 버린다.
+        #   실측(rand200, v2 step60000): INVALID 의 23.4% 를 선제 차단, 유효후보 손실 0.32%.
+        #   Coq 검증(~300ms)이 시간을 지배하므로 절감분이 곧 탐색예산이 된다.
+        try:
+            from model_deployment.name_filter import filter_result
+            result, _dropped = filter_result(
+                result, getattr(example, "proof_state", "") or "",
+                getattr(example, "premises", None))
+        except Exception:
+            pass          # 필터는 부가기능 — 어떤 이유로든 실패하면 원본 그대로 진행
         # formatter가 top premise를 stash했으면 강제 후보 추가 (sauto 우선, 아니면 apply)
         fmt = self.formatters[0]
         forced = getattr(fmt, "forced_premises", None)

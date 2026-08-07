@@ -54,8 +54,12 @@ run_cond(){    # $1=조건명  $2=FUNC_DEFS_PATH  $3=ABLATE(0|1)
   TAG=$TAG TIMEOUT=$TIMEOUT python3 scripts/report_ablation.py 2>&1 | tee -a "$LOG"
 }
 
-run_cond polluted data/func_defs.json    0     # (a) 학습과 동일
-run_cond fixed    data/func_defs_v3.json 0     # (b) 수정 인덱스
-run_cond empty    data/func_defs.json    1     # (c) 내용 비움
+# 4조건. 모델은 (wrong) 으로 학습됐다 = train-matched.
+#   모델이 섹션을 읽는다면:  clean ≥ wrong > corrupt ≈ empty  가 나와야 한다.
+#   네 조건이 모두 비슷하면 → 안 읽는 것(신호 희석) → 학습 레시피를 바꿔야 함.
+run_cond wrong   data/func_defs.json         0   # 다른 파일의 동명 정의(학습과 동일, 오염본)
+run_cond clean   data/func_defs_v3.json      0   # 파일단위로 고친 올바른 정의
+run_cond corrupt data/func_defs_corrupt.json 0   # 생성자 개수·이름 조작(형식·길이는 동일)
+run_cond empty   data/func_defs_v3.json      1   # 헤더만, 내용 (none)
 
 say "===== Type-ablation 종료 ====="

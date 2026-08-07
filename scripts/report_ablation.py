@@ -11,8 +11,9 @@ from math import comb
 
 TAG = os.environ.get("TAG", "g2xw3_tot6")
 TIMEOUT = os.environ.get("TIMEOUT", "600")
-CONDS = [("polluted", "학습과 동일(오염 인덱스)"),
-         ("fixed", "파일단위 수정 인덱스"),
+CONDS = [("clean", "올바른 정의(파일단위 수정)"),
+         ("wrong", "다른 파일 동명정의 ★학습과 동일"),
+         ("corrupt", "생성자 개수·이름 조작"),
          ("empty", "헤더만, 내용 (none)")]
 
 
@@ -77,8 +78,10 @@ def main():
             bo = sum(1 for x in c if res[b][x] and not res[a][x])
             print(f"   {a+' vs '+b:22s} {len(c):>5} {na:>5} {nb:>5} {na-nb:>+6} "
                   f"{ao:>4} {bo:>4} {mcnemar(ao,bo):>7.3f}")
-    print("\n   해석: 세 조건이 모두 비슷하면 모델이 섹션을 안 읽는 것(신호 희석).")
-    print("        fixed > polluted 면 읽고 있고 오염이 손해였던 것 → 재학습 가치 있음.")
+    print("\n   해석 (모델은 wrong 으로 학습됨 = train-matched):")
+    print("     · 네 조건이 모두 비슷        → 모델이 섹션을 안 읽음(신호 희석). 학습 레시피 문제.")
+    print("     · clean > wrong              → 읽고 있고 오염이 손해였음 → 깨끗한 데이터로 재학습 가치.")
+    print("     · wrong·clean > corrupt·empty → 내용이 실제로 쓰이고 있음(정보 기여 확인).")
     print(f"{'='*84}\n")
 
 
