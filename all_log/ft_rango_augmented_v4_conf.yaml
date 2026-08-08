@@ -1,22 +1,23 @@
-# rango-augmented **v4** — 지금까지의 기법을 모두 합친 학습.
+# rango-augmented **v4** — 타입을 '넣는' 게 아니라 '쓰게' 만드는 학습.
 #
-# 근거(ablation 실측): clean(올바른 정의) 33.0% vs wrong(틀린 정의) 34.0%, 같은 정리 187개
-#   차이 ±0, McNemar p=1.000 → **모델이 [TYPES]/[DEFINITIONS] 를 안 읽는다.**
-#   읽을 이유가 없어서다: loss 가 tactic 토큰에서만 계산되고, gold 가 destruct/induction 인
-#   비율은 10.5% 뿐이라 나머지는 섹션 없이 예측된다 → 무시가 최적해.
+# 배경(ablation 실측): clean(올바른 정의) 33.0% vs wrong(틀린 정의) 34.0%,
+#   같은 정리 187개 차이 ±0, McNemar p=1.000 → **모델이 섹션을 안 읽는다.**
+#   읽을 이유가 없어서다: `destruct v as [|x|x|x|x|x x]` 는 `val` 이라는 **이름 암기**로 낼 수 있다.
 #
-# v4 가 켜는 것(전부 데이터 측 개입, 서로 직교):
-#   CITE_TARGET=1     타깃 앞에 '[USES] T0(6 ctors)' 인용 → 안 읽으면 loss 상승(실질인용 91%)
-#   NORMALIZE_NAMES=1 주입된 정의 이름을 α-치환 → **이름 암기 무력화**(의미보존이라 gold 유지)
-#     NORMALIZE_RATE=0.5 — 전부 바꾸면 테스트(실제 이름)와 분포가 어긋나 절반만.
-#   ERROR_COND=1      [ATTEMPT]/[ERROR] 섹션 → Coq 에러에서 배우게(기존 SFT엔 에러가 0건)
-#   FUNC_DEFS_PATH    func_defs_v3(파일단위 인덱스 — 같은 저장소 안 동명정의 충돌 해결)
+# v4 가 켜는 것 — 각각이 '읽지 않으면 못 푸는' 압력을 만든다:
+#   NORMALIZE_NAMES=1  val→T0, Vint→C1 로 α-치환. **이름 암기가 통하지 않는다.**
+#                      T0 의 생성자 수는 [TYPES] 를 읽어야만 알 수 있다. (핵심 레버)
+#   CITE_TARGET=1      타깃 앞에 '[USES] T0(6 ctors)' — 읽지 않으면 loss 가 오른다
+#   DISTRACTORS=2      무관한 정의를 섞는다. 안 섞으면 인용이 '하나 베끼기'라 판별 압력이 없다
+#   TYPE_FACTS=1       생성자 수·인자수를 미리 계산해 명시(파싱 부담 제거)
+#   FUNC_DEFS_PATH     func_defs_v3 — 파일단위 인덱스(같은 저장소 안 동명정의 충돌 해결)
 #
-# 동적 검증(gold 400 예제)에서 잡은 버그 2건 — 정적 확인만으로는 못 잡았다:
-#   · _LAST_INJECTED 가 조기반환 경로에서 초기화 안 돼 **이전 예제 이름이 남음**
-#   · 새 이름이 goal 의 기존 변수와 **충돌**(goal 에 이미 `f, f0: float` 이 있는데 f0 를 생성)
+# ★ ERROR_COND 는 뺐다. 학습 코퍼스에 .v 소스가 없어(sentences.db 텍스트만 있음)
+#   Coq 실행이 불가능하고, 합성 에러는 gold 에서 역산돼 **정답이 프롬프트에 새어든다**.
 #
-# 나머지는 v2 와 동일(코퍼스·셔플·LoRA·LR·max_steps 60000·유효배치 32) → 직접 비교 가능.
+# ★ eval_steps/num_eval_examples 를 원본 rango 와 맞췄다(500/2000).
+#   근거: 원본은 val loss 최소 지점인 **checkpoint-54500** 을 배포했다(60000 은 과적합,
+#   eval_loss 0.8116 → 0.8122). 우리도 최적 지점을 고를 수 있어야 공정한 비교가 된다.
 model_name: deepseek-ai/deepseek-coder-1.3b-instruct
 output_dir: models/rango-1.3b-augmented-v4-ft
 tactic_data:
@@ -74,10 +75,10 @@ save_steps: 1000
 keep_every: 5000
 save_total_limit: null
 load_best_model_at_end: false
-eval_steps: 5000
+eval_steps: 500
 eval_accumulation_steps: 1
 per_device_eval_batch_size: 1
-num_eval_examples: 100
+num_eval_examples: 2000
 logging_steps: 20
 gradient_checkpointing: false
 dataloader_num_workers: 16

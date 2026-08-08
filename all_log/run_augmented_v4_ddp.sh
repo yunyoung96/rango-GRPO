@@ -56,12 +56,12 @@ for try in $(seq 1 $MAX_RETRY); do
   AUGMENT_V2=1 RERANK_PREMISES=1 INJECT_TYPES=1 INJECT_DEFS=1 DYNAMIC_PADDING=1 \
   HARD_SEQ_LEN=4096 TYPES_TOKENS=300 DEFS_TOKENS=300 \
   FUNC_DEFS_PATH=data/func_defs_v3.json CITE_TARGET=1 NORMALIZE_NAMES=1 NORMALIZE_RATE=0.5 \
-  ERROR_COND=1 SYNTH_ERROR_RATE=0.8 TYPE_FACTS=1 DISTRACTORS=2 \
+  TYPE_FACTS=1 DISTRACTORS=2 \
     torchrun --nproc_per_node="$NPROC" --master_port=$((29500 + RANDOM % 400)) src/tactic_gen/train_decoder.py "$USE" >> "$LOG" 2>&1
   rc=$?
   if [ $rc -eq 0 ]; then
     say "  학습 정상 종료(rc=0)"
-    printf '{"AUGMENT_V2":"1","RERANK_PREMISES":"1","INJECT_TYPES":"1","INJECT_DEFS":"1","HARD_SEQ_LEN":"4096","TYPES_TOKENS":"300","DEFS_TOKENS":"300","FUNC_DEFS_PATH":"data/func_defs_v3.json","CITE_TARGET":"1","NORMALIZE_NAMES":"1","NORMALIZE_RATE":"0.5","ERROR_COND":"1","SYNTH_ERROR_RATE":"0.8","TYPE_FACTS":"1","DISTRACTORS":"2","note":"추론·평가 시 동일 env 필수"}\n' > "$OUT/AUGMENT.json"
+    printf '{"AUGMENT_V2":"1","RERANK_PREMISES":"1","INJECT_TYPES":"1","INJECT_DEFS":"1","HARD_SEQ_LEN":"4096","TYPES_TOKENS":"300","DEFS_TOKENS":"300","FUNC_DEFS_PATH":"data/func_defs_v3.json","CITE_TARGET":"1","NORMALIZE_NAMES":"1","NORMALIZE_RATE":"0.5","TYPE_FACTS":"1","DISTRACTORS":"2","note":"추론·평가 시 동일 env 필수"}\n' > "$OUT/AUGMENT.json"
     break
   fi
   say "  ★ 중단(rc=$rc) — 60s 후 최신 체크포인트에서 재개"
