@@ -133,7 +133,9 @@ def build_mapping(injected: dict, seed_key: str, avoid_text: str = "") -> dict:
     ctors = [c for c in dict.fromkeys(ctors) if c not in names]
     if not names and not ctors:
         return {}
-    taken = set(_IDENT.findall(avoid_text or "")) | set(names) | set(ctors)
+    # ★ 충돌 검사는 **T\d+/f\d+/C\d+ 형태만** 훑으면 된다.
+    #   프롬프트 전체(~8KB)를 일반 식별자 정규식으로 훑으면 예제마다 비용이 크다.
+    taken = set(re.findall(r"\b[TfC]\d+\b", avoid_text or "")) | set(names) | set(ctors)
 
     def fresh(prefix, k):
         """taken 과 겹치지 않는 첫 이름과 다음 인덱스."""

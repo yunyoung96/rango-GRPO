@@ -163,6 +163,8 @@ FACTS_SEP = "\n[TYPE-FACTS]\n"
 #   ※ 같은 예제에 대해 collate_input → collate 가 연달아 불리므로 모듈 전역으로 충분하다
 #     (dataloader 워커는 프로세스가 분리되어 서로 간섭하지 않음).
 _LAST_INJECTED: dict = {}
+# distractor 샘플링용 키 목록(1회만 생성 — 예제마다 만들면 8만 원소 리스트가 매번 생긴다)
+_DISTRACTOR_KEYS = None
 
 
 def defs_section(tokenizer: PreTrainedTokenizer, example: LmExample,
@@ -277,7 +279,12 @@ def augment_v2_section(tokenizer: PreTrainedTokenizer, example: LmExample,
                 k = int(os.environ.get("DISTRACTORS", "0"))
                 if k > 0 and dl:
                     import hashlib as _h
-                    keys = list(idx.keys())
+                    # ★ 키 리스트를 예제마다 새로 만들면 안 된다 — 인덱스가 8만 개라
+                    #   예제당 80,716원소 리스트 생성이 되어 학습이 2배 느려졌다(6.02 → s/it).
+                    global _DISTRACTOR_KEYS
+                    if _DISTRACTOR_KEYS is None:
+                        _DISTRACTOR_KEYS = list(idx.keys())
+                    keys = _DISTRACTOR_KEYS
                     seed = int(_h.md5((goal or "")[:200].encode()).hexdigest()[:8], 16)
                     have = {n for n, _ in dl} | set(injected)
                     extra = []
