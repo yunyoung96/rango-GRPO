@@ -30,7 +30,7 @@ os.environ.update(dict(
     AUGMENT_V2="1", RERANK_PREMISES="1", INJECT_TYPES="1", INJECT_DEFS="1",
     HARD_SEQ_LEN="4096", TYPES_TOKENS="300", DEFS_TOKENS="300",
     FUNC_DEFS_PATH="data/func_defs_v3.json",
-    CITE_TARGET="1", NORMALIZE_NAMES="1", NORMALIZE_RATE="0.5",
+    NORMALIZE_NAMES="1", NORMALIZE_RATE="0.5",
     TYPE_FACTS="1", DISTRACTORS="2",
 ))
 sys.path.insert(0, "src")
@@ -96,8 +96,8 @@ def main():
         fail["라벨 전부 마스킹"] += 1
     if n_lab > n_tot * 0.3:
         fail["라벨 과다(프롬프트까지 학습)"] += 1
-    if "[USES]" not in tgt_txt:
-        fail["라벨에 인용 없음"] += 1
+    if "[USES]" in tgt_txt:
+        fail["라벨에 인용 잔존"] += 1
     label_info = f"{n_lab}/{n_tot} 토큰, {tgt_txt[:56]!r}"
 
     for i, e in enumerate(steps):
@@ -113,11 +113,10 @@ def main():
             if h not in p:
                 fail[f"헤더 없음 {h}"] += 1
 
-        # ② 인용은 항상(포맷 고정)
-        if "[USES]" not in p:
-            fail["인용 없음"] += 1
-        else:
-            n_cite += 1
+        # ② CITE_TARGET 을 뺐으므로 인용이 **없어야** 정상
+        #    (타깃의 57%를 차지해 gradient 를 뺏고 v2 와 loss 비교를 막았다)
+        if "[USES]" in p:
+            fail["인용이 남아있음(CITE 제거했는데)"] += 1
 
         # ③ TYPE-FACTS 형식
         if "[TYPE-FACTS]" in p:
@@ -148,23 +147,13 @@ def main():
                     fail["정규화 이름이 섹션에 없음"] += 1
                     ex["정규화 이름이 섹션에 없음"].append(sorted(gn)[:3])
 
-        # ⑤ 인용한 이름은 프롬프트에 실재해야(환각 인용 금지)
-        cm = re.search(r"\[USES\]([^\n]*)", tail)
-        if cm and cm.group(1).strip() != "-":
-            head = p[:p.find("[TACTIC]")]
-            for part in cm.group(1).split(","):
-                nm = part.strip().split("(")[0]
-                if nm and nm not in head:
-                    fail["인용이 프롬프트에 없음"] += 1
-                    ex["인용이 프롬프트에 없음"].append(nm)
-
-        # ⑥ 타깃: 인용 제거 후 tactic 이 남아야
-        if not strip_cite(tail.strip()).strip():
+        # ⑥ 타깃이 비면 안 됨
+        if not tail.strip():
             fail["타깃 비어있음"] += 1
 
     print(f"■ v4 데이터 검증 (예제 {len(steps)}개)")
     print(f"   라벨 범위 : {label_info}")
-    print(f"   정규화 {n_norm} · 인용 {n_cite} · TYPE-FACTS {n_facts}")
+    print(f"   정규화 {n_norm} · TYPE-FACTS {n_facts}")
     print(f"   토큰: 중앙 {statistics.median(lens):.0f}  최대 {max(lens)}  "
           f"4096초과 {sum(1 for x in lens if x > 4096)}건")
     if not fail:
