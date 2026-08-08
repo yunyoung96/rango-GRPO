@@ -17,7 +17,7 @@ from torch.utils.data import Dataset
 from transformers import AutoTokenizer, PreTrainedTokenizer, BatchEncoding
 from tactic_gen.data_collator_compat import DataCollatorForCompletionOnlyLM
 from tactic_gen.augment import (selective_types, definitions, project_of,
-                                types_v2, definitions_v2)   # rango-augmented: [TYPES]/[DEFINITIONS] canonical 규칙(train/infer 공유)
+                                types_v2, definitions_v2, pick_def)   # rango-augmented: [TYPES]/[DEFINITIONS] canonical 규칙(train/infer 공유)
 import jsonlines
 from data_management.dataset_file import DatasetFile
 from data_management.sentence_db import SentenceDB
@@ -153,6 +153,11 @@ DEFS_SEP = "\n[DEFINITIONS]\n"
 #   (`Expects a disjunctive pattern with 10 branches`, `... was not found`).
 ATTEMPT_SEP = "\n[ATTEMPT]\n"
 ERROR_SEP = "\n[ERROR]\n"
+# ★ TYPE_FACTS=1: 모델이 '|' 를 세게 하지 말고 **미리 계산한 사실**을 준다.
+#   실패의 핵심이 분기 수 오류(238건)인데, 그건 정의문을 파싱해 세야 나온다.
+#   `T0: 6 ctors, arities [0,1,1,1,1,2]` 로 주면 정답 패턴이 거의 복사가 된다.
+#   (아이디어 목록 4 '파생 사실 명시화')
+FACTS_SEP = "\n[TYPE-FACTS]\n"
 
 # augment_v2_section 이 방금 주입한 {이름: 정의문}. 인용 타깃(cite_target)이 참조한다.
 #   ※ 같은 예제에 대해 collate_input → collate 가 연달아 불리므로 모듈 전역으로 충분하다
@@ -248,6 +253,16 @@ def augment_v2_section(tokenizer: PreTrainedTokenizer, example: LmExample,
                 parts.append(blk)
                 used += _ntok(blk)
                 injected.update(dict(tl))
+    # ★ TYPE_FACTS: 주입된 타입의 생성자 수·인자수를 계산해 한 줄로 명시
+    if os.environ.get("TYPE_FACTS", "0") == "1" and injected:
+        from model_deployment.type_constrained import ctor_arities
+        facts = []
+        for nm, dfn in injected.items():
+            ar = ctor_arities(dfn)
+            if ar:
+                facts.append(f"{nm}: {len(ar)} ctors, arities {ar}")
+        if facts:
+            parts.append(FACTS_SEP + "\n".join(facts[:6]))
     if os.environ.get("INJECT_DEFS", "0") == "1":
         if ab_d:
             parts.append(DEFS_SEP + "(none)")
@@ -255,6 +270,28 @@ def augment_v2_section(tokenizer: PreTrainedTokenizer, example: LmExample,
             d_budget = min(int(os.environ.get("DEFS_TOKENS", "300")), max(0, room - used))
             if d_budget > 16:
                 dl = definitions_v2(goal, idx, project=proj, budget_tok=d_budget, ntok=_ntok)
+                # ★ RAFT distractor: goal 과 무관한 정의를 K개 섞는다.
+                #   distractor 가 없으면 '인용'은 **거기 있는 하나를 베끼기**라 판별 압력이 없다.
+                #   섞으면 goal 과 맞는 것을 **골라야** 하므로 실제로 읽고 매칭해야 한다.
+                #   (아이디어 목록 10 RAFT. goal 에 없는 이름이라 make_cite 는 이를 인용하지 않는다)
+                k = int(os.environ.get("DISTRACTORS", "0"))
+                if k > 0 and dl:
+                    import hashlib as _h
+                    keys = list(idx.keys())
+                    seed = int(_h.md5((goal or "")[:200].encode()).hexdigest()[:8], 16)
+                    have = {n for n, _ in dl} | set(injected)
+                    extra = []
+                    for j in range(k * 12):
+                        nm = keys[(seed + j * 7919) % len(keys)]
+                        if nm in have or nm in (goal or ""):
+                            continue
+                        d = pick_def(idx.get(nm), proj)
+                        if not d or _ntok(d) > 60:
+                            continue
+                        extra.append((nm, d)); have.add(nm)
+                        if len(extra) >= k:
+                            break
+                    dl = dl + extra
                 if dl:
                     parts.append(DEFS_SEP + "\n".join(l for _, l in dl))
                     injected.update(dict(dl))
@@ -671,6 +708,18 @@ class ProofPremiseCollator:
             target = "".join(example.next_steps)
         else:
             target = example.next_steps[0]
+
+        # ★ ERROR_COND 데이터 주입: 학습 코퍼스에는 에러 필드가 없다(순수 state->tactic).
+        #   그대로면 [ATTEMPT]/[ERROR] 는 60,000 step 동안 한 번도 안 채워진다 = 죽은 기능.
+        #   실제 Coq 문구 그대로 합성해 붙인다(분기수 오류 / 이름 없음 — 실패의 48%).
+        if os.environ.get("ERROR_COND", "0") == "1":
+            from tactic_gen.synth_error import make as _synth
+            _k = (f"{getattr(example, 'file_name', '')}:"
+                  f"{getattr(example, 'proof_idx', '')}:{getattr(example, 'step_idx', '')}")
+            _att, _err = _synth(target, getattr(example, "proof_state", "") or "", {}, _k)
+            if _att:
+                example = copy.copy(example)
+                example.attempted_tactic, example.coq_error = _att, _err
 
         # ① 프롬프트는 **원래 이름**으로 구성한다.
         #    ★ 정규화된 goal 로 정의를 조회하면 인덱스에 없어 [TYPES]/[DEFINITIONS] 가 통째로
