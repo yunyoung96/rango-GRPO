@@ -336,6 +336,37 @@ class ClassicalSearcher:
             self.goal_memo[key] = entry
         return entry
 
+    def _repair_check(self, cand: Candidate):
+        """INVALID 난 후보를 Coq 에러로 고쳐 **한 번만** 재검증. 성공하면 새 결과를 반환.
+
+        ★ 반환값을 그대로 정상 match 로 흘려보내므로, 교정된 후보는 VALID/COMPLETE 경로를
+          평소와 똑같이 탄다(자식 확장·목표 갱신 모두 정상 동작).
+        ★ 한 번만 시도: 교정이 또 실패하면 다른 원인이라 반복해도 소득이 없고,
+          교정 루프가 탐색 예산을 잠식한다.
+        """
+        import os
+        if os.environ.get("ERROR_REPAIR", "0") != "1" or getattr(cand, "_repaired", False):
+            return None
+        try:
+            from model_deployment.error_repair import repair
+            fixes = repair(cand.tactic, self.proof_manager.last_error())
+            if not fixes or not cand.proof_str.endswith(cand.tactic):
+                return None
+            new_tac = fixes[0]
+            new_proof_str = cand.proof_str[: -len(cand.tactic)] + new_tac
+            res = self.proof_manager.check_proof(
+                new_proof_str, self.initial_dset_file.proofs[-1].theorem
+            )
+            if res.tactic_result == TacticResult.INVALID:
+                return None
+            print(f"  → [교정] {cand.tactic.strip()!r} → {new_tac.strip()!r}  ({res.tactic_result.name})")
+            cand.tactic = new_tac
+            cand.proof_str = new_proof_str
+            cand._repaired = True
+            return res
+        except Exception:
+            return None
+
     def search_step(self, attempt_num: int, print_proofs: bool) -> Optional[Candidate]:
         cur_candidate = heapq.heappop(self.frontier)
         print(f"\n[Search] 호출 #{attempt_num} | iterate #{attempt_num}  depth={cur_candidate.depth}  score={cur_candidate.score:.4f}  tactic={repr(cur_candidate.tactic.strip())}")
@@ -347,6 +378,14 @@ class ClassicalSearcher:
             cur_candidate.proof_str,
             self.initial_dset_file.proofs[-1].theorem,
         )
+        # ★ ERROR_REPAIR=1: Coq 이 알려준 정답으로 고쳐 재검증(성공 시 아래 match 를 정상 통과).
+        #   `Expects a disjunctive pattern with N branches` → `as [|...|]`(빈 분기 N개).
+        #   빈 분기는 Coq 이 인자를 자동 명명하므로 arity 를 몰라도 문법이 항상 맞는다.
+        #   근거: 후보를 '제거'하는 개입은 탐색량을 못 늘려 무효였다(이름필터 0.93배).
+        if proof_check_result.tactic_result == TacticResult.INVALID:
+            _rep = self._repair_check(cur_candidate)
+            if _rep is not None:
+                proof_check_result = _rep
         match proof_check_result.tactic_result:
             case TacticResult.COMPLETE:
                 assert proof_check_result.new_proof is not None
