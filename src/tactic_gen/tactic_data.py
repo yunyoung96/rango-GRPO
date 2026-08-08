@@ -4,6 +4,7 @@ import re
 import os
 import pickle
 import random
+import copy
 import functools
 from typing import Any, Optional
 from pathlib import Path
@@ -146,6 +147,12 @@ def _fd_index() -> dict:
 
 TYPES_SEP = "\n[TYPES]\n"
 DEFS_SEP = "\n[DEFINITIONS]\n"
+# ★ 에러 조건부 학습(ERROR_COND=1): 직전 시도와 Coq 이 준 에러를 프롬프트에 넣는다.
+#   기존 SFT 는 순수 `state -> gold tactic` 이라, 실패 정리당 INVALID 가 중앙 52회 나는데도
+#   **에러에서 아무것도 배우지 않는다**. 에러에는 정답이 들어 있다
+#   (`Expects a disjunctive pattern with 10 branches`, `... was not found`).
+ATTEMPT_SEP = "\n[ATTEMPT]\n"
+ERROR_SEP = "\n[ERROR]\n"
 
 # augment_v2_section 이 방금 주입한 {이름: 정의문}. 인용 타깃(cite_target)이 참조한다.
 #   ※ 같은 예제에 대해 collate_input → collate 가 연달아 불리므로 모듈 전역으로 충분하다
@@ -199,6 +206,10 @@ def augment_v2_section(tokenizer: PreTrainedTokenizer, example: LmExample,
       · ★ 길이 보장: 남은 자리를 계산해 **이 블록만 잘라낸다**. 프롬프트 한도를 넘겨서
         토크나이저가 앞쪽(premise)을 잘라내는 일이 없도록, 여기서 먼저 예산을 맞춘다.
     """
+    # ★ 함수 진입 즉시 초기화 — 조기 반환 경로(AUGMENT_V2 off / 인덱스 없음 / 자리 부족)가
+    #   여럿이라 끝에서만 지우면 **이전 예제의 주입 이름이 남는다**.
+    #   실제로 그 탓에 goal 은 정규화됐는데 정의는 없는 예제가 400개 중 20건 나왔다.
+    _LAST_INJECTED.clear()
     if os.environ.get("AUGMENT_V2", "0") != "1":
         return ""
     # ★ ablation: 섹션 **헤더는 유지**하고 내용만 비운다(포맷 고정 → 정보의 기여만 분리).
@@ -247,7 +258,6 @@ def augment_v2_section(tokenizer: PreTrainedTokenizer, example: LmExample,
                 if dl:
                     parts.append(DEFS_SEP + "\n".join(l for _, l in dl))
                     injected.update(dict(dl))
-    _LAST_INJECTED.clear()
     _LAST_INJECTED.update(injected)      # collate 가 바로 뒤에서 읽는다(같은 스레드·같은 예제)
     return "".join(parts)
 
@@ -626,6 +636,16 @@ class ProofPremiseCollator:
                 + self.STATE_SEP + state_str
                 + self.SCRIPT_SEP + script_str
             )
+            # ★ 에러 조건부: 직전 실패 시도와 Coq 에러(있을 때만). 포맷은 항상 고정하지 않는다 —
+            #   추론 첫 시도에는 에러가 없으므로, 섹션 자체가 없는 형태도 학습해야 한다.
+            att = getattr(example, "attempted_tactic", None)
+            err = getattr(example, "coq_error", None)
+            if os.environ.get("ERROR_COND", "0") == "1" and att and err:
+                e_str, _ = allocate_tokens(tokenizer, str(err),
+                                           int(os.environ.get("ERROR_TOKENS", "96")))
+                a_str, _ = allocate_tokens(tokenizer, str(att),
+                                           int(os.environ.get("ATTEMPT_TOKENS", "64")))
+                base_str = base_str + ATTEMPT_SEP + a_str + ERROR_SEP + e_str
             return base_str + augment_v2_section(tokenizer, example, base_str) + NEWLINE_RESPONSE_TEMPLATE
         types_str = types_section(tokenizer, example)   # INJECT_TYPES=0 이면 ""
         _tnames = {ln.split(" :=")[0].strip()            # [TYPES] 가 이미 보여준 타입명
@@ -647,26 +667,41 @@ class ProofPremiseCollator:
         return combined_str
 
     def collate(self, tokenizer: PreTrainedTokenizer, example: LmExample) -> str:
-        input_str = self.collate_input(tokenizer, example)   # ← _LAST_INJECTED 가 여기서 채워진다
         if self.whole_proof:
             target = "".join(example.next_steps)
         else:
             target = example.next_steps[0]
-        # ★ CITE_TARGET=1: 타깃 앞에 '[USES] <쓴 정의>' 인용을 붙인다.
-        #   ablation 결론(clean vs wrong 차이 ±0, McNemar p=1.000)이 "모델이 섹션을 안 읽는다"였다.
-        #   원인은 loss 가 tactic 토큰에서만 계산되는데 gold 가 destruct/induction 인 비율이 10.5%뿐이라
-        #   나머지 89.5% 는 섹션 없이 예측되기 때문 → **무시하는 것이 최적해**.
-        #   인용을 타깃에 넣으면 섹션을 읽지 않을 때 loss 가 오르므로 gradient 압력이 생긴다.
+
+        # ① 프롬프트는 **원래 이름**으로 구성한다.
+        #    ★ 정규화된 goal 로 정의를 조회하면 인덱스에 없어 [TYPES]/[DEFINITIONS] 가 통째로
+        #      사라진다(실측). 반드시 원본으로 섹션을 만든 뒤 마지막에 치환해야 한다.
+        input_str = self.collate_input(tokenizer, example)   # ← _LAST_INJECTED 가 채워짐
+
+        # ② 인용 타깃: 프롬프트에 실제로 주입된 정의만 인용(없는 걸 인용시키면 환각 조장)
         if os.environ.get("CITE_TARGET", "0") == "1":
             from tactic_gen.cite_target import make_cite
-            cite = make_cite(target, getattr(example, "proof_state", "") or "",
-                             dict(_LAST_INJECTED))
-            target = cite + "\n" + target
+            target = make_cite(target, getattr(example, "proof_state", "") or "",
+                               dict(_LAST_INJECTED)) + "\n" + target
+
+        # ③ α-이름 정규화: **완성된 프롬프트 전체와 정답에 같은 매핑**을 적용한다.
+        #    이러면 goal 의 `val` 과 [TYPES] 의 `Inductive val := ...` 이 함께 `T0` 가 되어
+        #    조회 가능성은 유지되면서 **이름 암기만 무력화**된다.
+        #    (ablation: clean vs wrong 차이 ±0 → 모델이 안 읽는 이유는 '읽을 필요가 없어서'다)
+        if os.environ.get("NORMALIZE_NAMES", "0") == "1":
+            from tactic_gen.normalize_names import build_mapping, apply_mapping, should_normalize
+            key = (f"{getattr(example, 'file_name', '')}:"
+                   f"{getattr(example, 'proof_idx', '')}:{getattr(example, 'step_idx', '')}")
+            if should_normalize(key):
+                mapping = build_mapping(dict(_LAST_INJECTED), key,
+                                        avoid_text=input_str + target)
+                if mapping:
+                    input_str = apply_mapping(input_str, mapping)
+                    target = apply_mapping(target, mapping)
+
         out_str, _ = allocate_tokens(
             tokenizer, target, self.out_tokens, truncate_front=False
         )
-        combined_str = input_str + out_str
-        return combined_str
+        return input_str + out_str
 
     @classmethod
     def from_conf(cls, conf: ProofPremiseCollatorConf) -> ProofPremiseCollator:

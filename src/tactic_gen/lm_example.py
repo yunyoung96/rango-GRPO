@@ -135,6 +135,10 @@ class LmExample:
         self.file_name = file_name
         self.proof_idx = proof_idx
         self.step_idx = step_idx
+        # ★ 에러 조건부 학습(ERROR_COND=1) 전용. 평소엔 None 이고 프롬프트에 안 들어간다.
+        #   직전에 시도해서 Coq 이 거절한 tactic 과 그 에러 메시지.
+        self.attempted_tactic = None
+        self.coq_error = None
 
     def __hash__(self) -> int:
         next_step_str = "<NEXT_SEP>".join(self.next_steps)
