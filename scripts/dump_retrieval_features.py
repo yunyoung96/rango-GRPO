@@ -7,6 +7,7 @@
 저장하는 특징 (후보마다):
     0 A' 매칭크기   1 B head일치   2 C 연산자   3 D 모양
     4 C' 결론head  5 E 가설매칭   6 tfidf점수  7 이름subword점수
+    8 H 지역성     9 G anti-unify  10 premise 가설수  11 메타변수 비율
 
 용량을 줄이려고 **tfidf 상위 CAP 개**만 저장한다(그 밖에 gold 가 있으면 사례를 버린다).
 
@@ -131,7 +132,14 @@ with open(OUT, "w") as fo:
                 f = [RS.sig_match_size(gs, ps), RS.sig_head(gs, ps), RS.sig_ops(gs, ps),
                      RS.sig_shape(gs, ps), RS.sig_concl_heads(gs, ps, idf),
                      RS.sig_hyp_match(gs, ps)]
-            f += [tf[j], ns[j]]
+            # H 지역성 · G anti-unification · 구조 크기 지표를 더한다
+            h = RS.sig_locality(getattr(dp.file_context, "file", "") or "", 0, pool[j])
+            gg = RS.sig_anti_unify(gs, ps) if ps is not None else 0.0
+            nh = float(len(RS.decompose(getattr(pool[j], "text", "") or "")[1])) \
+                if ps is not None and RS.decompose(getattr(pool[j], "text", "") or "") \
+                else 0.0
+            mv = float(len(ps[0])) if ps is not None else 0.0
+            f += [tf[j], ns[j], h, gg, min(nh, 8.0) / 8.0, min(mv, 10.0) / 10.0]
             rows.append([round(x, 5) for x in f])
         fo.write(json.dumps({
             "feats": rows,
