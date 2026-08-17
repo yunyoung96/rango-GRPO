@@ -119,17 +119,34 @@ def pick_def(cands, where=None):
         return cands
     if where:
         rel = _rel_path(where)
-        if rel in cands:                                   # ① 같은 파일
-            return cands[rel]
-        d_of = lambda k: k.rsplit('/', 1)[0] if '/' in k else ''
-        mydir = d_of(rel)
-        for k, v in cands.items():                         # ② 같은 디렉토리
-            if d_of(k) == mydir:
+        # ★ 예제 경로와 인덱스 키는 **프로젝트 표기가 다르다**:
+        #     예제  repos/compcert/flocq/IEEE754/Binary.v → compcert/flocq/IEEE754/Binary.v
+        #     인덱스 AbsInt-CompCert/flocq/IEEE754/Binary.v
+        #   예전엔 ①·②를 문자열 그대로 비교해서 **CompCert 에서 항상 실패**했고,
+        #   결국 ③(프로젝트 단위)로 떨어져 같은 프로젝트 내 아무 정의나 골랐다.
+        #   실측: 같은 파일/디렉토리에 정답이 있는 1349건 중 **654건(48.5%)에 다른 정의**를 주입.
+        #   → 첫 경로 요소만 ③과 같은 규칙(정규화 후 부분일치)으로 비교한다.
+        def _split1(p):
+            a = p.split('/', 1)
+            return a[0], (a[1] if len(a) > 1 else '')
+
+        def _proj_eq(a, b):
+            x, y = _norm_proj(a), _norm_proj(b)
+            return x == y or bool(x) and (x in y or y in x)
+
+        rp, rrest = _split1(rel)
+        for k, v in cands.items():                         # ① 같은 파일
+            kp, krest = _split1(k)
+            if krest == rrest and _proj_eq(kp, rp):
                 return v
-        key = _norm_proj(rel.split('/', 1)[0])
+        d_of = lambda x: x.rsplit('/', 1)[0] if '/' in x else ''
+        for k, v in cands.items():                         # ② 같은 디렉토리
+            kp, krest = _split1(k)
+            if d_of(krest) == d_of(rrest) and _proj_eq(kp, rp):
+                return v
         for k, v in cands.items():                         # ③ 같은 프로젝트
-            kp = _norm_proj(k.split('/', 1)[0])
-            if kp == key or (key and (key in kp or kp in key)):
+            kp, _ = _split1(k)
+            if _proj_eq(kp, rp):
                 return v
     if 'stdlib' in cands:                                  # ④ stdlib
         return cands['stdlib']
