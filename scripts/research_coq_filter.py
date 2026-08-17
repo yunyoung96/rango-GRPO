@@ -155,7 +155,28 @@ for e in steps:
         print(f"  skip(예외): {rel} — {str(ex)[:70]}", flush=True)
         continue
 
-    def probe(nm: str) -> bool:
+    def probe_score(nm: str) -> float:
+        """적용가능성을 **단계적 점수**로. 이진 통과/탈락은 변별력이 없다.
+
+        ★ eapply 는 evar 를 만들어 거의 모든 결론에 매칭된다 — 넣으면 후보 30개가 전부
+          통과한다(30→30). 그렇다고 빼면 eapply 로 쓰이는 gold 를 놓친다.
+          → 강도별로 점수를 달리 준다: apply/rewrite(확실) 3점, eapply(약함) 1점.
+        """
+        for tac, sc in ((f"Fail apply {nm}.", 3.0), (f"Fail rewrite {nm}.", 3.0),
+                        (f"Fail rewrite <- {nm}.", 3.0), (f"Fail erewrite {nm}.", 2.0),
+                        (f"Fail eapply {nm}.", 1.0)):
+            before = len(cf.errors)
+            try:
+                cf.add_step(len(cf.steps) - 1, "\n" + tac)
+                cf.exec(1)
+            except Exception:
+                return 3.0
+            tot["probe"] += 1
+            if len(cf.errors) > before:
+                return sc
+        return 0.0
+
+    def _unused_probe(nm: str) -> bool:
         """적용 가능하면 True. `Fail` 이라 상태를 안 바꾼다.
 
         ★ 시도 집합이 좁으면 gold 를 버린다 — apply/rewrite 만 봤을 때 **22.5%** 를
@@ -183,7 +204,8 @@ for e in steps:
         return False
 
     t1 = time.time()
-    ok = [probe(nm.split(".")[-1]) if nm else True for nm in names]
+    scs = [probe_score(nm.split(".")[-1]) if nm else 3.0 for nm in names]
+    ok = [x > 0 for x in scs]
     dt = (time.time() - t1) * 1000
     cf.close()
     tmp.unlink(missing_ok=True)
@@ -191,8 +213,8 @@ for e in steps:
     # ★ 필터로 **버리면** R@20 이 97.5→77.5% 로 무너진다(gold 를 22.5% 버림).
     #   버리지 말고 **적용 가능한 것을 앞으로 옮기는 재정렬**만 한다 — 순위는 오르고
     #   잘못 버릴 위험은 사라진다.
-    kept = ([j for j in range(len(prems)) if ok[j]]
-            + [j for j in range(len(prems)) if not ok[j]])
+    # 점수 내림차순 재정렬(동점은 원래 순위 유지) — 버리지 않으므로 손실이 없다
+    kept = sorted(range(len(prems)), key=lambda j: (-scs[j], j))
     tot["n"] += 1
     tot["cand"] += len(prems)
     tot["kept"] += sum(1 for j in range(len(prems)) if ok[j])
