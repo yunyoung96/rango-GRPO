@@ -357,6 +357,21 @@ _DYN_PAD = os.environ.get("DYNAMIC_PADDING", "0") == "1"
 RESPONSE_TEMPLATE = "[TACTIC]"
 NEWLINE_RESPONSE_TEMPLATE = f"\n{RESPONSE_TEMPLATE}\n"
 
+# ★ Qwen 토크나이저 대응 (실측):
+#   Qwen 은 ']' 와 뒤따르는 개행을 **한 토큰**으로 병합한다(']\n\n' = 2533).
+#   그래서 템플릿 "\n[TACTIC]\n" 의 토큰열이 문맥에 **한 번도 나타나지 않고**,
+#   DataCollatorForCompletionOnlyLM 은 못 찾으면 **경고 없이 전체를 마스킹**한다
+#   → 라벨이 0개인 채로 몇 시간을 학습하게 된다(실제로 검증에서 잡음).
+#
+#   실측으로 확인한 유일한 정합 조합(Qwen·deepseek 모두 12/12, 라벨==타깃):
+#     · 템플릿 = "[TACTIC]\n"  (앞 개행 없음)
+#     · 타깃    = 선행 개행 제거
+#   프롬프트 본문은 그대로 "...\n[TACTIC]\n" 로 끝난다 — 개행 하나가 프롬프트 쪽으로 옮겨질 뿐.
+#   생성 시에는 model_wrapper 가 TACTIC_LEADING_NL=1 로 개행을 다시 붙인다
+#   (탐색기가 cur_proof_script + tactic 으로 이어붙이므로 개행이 없으면 Coq 구문이 깨진다).
+STRIP_TARGET_NL = os.environ.get("STRIP_TARGET_NL", "0") == "1"
+MASK_TEMPLATE = f"{RESPONSE_TEMPLATE}\n" if STRIP_TARGET_NL else NEWLINE_RESPONSE_TEMPLATE
+
 __test_lm_json = {
     "proof_script": "Theorem rev_app : forall x l, rev l ++ [x] = rev (x::l).\nProof.\n  intros.",
     "proof_state": "x: X\nl: list X\n\nrev l ++ [x] = rev (x :: l)",
@@ -748,12 +763,17 @@ class ProofPremiseCollator:
             key = (f"{getattr(example, 'file_name', '')}:"
                    f"{getattr(example, 'proof_idx', '')}:{getattr(example, 'step_idx', '')}")
             if should_normalize(key):
+                # v7: premises 를 넘겨 [PREMISES] lemma 이름도 정규화 대상에 포함
+                #     (NORMALIZE_PREMISES=1 일 때만 실제로 대상이 된다)
                 mapping = build_mapping(dict(_LAST_INJECTED), key,
-                                        avoid_text=input_str + target)
+                                        avoid_text=input_str + target,
+                                        premises=list(getattr(example, "premises", None) or []))
                 if mapping:
                     input_str = apply_mapping(input_str, mapping)
                     target = apply_mapping(target, mapping)
 
+        if STRIP_TARGET_NL:
+            target = target.lstrip("\n")     # 개행은 프롬프트 쪽 "[TACTIC]\n" 이 이미 갖고 있다
         out_str, _ = allocate_tokens(
             tokenizer, target, self.out_tokens, truncate_front=False
         )
@@ -1025,7 +1045,7 @@ class LmProcessedDataset(Dataset):
         self.edb_map = dict(zip(range(self.edb.size()), __shuffled_list))
         self.raw_examples: list[LmExample] = []
         self.collator = DataCollatorForCompletionOnlyLM(
-            response_template=NEWLINE_RESPONSE_TEMPLATE,
+            response_template=MASK_TEMPLATE,
             tokenizer=tokenizer,
             mlm=False,
         )
@@ -1209,7 +1229,7 @@ class LmDataset(Dataset):
         self.hard_seq_len = hard_seq_len
         self.max_n_examples = max_n_examples
         self.collator = DataCollatorForCompletionOnlyLM(
-            response_template=NEWLINE_RESPONSE_TEMPLATE,
+            response_template=MASK_TEMPLATE,
             tokenizer=tokenizer,
             mlm=False,
         )

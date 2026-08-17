@@ -143,6 +143,20 @@ def get_training_args(
         ),
         # optim="paged_adamw_8bit", # causes problems retraining ?
         learning_rate=get_required_arg("learning_rate", conf),
+        # ★ 워밍업·클리핑을 conf 로 조절 가능하게 (기본값 = HF 기본값이라 기존 실험은 무영향).
+        #   Qwen3B + LoRA 를 rango 의 lr=1e-3 로 돌렸더니 step 245 에서 grad_norm 64.6 으로
+        #   터지며 loss 1.07 → 4.6 으로 발산했다(회복 못 함). 워밍업 부재 + 과대 LR 이 원인.
+        # ★ 재개 시 데이터로더 재생(skip) 생략 여부.
+        #   기본(False)은 global_step 만큼 배치를 **다시 만들어 버린다**. 우리 콜레이터는
+        #   예제마다 BM25+TF-IDF 검색을 돌리므로, 예제 캐시가 없으면 10,000배치(32만 예제)
+        #   재생에 수 시간이 걸린다(머신 교체로 /tmp 캐시 소실 시 실측). 모델·옵티마이저
+        #   상태는 그대로 복원되므로 학습 자체에는 영향이 없고, 데이터 **순서**만 달라진다.
+        ignore_data_skip=get_optional_arg("ignore_data_skip", conf, False),
+        warmup_steps=get_optional_arg("warmup_steps", conf, 0),
+        # ★ 스케줄러도 conf 로 (기본 "linear" = HF 기본값이라 기존 실험 무영향).
+        #   v5 는 60k 기준 linear 라 26k 시점 lr 이 아직 높았고 eval 이 10k 이후 계속 올랐다.
+        lr_scheduler_type=get_optional_arg("lr_scheduler_type", conf, "linear"),
+        max_grad_norm=get_optional_arg("max_grad_norm", conf, 1.0),
         logging_steps=get_required_arg("logging_steps", conf),
         num_train_epochs=get_required_arg("num_train_epochs", conf),
         max_steps=get_optional_arg("max_steps", conf, -1),

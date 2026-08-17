@@ -39,6 +39,82 @@ from tactic_gen.tactic_data import (
 from model_deployment.model_result import ModelResult, filter_recs
 
 
+
+_FENCE_RE = re.compile(r"^\s*```")
+_SECTION_RE = re.compile(r"^\[[A-Z][A-Z_ -]*\]\s*$")
+
+
+def _first_tactic(text: str) -> str:
+    """생성문에서 **첫 Coq tactic 한 줄**만 추출(SFT 안 한 베이스 모델 zero-shot 평가용).
+
+    실측(Qwen2.5-Coder-3B 원시출력 48건)을 보면 **첫 줄이 거의 항상 tactic**이고
+    그 뒤에 [END] / 코드펜스 / 영어 해설이 따라붙는다:
+
+        "auto.⏎[END]⏎The lemma `is_nan_SF2FF` has been proved using ..."
+        "auto with typeclass_instances⏎```⏎The tactic `auto with ...` will ..."
+
+    그래서 위에서부터 훑으며 **처음 나오는 tactic 같은 줄**을 돌려준다.
+    (예전엔 코드펜스를 우선 처리해서, 뒤쪽 펜스 안의 해설을 tactic 으로 잘못 집었다.)
+    걸러야 하는 것: 영어 산문 · 선언문/명제(모델이 [PREMISES]·[STATE] 를 베껴 씀) · 섹션 헤더.
+    못 찾으면 원문 그대로 — Coq 가 INVALID 로 판정(실패 집계가 맞다).
+    """
+    if not text or not text.strip():
+        return text
+
+    def _clean(ln: str) -> str:
+        m = re.match(r"^(.*?\.)(\s|$)", ln)
+        ln = (m.group(1) if m else ln).strip()
+        return ln if ln.endswith((".", ";")) else ln + "."
+
+    for raw in text.split("\n"):
+        ln = raw.strip()
+        if not ln or ln.startswith("```") or _SECTION_RE.match(ln):
+            continue
+        if ln.startswith("(*") or ln.startswith("*"):
+            continue
+        if ln.rstrip(".") + "." in _TERMINALS:
+            return ln.rstrip(".") + "."
+        if _is_prose(ln) or _is_decl(ln):
+            continue
+        # tactic 은 소문자로 시작하거나 불릿(-+*)/중괄호/대괄호로 시작한다
+        if not re.match(r"^[a-z_]|^[-+*{}\[]", ln):
+            continue
+        # 명제를 그대로 베낀 줄 거부 — 단 명제를 인자로 받는 tactic 은 예외
+        if ("->" in ln or " = " in ln) and not re.match(
+                r"^(replace|assert|cut|change|pose|set|remember|specialize|enough|"
+                r"refine|exact|apply|eapply|rewrite|erewrite|generalize|destruct)\b", ln):
+            continue
+        return _clean(ln)
+    return text
+
+
+_TERMINALS = {"Proof.", "Qed.", "Defined.", "Admitted.", "Abort."}
+
+
+# 선언문 판별: 모델이 [PREMISES] 블록을 그대로 베껴 쓰는 일이 잦다(실측:
+#   "Eval_get : forall (F V: Type) (genv: Genv.t F V) ..." 를 tactic 으로 뱉음).
+#   `이름 : 타입` 꼴이나 Lemma/Theorem 머리는 tactic 이 아니다.
+_DECL_RE = re.compile(
+    r"^(Lemma|Theorem|Definition|Corollary|Remark|Fact|Inductive|Fixpoint|Variable|"
+    r"Hypothesis|Axiom|Record|Notation|Require|Import|Section|Context)\b"
+    r"|^[A-Za-z_][\w'.]*\s*:\s*(forall|\S)")
+
+
+def _is_decl(ln: str) -> bool:
+    return bool(_DECL_RE.match(ln))
+
+
+# 산문 판별: 흔한 영어 기능어가 섞여 있고 단어가 많으면 tactic 이 아니다.
+_PROSE_W = re.compile(
+    r"\b(the|this|that|we|is|are|and|of|to|in|with|for|it|which|has|been|will|"
+    r"defines|proves|uses|script|theorem|proof|following|here|lemma|code|tactic)\b", re.I)
+
+
+def _is_prose(ln: str) -> bool:
+    words = ln.split()
+    return len(words) > 6 and len(_PROSE_W.findall(ln)) >= 2
+
+
 class TokenMask(Enum):
     STATE = 0
     SCRIPT = 1
@@ -185,6 +261,17 @@ class DecoderLocalWrapper:
         input_num_tokens = inputs["input_ids"].shape[1]
         generated_seqs = outputs.sequences[:, input_num_tokens:]
         tactics = self.tokenizer.batch_decode(generated_seqs, skip_special_tokens=True)
+        if os.environ.get("TACTIC_LEADING_NL", "0") == "1":
+            # STRIP_TARGET_NL=1 로 학습한 모델(Qwen 계열)은 선행 개행 없이 tactic 을 뱉는다.
+            # 탐색기는 cur_proof_script + tactic 으로 이어붙이므로 개행이 없으면
+            # "...end.Proof." 처럼 붙어 Coq 이 한정이름으로 파싱한다 → 반드시 복원한다.
+            tactics = [t if t.startswith("\n") else "\n" + t for t in tactics]
+        if os.environ.get("ZEROSHOT_CLEAN", "0") == "1":
+            # SFT 안 한 베이스 모델은 tactic 한 줄이 아니라 **증명 전체·설명·마크다운**을 뱉는다.
+            # (실측: 3B가 "```coq\nauto\n```\nThis script defines the theorem ..." 형태)
+            # 그대로 Coq 에 넣으면 전부 구문오류 INVALID 라 모델 간 비교가 성립하지 않는다.
+            # → 첫 tactic 한 줄만 잘라낸다. SFT 모델에는 이 env 를 켜지 않으므로 영향 없음.
+            tactics = [_first_tactic(t) for t in tactics]
         non_special_tokens = torch.concat(
             [(generated_seqs != t)[:, :, None] for t in self.tokenizer.all_special_ids],
             axis=2,
@@ -259,7 +346,23 @@ class DecoderLocalWrapper:
         tokenizer = get_tokenizer(
             get_required_arg("model_name", training_conf), add_eos=False
         )
-        model = get_model(str(checkpoint_loc.resolve()))
+        # ★ SFT 없는 베이스 모델 평가: 체크포인트 디렉토리에 가중치가 없으면
+        #   training_conf 의 model_name(HF 이름)을 그대로 로드한다.
+        #   (models/nosft-* 처럼 conf 만 두고 베이스 성능을 재는 용도)
+        _has_w = any(checkpoint_loc.glob("*.safetensors")) or \
+            (checkpoint_loc / "adapter_config.json").exists() or \
+            (checkpoint_loc / "pytorch_model.bin").exists()
+        _src = str(checkpoint_loc.resolve()) if _has_w else \
+            get_required_arg("model_name", training_conf)
+        model = get_model(_src, load_in_4bit=bool(training_conf.get("load_in_4bit", True)))
+        # ★ bf16 경로(load_in_4bit=false)는 device_map 없이 CPU 에 올라온다 → 직접 GPU 로.
+        #   (4bit 경로는 BitsAndBytes 가 device_map 으로 이미 올림)
+        try:
+            import torch as _torch
+            if _torch.cuda.is_available() and next(model.parameters()).device.type == "cpu":
+                model = model.cuda()
+        except StopIteration:
+            pass
         return cls(model, tokenizer, example_collator, hard_seq_length)
 
     @classmethod
