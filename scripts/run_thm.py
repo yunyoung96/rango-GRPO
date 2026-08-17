@@ -113,10 +113,14 @@ def get_sentence_db_loc(split: Split) -> Path:
 
 def get_searcher_conf(model_alias: str) -> SearcherConf:
     timeout = 600
+    # ★ GOLD_PREFIX: gold 증명의 앞부분을 **정답으로 채운 채** 나머지를 풀게 한다.
+    #   표류(drift)를 제거하고 "남은 부분을 조합할 수 있는가"만 분리해서 재기 위함.
+    #   미설정이면 기존과 동일(None).
+    _gp = os.environ.get("GOLD_PREFIX") or None
     straight_line_conf = StraightLineSearcherConf(
         timeout=timeout,
         print_proofs=True,
-        initial_proof=None,
+        initial_proof=_gp,
         token_mask=None,
     )
 

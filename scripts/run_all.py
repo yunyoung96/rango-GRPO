@@ -112,6 +112,10 @@ def main():
         # (E3 커리큘럼) 명시적 인덱스 리스트 파일(한 줄에 하나) — sibling-rich 정리 등.
         text = Path(args.idx_file).read_text().split()
         indices = [int(x) for x in text]
+        # ★ --start 는 idx-file 에도 적용된다. 예전엔 여기서 무시돼 `--start 150 --num 50` 이
+        #   "뒤 50개"가 아니라 **앞 50개**를 돌았다(로그 파일명이 2.txt/9.txt 로 드러남).
+        if args.start:
+            indices = indices[args.start:]
         if args.num is not None:
             indices = indices[: args.num]
     else:

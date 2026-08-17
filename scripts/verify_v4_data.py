@@ -26,13 +26,16 @@ import sys
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 # v4 최종 구성 (ERROR_COND 는 제외 — 학습 코퍼스에 .v 가 없어 진짜 에러를 못 만든다)
-os.environ.update(dict(
+# ★ 예전엔 v4 값을 os.environ.update 로 **덮어썼다** — 그래서 v5(TYPE_FACTS 없음)를
+#   검증하려 해도 TYPE_FACTS=1 이 강제로 켜져 엉뚱한 구성을 검사했다.
+#   이제 setdefault 로 바꿔 **호출자가 준 env 가 이긴다**.
+for _k, _v in dict(
     AUGMENT_V2="1", RERANK_PREMISES="1", INJECT_TYPES="1", INJECT_DEFS="1",
     HARD_SEQ_LEN="4096", TYPES_TOKENS="300", DEFS_TOKENS="300",
     FUNC_DEFS_PATH="data/func_defs_v3.json",
     NORMALIZE_NAMES="1", NORMALIZE_RATE="0.5",
-    TYPE_FACTS="1", DISTRACTORS="2",
-))
+).items():
+    os.environ.setdefault(_k, _v)
 sys.path.insert(0, "src")
 logging.disable(logging.CRITICAL)
 
@@ -41,7 +44,7 @@ from transformers import AutoTokenizer  # noqa: E402
 from tactic_gen.lm_example import LmExample  # noqa: E402
 import tactic_gen.tactic_data as td  # noqa: E402
 from tactic_gen.tactic_data import (  # noqa: E402
-    example_collator_conf_from_yaml, example_collator_from_conf, NEWLINE_RESPONSE_TEMPLATE)
+    example_collator_conf_from_yaml, example_collator_from_conf, NEWLINE_RESPONSE_TEMPLATE)  # noqa: F401
 from tactic_gen.data_collator_compat import DataCollatorForCompletionOnlyLM  # noqa: E402
 from tactic_gen.cite_target import strip_cite  # noqa: E402
 from tactic_gen.normalize_names import build_mapping, should_normalize, apply_mapping  # noqa: E402
@@ -72,10 +75,12 @@ def main():
     ap.add_argument("--n", type=int, default=400)
     args = ap.parse_args()
 
-    cc = yaml.safe_load(open(
-        "models/deepseek-bm25-proof-tfidf-proj-thm-prem-final/training_conf.yaml"))
+    cc = yaml.safe_load(open(os.environ.get("CONF", "all_log/ft_qwen3b_v5_conf.yaml")))
     col = example_collator_from_conf(example_collator_conf_from_yaml(cc["example_collator"]))
-    tok = AutoTokenizer.from_pretrained("deepseek-ai/deepseek-coder-1.3b-instruct")
+    # 토크나이저도 고정하면 안 된다 — Qwen 으로 베이스를 바꾸면 라벨 마스킹·정규화가
+    # 다른 토큰 경계에서 깨질 수 있어, **실제 학습에 쓸 토크나이저로** 검사해야 한다.
+    tok = AutoTokenizer.from_pretrained(
+        os.environ.get("MODEL_NAME", "deepseek-ai/deepseek-coder-1.3b-instruct"))
     tok.pad_token = tok.eos_token
     steps = load_examples(args.n)
 
@@ -85,7 +90,9 @@ def main():
     n_norm = n_facts = n_cite = 0
 
     # ── 검사 0: 라벨 마스킹 (loss 가 정답에만 걸리나) ──
-    dc = DataCollatorForCompletionOnlyLM(NEWLINE_RESPONSE_TEMPLATE, tokenizer=tok)
+    # 학습이 실제로 쓰는 템플릿을 그대로 가져온다(STRIP_TARGET_NL 에 따라 달라짐).
+    # 여기서 다른 템플릿을 쓰면 "검증은 통과했는데 학습은 전부 마스킹" 이 된다.
+    dc = DataCollatorForCompletionOnlyLM(td.MASK_TEMPLATE, tokenizer=tok)
     p0 = col.collate(tok, steps[0])
     enc = tok(p0, truncation=True, max_length=4096)
     batch = dc([{k: enc[k] for k in ("input_ids", "attention_mask")}])
@@ -99,6 +106,27 @@ def main():
     if "[USES]" in tgt_txt:
         fail["라벨에 인용 잔존"] += 1
     label_info = f"{n_lab}/{n_tot} 토큰, {tgt_txt[:56]!r}"
+
+    # ── 검사 0b: 라벨 == 타깃 (전수) ──
+    n_lbl_ok = n_lbl_bad = 0
+    for e in steps[:120]:
+        _p = col.collate(tok, e)
+        _enc = tok(_p, truncation=True, max_length=4096)
+        _b = dc([{k: _enc[k] for k in ("input_ids", "attention_mask")}])
+        _l = _b["labels"][0]
+        _got = tok.decode([t for t in _l.tolist() if t != -100])
+        # ★ 정규화가 타깃 이름을 바꾸므로 원본 next_steps 와 비교하면 안 된다
+        #   (unfold pred. → unfold f2. 는 **정상 동작**이다).
+        #   진짜 불변식은 "라벨 == 마스크 템플릿 뒤의 텍스트 전부" 이다.
+        _tgt = _p.split(td.MASK_TEMPLATE)[-1]
+        if _got.strip() == _tgt.strip() and len(_got) > 0:
+            n_lbl_ok += 1
+        else:
+            n_lbl_bad += 1
+            if len(ex["라벨≠타깃"]) < 2:
+                ex["라벨≠타깃"].append(f"got={_got[:40]!r} tgt={_tgt[:40]!r}")
+    if n_lbl_bad:
+        fail["라벨≠타깃"] = n_lbl_bad
 
     for i, e in enumerate(steps):
         p = col.collate(tok, e)
@@ -153,6 +181,7 @@ def main():
 
     print(f"■ v4 데이터 검증 (예제 {len(steps)}개)")
     print(f"   라벨 범위 : {label_info}")
+    print(f"   라벨==타깃 : {n_lbl_ok}/{n_lbl_ok + n_lbl_bad}")
     print(f"   정규화 {n_norm} · TYPE-FACTS {n_facts}")
     print(f"   토큰: 중앙 {statistics.median(lens):.0f}  최대 {max(lens)}  "
           f"4096초과 {sum(1 for x in lens if x > 4096)}건")

@@ -73,3 +73,9 @@ AU_CLEAVE_ALGORITHMS.md
 all_log/*_result.txt
 all_log/*.output
 *.output
+
+# 실험 산출물 — 코드가 아니라 실행 결과라 저장소에 넣지 않는다
+all_log/gold_prefix/
+all_log/*.err
+logs/
+scripts/_tmp/
