@@ -87,18 +87,40 @@ def _rr_score(goal_c: str, prem: str) -> float:
 
 _RR_ALPHA = 5.0   # 블렌드 가중: BM25순위 prior + α×타입지향점수. (검증: α=5가 gold·rollout 모두 top-1/5 최선)
 
+# ── 적용가능성 가산 (APPLICABLE_RERANK=1). "닮았나"가 아니라 "**되나**"를 본다. ──
+#   타입점수는 head·연산자 중첩을 세므로 `apply mul_comm` 이 안 되는데도 높은 점수를 준다.
+#   `tactic_gen.applicable` 은 premise 를 `forall x…, H→…→C` 로 파싱해 C 를 goal 결론과
+#   일차 단일화한다(rewrite 는 등식 한 변이 goal 부분항과 맞는지).
+#
+#   ★ **필터가 아니라 가산**이다. 판정 재현율이 90% 라 10% 는 gold 를 잘못 떨어뜨린다.
+#     걸러내면 그만큼 정답이 사라지므로, 점수만 올려 순위로 반영한다.
+#   가중치 β: CompCert gold 129건 스윕에서 20~30 이 평평한 최적 (docs 참고).
+#     β=30 → top1 34.9→46.5% · top5 63.6→70.5% · top10 76.7→81.4% · top20 92.2→96.9%
+#     프롬프트에 실제로 실리는 premise 가 중앙 21개이므로 **top20 이 실질 지표**다.
+_RR_BETA = float(os.environ.get("APPLICABLE_BETA", "30"))
+_RR_APPLICABLE = os.environ.get("APPLICABLE_RERANK", "0") == "1"
+
+
 def rerank_premises(example) -> Optional[list]:
-    """example.premises를 **블렌드**(BM25 원순위 prior + α×타입지향점수)로 재정렬.
+    """example.premises를 **블렌드**(BM25 원순위 prior + α×타입지향점수 [+ β×적용가능성])로 재정렬.
     순수 rerank는 쉬운케이스(gold가 이미 BM25상위)를 흔들어 top-5 저하 → BM25 prior로 방지하면서
     묻힌 gold를 끌어올림. 검증(7 데이터셋): top-1 +11~18pp, top-5 regression 없음. premises 없으면 None.
     ※ 안정정렬 아님 주의 — 명시적 tie-break(원순위 i)로 결정성 보장."""
     prem = getattr(example, "premises", None)
     if not prem:
         return prem
-    gc = _rr_goal_concl(getattr(example, "proof_state", "") or "")
+    state = getattr(example, "proof_state", "") or ""
+    gc = _rr_goal_concl(state)
     n = len(prem)
-    # 점수 = (원순위 prior: 앞=높음) + α×타입매칭. 동점은 원순위 i로 결정적 tie-break.
-    scored = [((n - i) + _RR_ALPHA * _rr_score(gc, prem[i]), -i, i) for i in range(n)]
+    if _RR_APPLICABLE:
+        from tactic_gen.applicable import usable_flags
+        # goal 파싱 1회 + premise 분해 캐시. premise 마다 부르면 goal 을 n 번 재파싱한다.
+        ok = usable_flags(state, list(prem))
+    else:
+        ok = None
+    # 점수 = (원순위 prior: 앞=높음) + α×타입매칭 [+ β×적용가능성]. 동점은 원순위 i로 tie-break.
+    scored = [((n - i) + _RR_ALPHA * _rr_score(gc, prem[i])
+               + (_RR_BETA if (ok and ok[i]) else 0.0), -i, i) for i in range(n)]
     scored.sort(key=lambda x: (-x[0], -x[1]))
     return [prem[i] for _, _, i in scored]
 
@@ -767,10 +789,24 @@ class ProofPremiseCollator:
                 #     (NORMALIZE_PREMISES=1 일 때만 실제로 대상이 된다)
                 mapping = build_mapping(dict(_LAST_INJECTED), key,
                                         avoid_text=input_str + target,
-                                        premises=list(getattr(example, "premises", None) or []))
+                                        premises=list(getattr(example, "premises", None) or []),
+                                        proof_script=getattr(example, "proof_script", "") or "")
                 if mapping:
                     input_str = apply_mapping(input_str, mapping)
                     target = apply_mapping(target, mapping)
+                # ★ 동명 충돌(증명 중인 정리 이름이 [PREMISES] 에도 있는 경우, 실측 1.3%):
+                #   매핑에 넣으면 둘 다 같은 이름이 되어 "증명 대상"과 "주어진 사실"을
+                #   구분할 수 없다. 선언부 한 곳만 G# 로 바꿔 분리한다.
+                import tactic_gen.normalize_names as _nn
+                if _nn.LAST_THM_DECL:
+                    used = set(re.findall(r"\bG(\d+)\b", input_str))
+                    k = 0
+                    while str(k) in used:
+                        k += 1
+                    # apply_mapping 이 이미 원래 이름을 L# 로 바꿔놨으므로,
+                    # **바뀐 이름**을 기준으로 선언부만 다시 G# 로 바꾼다.
+                    cur = mapping.get(_nn.LAST_THM_DECL, _nn.LAST_THM_DECL)
+                    input_str = _nn.substitute_theorem_decl(input_str, cur, f"G{k}")
 
         if STRIP_TARGET_NL:
             target = target.lstrip("\n")     # 개행은 프롬프트 쪽 "[TACTIC]\n" 이 이미 갖고 있다
