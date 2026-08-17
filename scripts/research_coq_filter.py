@@ -156,9 +156,21 @@ for e in steps:
         continue
 
     def probe(nm: str) -> bool:
-        """apply/rewrite 중 하나라도 되면 True. `Fail` 이라 상태를 안 바꾼다."""
-        for tac in (f"Fail apply {nm}.", f"Fail rewrite {nm}.",
-                    f"Fail rewrite <- {nm}."):
+        """적용 가능하면 True. `Fail` 이라 상태를 안 바꾼다.
+
+        ★ 시도 집합이 좁으면 gold 를 버린다 — apply/rewrite 만 봤을 때 **22.5%** 를
+          잘못 버렸다(40건 실측). eapply 가 필요한 경우, 가설에 적용하는 경우
+          (`apply X in H`), unfold/exact 로 쓰는 경우를 모두 넣어야 한다.
+        """
+        # ★ 너무 넓히면 변별력이 사라진다: unfold/exact 를 넣었더니 후보 30개가
+        #   **전부** 통과했다(30→30). 반대로 apply/rewrite 만 보면 gold 를 22.5% 버린다.
+        #   → 실제로 lemma 를 쓰는 방식만 남긴다(eapply·가설적용 포함, unfold/exact 제외).
+        cands = [f"Fail apply {nm}.", f"Fail eapply {nm}.",
+                 f"Fail rewrite {nm}.", f"Fail rewrite <- {nm}.",
+                 f"Fail erewrite {nm}."]
+        # `apply X in *|-`(모든 가설에 시도)도 넣어 봤으나 거의 항상 성공해
+        # 후보 30개가 전부 통과했다(30→30). 변별력이 없어 뺐다.
+        for tac in cands:
             before = len(cf.errors)
             try:
                 cf.add_step(len(cf.steps) - 1, "\n" + tac)
@@ -176,22 +188,25 @@ for e in steps:
     cf.close()
     tmp.unlink(missing_ok=True)
 
-    kept = [j for j in range(len(prems)) if ok[j]]
+    # ★ 필터로 **버리면** R@20 이 97.5→77.5% 로 무너진다(gold 를 22.5% 버림).
+    #   버리지 말고 **적용 가능한 것을 앞으로 옮기는 재정렬**만 한다 — 순위는 오르고
+    #   잘못 버릴 위험은 사라진다.
+    kept = ([j for j in range(len(prems)) if ok[j]]
+            + [j for j in range(len(prems)) if not ok[j]])
     tot["n"] += 1
     tot["cand"] += len(prems)
-    tot["kept"] += len(kept)
+    tot["kept"] += sum(1 for j in range(len(prems)) if ok[j])
     tot["ms"] += dt
     b = min(gpos)
     tot["b10"] += (b < 10)
     tot["b20"] += (b < 20)
-    if any(ok[j] for j in gpos):
-        a = min(kept.index(j) for j in gpos if ok[j])
-        tot["a10"] += (a < 10)
-        tot["a20"] += (a < 20)
-        ar = str(a)
-    else:
-        tot["lost"] += 1
-        ar = "X(버림)"
+    a = min(kept.index(j) for j in gpos)
+    tot["a10"] += (a < 10)
+    tot["a20"] += (a < 20)
+    ar = str(a)
+    if not any(ok[j] for j in gpos):
+        tot["lost"] += 1          # 판정은 틀렸지만 재정렬이라 버려지진 않는다
+        ar += "(판정X)"
     print(f"  [{tot['n']}] {rel.split('/')[-1]:22s} 후보{len(prems)}→남김{len(kept)} · "
           f"gold순위 {b}→{ar} · {dt:.0f}ms (열기 {open_ms:.0f}ms)", flush=True)
 
@@ -205,7 +220,8 @@ n = max(tot["n"], 1)
 print(f"\n■ CompCert(TEST) gold step {tot['n']}개 · 후보 상위 {TOPN} (건너뜀 {tot['skip']})")
 print(f"   Coq 필터가 남기는 비율 : {tot['kept']}/{tot['cand']} = "
       f"{tot['kept']/max(tot['cand'],1)*100:.1f}%")
-print(f"   gold 를 잘못 버린 경우  : {tot['lost']}/{n} = {tot['lost']/n*100:.1f}%")
+print(f"   gold 를 '적용 불가' 로 오판 : {tot['lost']}/{n} = {tot['lost']/n*100:.1f}%"
+      f"  (버리지 않고 뒤로 미루므로 손실은 없다)")
 print(f"\n   {'':10s} {'R@10':>9s} {'R@20':>9s}")
 print(f"   {'필터 전':10s} {tot['b10']/n*100:8.1f}% {tot['b20']/n*100:8.1f}%")
 print(f"   {'필터 후':10s} {tot['a10']/n*100:8.1f}% {tot['a20']/n*100:8.1f}%")

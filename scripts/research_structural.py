@@ -342,6 +342,30 @@ def _au(a, b, cnt):
     return                                # 여기서 일반화(변수) — 더 안 센다
 
 
+# ── H: 지역성 prior (이름 무관·프로젝트 무관) ──────────────────────────────
+#   증명은 **가까운 곳의 정리**를 쓰는 경향이 있다: 같은 파일 > 같은 모듈 > 먼 파일.
+#   이건 작명 관례가 아니라 코드 구성의 보편적 성질이라 새 프로젝트에도 그대로 통한다.
+#   Sentence 에 file_path·module·line 이 있으므로 값싸게 계산된다.
+def sig_locality(cur_file: str, _unused, p) -> float:
+    """파일 경로 근접성. (줄 번호는 데이터에 없어서 못 쓴다 — step.term.line 이 None)
+
+    같은 파일 > 같은 디렉토리 > 같은 프로젝트 > 무관.
+    """
+    fp = getattr(p, "file_path", "") or ""
+    if not fp or not cur_file:
+        return 0.0
+    a = [x for x in fp.split("/") if x and x != ".."]
+    b = [x for x in cur_file.split("/") if x and x != ".."]
+    if a and b and a[-1] == b[-1]:
+        return 1.0                              # 같은 파일
+    k = 0
+    for x, y in zip(a, b):
+        if x != y:
+            break
+        k += 1
+    return min(0.6, 0.1 * k)
+
+
 def sig_anti_unify(gs, ps):
     """AU 유지 노드수 / 두 항 중 큰 쪽 크기. goal 결론 전체와 부분항 모두 시도."""
     c = ps[1]
@@ -435,6 +459,10 @@ METHODS = [
     ("● RRF(tfidf, C', G) 이름 0", "RRF_CG"),
     ("● RRF(tfidf, C', G, 이름sub)", "RRF_CGN"),
     ("● RRF(tfidf,C',G,이름sub)+A'E", "RRF_CGNAE"),
+    ("◐ H 지역성만", "H"),
+    ("◐ RRF(tfidf, C', H) 이름 0", "RRF_CH"),
+    ("◐ RRF(tfidf,C',H,이름sub)", "RRF_CHN"),
+    ("◐ RRF(tfidf,C',H,이름sub)+A'E", "RRF_CHNAE"),
 ]
 KS = (10, 20, 50)
 hits = {m[0]: collections.Counter() for m in METHODS}
@@ -542,6 +570,13 @@ for i in range(N):
         ps = pss[j]
         g_all[j] = sig_anti_unify(gs, ps) if ps is not None else 0.0
     r_g = ranks_of(g_all)
+    _cf = getattr(dp.file_context, "file", "") or ""
+    # 현재 정리의 줄 번호: step 자체엔 없고 term(Sentence) 에 있다
+    _cl = (getattr(getattr(step, "term", None), "line", 0)
+           or getattr(getattr(proof, "theorem", None), "line", 0) or 0)
+    h_all = [sig_locality(_cf, _cl, pool[j]) if j in set(cand) else 0.0
+             for j in range(len(pool))]
+    r_h = ranks_of(h_all)
     # 이름subword 랭킹은 3-way RRF 에 필요하므로 미리 구한다
     _docs_ns = [list(d) + [w for w in _SUBW.split(nm or "") if len(w) >= 2] * 2
                 for d, nm in zip(docs_full, names)]
@@ -620,6 +655,18 @@ for i in range(N):
                 elif kind == "RRF_CGNAE":
                     v = (1 / (RRF_K + r_tfidf[j]) + 1 / (RRF_K + r_c2[j])
                          + 1 / (RRF_K + r_g[j]) + 1 / (RRF_K + r_nsub[j])
+                         + (a2 + e2) * 0.001)
+                elif kind == "H":
+                    v = h_all[j]
+                elif kind == "RRF_CH":
+                    v = (1 / (RRF_K + r_tfidf[j]) + 1 / (RRF_K + r_c2[j])
+                         + 1 / (RRF_K + r_h[j]))
+                elif kind == "RRF_CHN":
+                    v = (1 / (RRF_K + r_tfidf[j]) + 1 / (RRF_K + r_c2[j])
+                         + 1 / (RRF_K + r_h[j]) + 1 / (RRF_K + r_nsub[j]))
+                elif kind == "RRF_CHNAE":
+                    v = (1 / (RRF_K + r_tfidf[j]) + 1 / (RRF_K + r_c2[j])
+                         + 1 / (RRF_K + r_h[j]) + 1 / (RRF_K + r_nsub[j])
                          + (a2 + e2) * 0.001)
                 elif kind == "RRF3WAE":
                     v = (1 / (RRF_K + r_tfidf[j]) + 1 / (RRF_K + r_c2[j])
