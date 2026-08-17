@@ -50,6 +50,7 @@ from tactic_gen.applicable import (decompose, parse, parse_toks, canon, as_eq,  
                                    as_impl, match, subterms, goal_conclusion, _INFIX)
 
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 400
+SPLIT = (sys.argv[2] if len(sys.argv) > 2 else "train").upper()
 CONF = os.environ.get("CONF", "all_log/ft_qwen3b_v8_conf.yaml")
 POOL_CAP = int(os.environ.get("POOL_CAP", "1200"))   # 구조 판정을 거는 상위 후보 수
 
@@ -58,7 +59,7 @@ tdc = copy.deepcopy(cc["tactic_data"])
 tdc["formatter_conf"].pop("proof_ret", None)
 tdc["formatter_conf"].pop("num_proofs", None)
 conf = TacticDataConf.from_yaml(tdc)
-ds = LmDataset.from_conf(conf, Split.TRAIN, N)
+ds = LmDataset.from_conf(conf, getattr(Split, SPLIT), N)
 sdb = SentenceDB.load(conf.sentence_db_loc)
 pf_conf = PremiseFilterConf.from_yaml(tdc["formatter_conf"]["premise"]["premise_filter"])
 pfilter = PremiseFilter(pf_conf.coq_excludes, pf_conf.non_coq_excludes,
@@ -272,6 +273,109 @@ def sig_concl_heads(gs, ps, idf):
     return num / (na * nb) if na and nb else 0.0
 
 
+# ── F: 정렬 익명 구조 표현의 n-gram 유사도 (이름 0, 프로젝트 무관) ──────────
+#   structural_repr.pair_tokens 가 goal·premise 를 닫힌 어휘 57개로 익명화한다.
+#   공유 상수는 S0..S9, goal 전용 G, premise 전용 P, 지역 V, 메타 M.
+#   그 토큰열의 n-gram 을 비교하면 **이름 없이** 구조 맞물림을 잰다.
+from tactic_gen.structural_repr import pair_tokens  # noqa: E402
+
+
+def _ngrams(toks, n=3):
+    return collections.Counter(tuple(toks[i:i + n]) for i in range(len(toks) - n + 1))
+
+
+def sig_struct_ngram(state, ptext):
+    """goal 부분과 premise 부분의 n-gram 겹침. 결론끼리·가설끼리를 나눠 본다."""
+    toks, _st = pair_tokens(state, ptext)
+    try:
+        sep = toks.index("[SEP]")
+    except ValueError:
+        return 0.0
+    gpart, ppart = toks[:sep], toks[sep + 1:]
+
+    def seg(ts, tag):
+        out, on = [], False
+        for t in ts:
+            if t in ("[GH]", "[GC]", "[PH]", "[PC]"):
+                on = (t == tag)
+                continue
+            if on:
+                out.append(t)
+        return out
+
+    def jac(a, b):
+        A, B = _ngrams(a), _ngrams(b)
+        if not A or not B:
+            return 0.0
+        inter = sum((A & B).values())
+        return inter / max(sum((A | B).values()), 1)
+
+    concl = jac(seg(gpart, "[GC]"), seg(ppart, "[PC]"))
+    hyp = jac(seg(gpart, "[GH]"), seg(ppart, "[PH]"))
+    return concl * 0.75 + hyp * 0.25          # 결론이 주, 가설이 보조
+
+
+# ── G: anti-unification (최소일반화) 기반 구조 유사도 ──────────────────────
+#   두 항의 **가장 구체적인 공통 일반화**를 구해 그 크기를 본다.
+#     au(f a b, f a c) = f a X   → 3/4 유지  (매우 유사)
+#     au(f a b, g a b) = X       → 1/4 유지  (head 가 다르면 통째로 일반화)
+#   C'(head 다중집합 코사인)는 **위치를 무시**하지만 AU 는 트리 모양을 그대로 반영한다.
+#   이름은 "같은가/다른가" 만 쓰므로(문자열 자체를 안 씀) 프로젝트 무관하다.
+def _au(a, b, cnt):
+    """anti-unify. 공통 구조 노드 수를 cnt[0] 에 누적하고 트리 크기를 돌려준다."""
+    if a is None or b is None:
+        return
+    if a[0] == b[0] == "id":
+        if a[1].split(".")[-1] == b[1].split(".")[-1]:
+            cnt[0] += 1
+        return
+    if a[0] == b[0] == "app":
+        cnt[0] += 1
+        _au(a[1], b[1], cnt)
+        _au(a[2], b[2], cnt)
+        return
+    if a[0] == b[0] == "op" and a[1] == b[1]:
+        cnt[0] += 2                      # 노드 + 연산자 심볼
+        _au(a[2], b[2], cnt)
+        _au(a[3], b[3], cnt)
+        return
+    return                                # 여기서 일반화(변수) — 더 안 센다
+
+
+def sig_anti_unify(gs, ps):
+    """AU 유지 노드수 / 두 항 중 큰 쪽 크기. goal 결론 전체와 부분항 모두 시도."""
+    c = ps[1]
+    if c is None:
+        return 0.0
+    pn = shape(c)[0]
+    best = 0.0
+    for tgt in gs[5]:                     # goal 결론의 모든 부분항
+        gn = shape(tgt)[0]
+        if gn < 2 or pn < 2:
+            continue
+        cnt = [0]
+        _au(c, tgt, cnt)
+        if cnt[0] < 2:
+            continue
+        best = max(best, cnt[0] / max(gn, pn))
+    # rewrite 는 등식 한 변이 부분항과 맞물린다 → 그쪽도 본다
+    eq = as_eq(c)
+    if eq:
+        for side in eq:
+            sn = shape(side)[0]
+            if sn < 2:
+                continue
+            for tgt in gs[5]:
+                gn = shape(tgt)[0]
+                if gn < 2:
+                    continue
+                cnt = [0]
+                _au(side, tgt, cnt)
+                if cnt[0] >= 2:
+                    best = max(best, cnt[0] / max(gn, sn))
+    return best
+
+
 def sig_hyp_match(gs, ps):
     """E: lemma **가설부**의 head 가 goal 가설블록에 이미 있는가.
 
@@ -321,6 +425,16 @@ METHODS = [
     ("◇ RRF(tfidf,C',E)", "RRF_CE"),
     ("◇ RRF(tfidf,C',이름subword) 3-way", "RRF3W"),
     ("◇ RRF(tfidf,C',이름sub) + A'E 가산", "RRF3WAE"),
+    ("▲ F 구조n-gram만 (이름 0·전이)", "F"),
+    ("▲ RRF(tfidf, F)", "RRF_F"),
+    ("▲ RRF(tfidf, C', F) 이름 0", "RRF_CF"),
+    ("▲ RRF(tfidf, C', F) + A'E", "RRF_CFAE"),
+    ("▲ RRF(tfidf, C', F, 이름sub)", "RRF4W"),
+    ("● G anti-unify 만", "G"),
+    ("● RRF(tfidf, G)", "RRF_G"),
+    ("● RRF(tfidf, C', G) 이름 0", "RRF_CG"),
+    ("● RRF(tfidf, C', G, 이름sub)", "RRF_CGN"),
+    ("● RRF(tfidf,C',G,이름sub)+A'E", "RRF_CGNAE"),
 ]
 KS = (10, 20, 50)
 hits = {m[0]: collections.Counter() for m in METHODS}
@@ -419,6 +533,15 @@ for i in range(N):
     r_c2 = ranks_of(c2_all)
     r_a2 = ranks_of(a2_all)
     r_e2 = ranks_of(e2_all)
+    f_all = [0.0] * len(pool)
+    for j in cand:
+        f_all[j] = sig_struct_ngram(st, getattr(pool[j], "text", "") or "")
+    r_f = ranks_of(f_all)
+    g_all = [0.0] * len(pool)
+    for j in cand:
+        ps = pss[j]
+        g_all[j] = sig_anti_unify(gs, ps) if ps is not None else 0.0
+    r_g = ranks_of(g_all)
     # 이름subword 랭킹은 3-way RRF 에 필요하므로 미리 구한다
     _docs_ns = [list(d) + [w for w in _SUBW.split(nm or "") if len(w) >= 2] * 2
                 for d, nm in zip(docs_full, names)]
@@ -471,6 +594,33 @@ for i in range(N):
                 elif kind == "RRF3W":
                     v = (1 / (RRF_K + r_tfidf[j]) + 1 / (RRF_K + r_c2[j])
                          + 1 / (RRF_K + r_nsub[j]))
+                elif kind == "F":
+                    v = f_all[j]
+                elif kind == "RRF_F":
+                    v = 1 / (RRF_K + r_tfidf[j]) + 1 / (RRF_K + r_f[j])
+                elif kind == "RRF_CF":
+                    v = (1 / (RRF_K + r_tfidf[j]) + 1 / (RRF_K + r_c2[j])
+                         + 1 / (RRF_K + r_f[j]))
+                elif kind == "RRF_CFAE":
+                    v = (1 / (RRF_K + r_tfidf[j]) + 1 / (RRF_K + r_c2[j])
+                         + 1 / (RRF_K + r_f[j]) + (a2 + e2) * 0.001)
+                elif kind == "RRF4W":
+                    v = (1 / (RRF_K + r_tfidf[j]) + 1 / (RRF_K + r_c2[j])
+                         + 1 / (RRF_K + r_f[j]) + 1 / (RRF_K + r_nsub[j]))
+                elif kind == "G":
+                    v = g_all[j]
+                elif kind == "RRF_G":
+                    v = 1 / (RRF_K + r_tfidf[j]) + 1 / (RRF_K + r_g[j])
+                elif kind == "RRF_CG":
+                    v = (1 / (RRF_K + r_tfidf[j]) + 1 / (RRF_K + r_c2[j])
+                         + 1 / (RRF_K + r_g[j]))
+                elif kind == "RRF_CGN":
+                    v = (1 / (RRF_K + r_tfidf[j]) + 1 / (RRF_K + r_c2[j])
+                         + 1 / (RRF_K + r_g[j]) + 1 / (RRF_K + r_nsub[j]))
+                elif kind == "RRF_CGNAE":
+                    v = (1 / (RRF_K + r_tfidf[j]) + 1 / (RRF_K + r_c2[j])
+                         + 1 / (RRF_K + r_g[j]) + 1 / (RRF_K + r_nsub[j])
+                         + (a2 + e2) * 0.001)
                 elif kind == "RRF3WAE":
                     v = (1 / (RRF_K + r_tfidf[j]) + 1 / (RRF_K + r_c2[j])
                          + 1 / (RRF_K + r_nsub[j]) + (a2 + e2) * 0.001)
@@ -499,7 +649,7 @@ for i in range(N):
             hits[name][k] += (rank < k)
         mrr[name] += 1.0 / (rank + 1) if rank < 10 ** 9 else 0.0
 
-print(f"\n■ TRAIN — 비교 사례 {n_case}건 (gold 가 풀에 있는 것만) · 구조판정 상위 {POOL_CAP}개")
+print(f"\n■ {SPLIT} — 비교 사례 {n_case}건 (gold 가 풀에 있는 것만) · 구조판정 상위 {POOL_CAP}개")
 print(f"   gold 가 tfidf 상위 {POOL_CAP} 밖이라 구조 방식이 원천적으로 못 본 경우: "
       f"{cap_hit}/{n_case}\n")
 print(f"   {'방식':32s} {'R@10':>7s} {'R@20':>7s} {'R@50':>8s} {'MRR':>7s} {'ms/건':>8s}")
