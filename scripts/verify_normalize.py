@@ -50,7 +50,7 @@ tok = AutoTokenizer.from_pretrained(cc["model_name"])
 
 _LN = re.compile(r"(?:Lemma|Theorem|Definition|Corollary|Remark|Fact)\s+([A-Za-z_][\w']*)")
 _HDR = re.compile(r"\[[A-Z][A-Z_ -]*\]")
-_NEW = re.compile(r"\b[TfCL]\d+\b")
+_NEW = re.compile(r"\b[TfCLG]\d+\b")
 _STDLIB_SAMPLE = {"nat", "list", "bool", "option", "Z", "S", "O", "cons", "nil", "True", "False"}
 _TACTICS = {"intros", "destruct", "apply", "rewrite", "auto", "eauto", "simpl", "unfold",
             "induction", "reflexivity", "lia", "exact", "split", "constructor"}
@@ -85,9 +85,9 @@ def build(rate: str):
     importlib.reload(nn)
     _orig = nn.build_mapping
     captured = {}
-    def _spy(injected, seed_key, avoid_text="", premises=None):
-        m = _orig(injected, seed_key, avoid_text, premises)
-        captured[seed_key] = (dict(m), avoid_text)
+    def _spy(injected, seed_key, avoid_text="", premises=None, proof_script=None):
+        m = _orig(injected, seed_key, avoid_text, premises, proof_script)
+        captured[seed_key] = (dict(m), avoid_text, nn.LAST_THM_DECL)
         return m
     nn.build_mapping = _spy
     import tactic_gen.tactic_data as td
@@ -99,8 +99,8 @@ def build(rate: str):
     for e in examples:
         full = col.collate(tok, e)
         tail = full.split(td.MASK_TEMPLATE)[-1]
-        mp = list(captured.values())[-1] if captured else ({}, "")
-        out.append((full, tail, dict(td._LAST_INJECTED), mp[0], mp[1]))
+        mp = list(captured.values())[-1] if captured else ({}, "", None)
+        out.append((full, tail, dict(td._LAST_INJECTED), mp[0], mp[2]))
         captured.clear()
     return out
 
@@ -109,10 +109,11 @@ off = build("0.0")
 on = build("1.0")
 
 fail = collections.Counter()
+fail_selfretrieval = [0]
 ex = collections.defaultdict(list)
 n_norm = 0
 
-for _e_cur, (p0, t0, inj0, _m0, _a0), (p1, t1, inj1, mapping, avoid) in zip(
+for _e_cur, (p0, t0, inj0, _m0, _a0), (p1, t1, inj1, mapping, thm_decl) in zip(
         [(e,) for e in examples], off, on):
     # ── A 검색 불변 ──
     def prem(p):
@@ -120,7 +121,15 @@ for _e_cur, (p0, t0, inj0, _m0, _a0), (p1, t1, inj1, mapping, avoid) in zip(
             if "[PREMISES]" in p and "[PROOFS]" in p else set()
     _inv = {v: k for k, v in (mapping or {}).items()}
     import tactic_gen.normalize_names as _nn0
-    p1_restored = _nn0.apply_mapping(p1, _inv) if _inv else p1
+    # ★ 정리 선언부는 매핑 밖에서 G# 로 따로 치환된다(동명 충돌 시). 역매핑도 그걸 알아야
+    #   복원된다 — v8 추론에서 실제 이름으로 되돌릴 때 같은 처리가 필요하다.
+    p1_pre = p1
+    if thm_decl:
+        _g = re.search(r"(?:Lemma|Theorem|Remark|Corollary|Fact|Proposition|Definition)\s+(G\d+)", p1)
+        if _g:
+            p1_pre = _nn0.substitute_theorem_decl(p1, _g.group(1),
+                                                  mapping.get(thm_decl, thm_decl))
+    p1_restored = _nn0.apply_mapping(p1_pre, _inv) if _inv else p1_pre
     # ★ 이름이 바뀐 것과 **검색 결과가 바뀐 것**은 다르다. 역매핑으로 되돌린 뒤 비교해야
     #   "정규화가 tfidf 질의를 오염시켰나"를 정확히 잰다.
     if prem(p0) != prem(p1_restored):
@@ -170,7 +179,7 @@ for _e_cur, (p0, t0, inj0, _m0, _a0), (p1, t1, inj1, mapping, avoid) in zip(
     # ── F 역매핑 왕복: inv(apply(text)) == text ──
     import tactic_gen.normalize_names as _nn
     inv = {v: k for k, v in mapping.items()}
-    if _nn.apply_mapping(p1, inv) != p0 or _nn.apply_mapping(t1, inv) != t0:
+    if _nn.apply_mapping(p1_pre, inv) != p0 or _nn.apply_mapping(t1, inv) != t0:
         fail["F 역매핑 왕복 실패"] += 1
         if len(ex["F"]) < 2:
             ex["F"].append(f"매핑 {list(mapping.items())[:2]}")
@@ -204,6 +213,25 @@ for _e_cur, (p0, t0, inj0, _m0, _a0), (p1, t1, inj1, mapping, avoid) in zip(
                 if len(ex["I2"]) < 2: ex["I2"].append(k)
                 break
 
+    # ── J (v8) 증명 중인 정리 이름이 G 로 치환됐나 ──
+    if os.environ.get("NORMALIZE_THEOREM", "0") == "1":
+        import tactic_gen.normalize_names as _nn4
+        tn = _nn4.theorem_name(getattr(_e_cur[0], "proof_script", "") or "")
+        if tn and tn in mapping:
+            # ★ 정리 이름이 [PREMISES] 에도 있으면(자기 정리가 검색된 경우, 실측 1.7%)
+            #   premise 매핑(L#)이 이긴다 — 이름 하나에 매핑 하나여야 하므로 정상이다.
+            import tactic_gen.normalize_names as _nn6
+            _is_prem = tn in set(_nn6.premise_names(
+                list(getattr(_e_cur[0], "premises", None) or [])))
+            if _is_prem:
+                fail_selfretrieval[0] += 1
+            elif not mapping[tn].startswith("G"):
+                fail["J 정리 이름이 G 접두사가 아님"] += 1
+                if len(ex["J"]) < 2: ex["J"].append(f"{tn} → {mapping[tn]}")
+            if re.search(_word(tn), p1):
+                fail["J 정리 이름이 프롬프트에 잔존"] += 1
+                if len(ex["J2"]) < 2: ex["J2"].append(tn)
+
     # ── H 대상 범위: 매핑 키는 주입된 정의 이름이나 그 생성자여야 ──
     # ★ build_mapping 과 **똑같이** 뽑아야 한다. 예전엔 `\|\s*(...)` 로만 찾아
     #   `Inductive t := Decimal | Hex` 의 **첫 생성자(Decimal)**를 놓쳐 오탐이 났다.
@@ -218,13 +246,22 @@ for _e_cur, (p0, t0, inj0, _m0, _a0), (p1, t1, inj1, mapping, avoid) in zip(
     if os.environ.get("NORMALIZE_PREMISES", "0") == "1":
         import tactic_gen.normalize_names as _nn3
         allowed |= set(_nn3.premise_names(list(getattr(_e_cur[0], "premises", None) or [])))
+    if os.environ.get("NORMALIZE_THEOREM", "0") == "1":
+        import tactic_gen.normalize_names as _nn5
+        _tn = _nn5.theorem_name(getattr(_e_cur[0], "proof_script", "") or "")
+        if _tn: allowed.add(_tn)
     stray = set(mapping) - allowed
     if stray:
         fail["H 주입되지 않은 이름을 치환"] += 1
         if len(ex["H"]) < 2:
             ex["H"].append(f"{sorted(stray)[:4]}")
 
-print(f"■ 정규화 검증 — 예제 {len(examples)}개 (정규화 적용 {n_norm}개)\n")
+print(f"■ 정규화 검증 — 예제 {len(examples)}개 (정규화 적용 {n_norm}개)")
+if fail_selfretrieval[0]:
+    print(f"   ※ 참고: 증명 중인 정리가 [PREMISES] 에도 검색된 경우 {fail_selfretrieval[0]}건 "
+          f"({fail_selfretrieval[0]/max(n_norm,1)*100:.1f}%) — 매핑은 정상(L#)이나 검색 누출\n")
+else:
+    print()
 if not fail:
     print("   ✅ A~F 전부 통과")
 else:

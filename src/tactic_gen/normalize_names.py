@@ -125,17 +125,69 @@ def premise_names(premises) -> list:
 
       gold 가 쓴 lemma 중 프롬프트에 있는 비율은 77% 다. 나머지 23% 는 사전학습 기억으로
       맞히던 것인데 정규화하면 그 경로가 막힌다. 그래서 NORMALIZE_RATE(0.5)로 섞는다.
+
+    ## 중복 이름은 제외한다
+
+    CompCert 는 모듈마다 같은 이름을 쓴다(PTree.gss 와 PMap.gss). 한 [PREMISES] 안에
+    **명제가 다른 동명 정리**가 실리는 일이 잦다(예제의 41.1%). 치환은 텍스트 단위라
+    둘이 같은 L# 로 합쳐지는데, 정답이 어느 쪽을 가리키는지는 **데이터에 정보가 없다**.
+    서로 다른 이름을 억지로 주면 정답을 임의로 한쪽에 붙이게 되어 잘못된 신호가 된다.
+    → 중복된 이름은 실제 이름 그대로 둔다. 비용은 premise 이름의 1.7% 뿐이다.
     """
-    out = []
+    seen = []
     for p in (premises or []):
         m = _PREM_DECL.match((p or "").strip())
         if m and m.group(1) not in _PROTECTED:
-            out.append(m.group(1))
-    return list(dict.fromkeys(out))
+            seen.append(m.group(1))
+    cnt = {}
+    for n in seen:
+        cnt[n] = cnt.get(n, 0) + 1
+    return [n for n in dict.fromkeys(seen) if cnt[n] == 1]
+
+
+_THM_DECL = re.compile(
+    r"(?:Lemma|Theorem|Remark|Corollary|Fact|Proposition|Definition)\s+([A-Za-z_][\w']*)")
+
+
+# 동명 충돌로 매핑에 못 넣은 정리 이름 — collate 가 선언부만 치환한다(같은 스레드·같은 예제)
+LAST_THM_DECL: Optional[str] = None
+
+_DECL_HEAD = re.compile(
+    r"((?:Lemma|Theorem|Remark|Corollary|Fact|Proposition|Definition)\s+)"
+    r"({name})(?![\w'])")
+
+
+def substitute_theorem_decl(text: str, name: str, new: str) -> str:
+    """정리 **선언부 한 곳만** 바꾼다. 같은 이름의 premise 는 건드리지 않는다."""
+    pat = re.compile(_DECL_HEAD.pattern.replace("{name}", re.escape(name)))
+    return pat.sub(lambda m: m.group(1) + new, text, count=1)
+
+
+def theorem_name(proof_script: str) -> Optional[str]:
+    """지금 증명 중인 정리의 이름. v8 에서 익명화 대상에 추가한다.
+
+    ## 왜 (실측 근거)
+
+    CompCert 는 공개 저장소라 **사전학습에 실제 증명이 들어 있다**. 문맥을 전혀 안 주고
+    `apply ` 다음 이름을 고르게 했을 때 SFT 안 한 Qwen3B 가 실재 CompCert 이름을 가짜보다
+    **65.2%** 선호했다(Δlogp +1.55) — 사전학습이 이 프로젝트를 기억한다는 직접 증거다.
+
+    정리 이름은 그 기억을 여는 열쇠다. `lessdef_list_trans` 를 보면 증명 전체를 떠올릴 수
+    있고, 이름 자체가 방향을 담는다(`_trans`, `_comm`, `_sound`). 실측: gold step 의 54.5% 에서
+    정리 이름이 프롬프트에 노출된다.
+
+    익명화하면 goal 과 premise 를 **실제로 읽어야만** 풀리고, rand200 성적에서 사전학습
+    회상 기여분이 빠져 **오염 없는 측정**이 된다. 대가로 성적 자체는 떨어질 수 있다.
+    """
+    m = _THM_DECL.search(proof_script or "")
+    if m and m.group(1) not in _PROTECTED:
+        return m.group(1)
+    return None
 
 
 def build_mapping(injected: dict, seed_key: str, avoid_text: str = "",
-                  premises: Optional[list] = None) -> dict:
+                  premises: Optional[list] = None,
+                  proof_script: Optional[str] = None) -> dict:
     """**실제로 주입된 정의**의 이름과 그 생성자만 치환 대상으로 삼는다.
 
     ★ 왜 좁히나 (실측 실패): 처음엔 텍스트의 모든 식별자 중 인덱스에 있는 것을 바꿨더니
@@ -151,8 +203,13 @@ def build_mapping(injected: dict, seed_key: str, avoid_text: str = "",
       섹션의 `Class BinOp {S1 S2 S3 T1 T2 T3:Type}` 같은 타입변수도 같은 위험이 있다.
     반환: {원래이름: T0/C0/f0}. 타입·생성자는 T/C, 함수는 f.
     """
-    if not injected:
+    # ★ 주입 정의가 없어도 premise·정리 이름은 정규화 대상이다(v7/v8).
+    #   예전엔 여기서 즉시 반환해 [TYPES]/[DEFINITIONS] 가 빈 예제는 premise 정규화가
+    #   **조용히 건너뛰어졌다**.
+    if not injected and os.environ.get("NORMALIZE_PREMISES", "0") != "1" \
+            and os.environ.get("NORMALIZE_THEOREM", "0") != "1":
         return {}
+    injected = injected or {}
     names = []
     ctors = []
     for name, defn in injected.items():
@@ -177,15 +234,33 @@ def build_mapping(injected: dict, seed_key: str, avoid_text: str = "",
             if (pn not in names and pn not in ctors
                     and pn not in _PROTECTED and pn not in _HEADERS and len(pn) > 1):
                 prem_names.append(pn)
+    # ★ v8: 증명 중인 정리 이름 (NORMALIZE_THEOREM=1 일 때만)
+    #
+    #   ★ 동명 충돌 처리: CompCert 는 모듈마다 같은 이름의 보조정리를 둔다
+    #     (Val.sub_zero_r 와 Int.sub_zero_r). 그래서 증명 중인 정리 이름이
+    #     [PREMISES] 에도 나타나는 일이 있다(실측 601건 중 8건 = 1.3%).
+    #     텍스트 치환은 **같은 문자열을 두 이름으로 바꿀 수 없으므로**, 둘 다 L# 가
+    #     되어 "증명 대상"과 "주어진 사실"을 구분할 수 없게 된다.
+    #     → 충돌 시엔 매핑에 넣지 않고 전역에 기록해, collate 가 **선언부만** G# 로 바꾼다.
+    global LAST_THM_DECL
+    LAST_THM_DECL = None
+    thm = None
+    if os.environ.get("NORMALIZE_THEOREM", "0") == "1":
+        t = theorem_name(proof_script or "")
+        if t and t not in names and t not in ctors:
+            if t in prem_names:
+                LAST_THM_DECL = t          # 충돌 — 선언부만 따로 처리
+            else:
+                thm = t
     names = list(dict.fromkeys(names))
     ctors = [c for c in dict.fromkeys(ctors) if c not in names]
     prem_names = [p for p in dict.fromkeys(prem_names) if p not in names and p not in ctors]
-    if not names and not ctors and not prem_names:
+    if not names and not ctors and not prem_names and not thm:
         return {}
     # ★ 충돌 검사는 **T\d+/f\d+/C\d+ 형태만** 훑으면 된다.
     #   프롬프트 전체(~8KB)를 일반 식별자 정규식으로 훑으면 예제마다 비용이 크다.
-    taken = (set(re.findall(r"\b[TfCL]\d+\b", avoid_text or ""))
-             | set(names) | set(ctors) | set(prem_names))
+    taken = (set(re.findall(r"\b[TfCLG]\d+\b", avoid_text or ""))
+             | set(names) | set(ctors) | set(prem_names) | ({thm} if thm else set()))
 
     def fresh(prefix, k):
         """taken 과 겹치지 않는 첫 이름과 다음 인덱스."""
@@ -209,6 +284,9 @@ def build_mapping(injected: dict, seed_key: str, avoid_text: str = "",
     n_l = 0
     for pn in prem_names:
         mapping[pn], n_l = fresh("L", n_l)
+    # 증명 중인 정리는 **G**(goal) — 하나뿐이라 번호는 0 에서 시작
+    if thm:
+        mapping[thm], _ = fresh("G", 0)
     return mapping
 
 
