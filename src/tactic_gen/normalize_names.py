@@ -99,7 +99,43 @@ _HEADERS = {"PREMISES", "PROOFS", "STATE", "SCRIPT", "TYPES", "DEFINITIONS",
             "ATTEMPT", "ERROR", "TACTIC", "USES"}
 
 
-def build_mapping(injected: dict, seed_key: str, avoid_text: str = "") -> dict:
+_PREM_DECL = re.compile(
+    r"(?:Lemma|Theorem|Definition|Corollary|Remark|Fact|Instance|Axiom|Parameter)\s+"
+    r"([A-Za-z_][\w']*)")
+
+
+def premise_names(premises) -> list:
+    """[PREMISES] 블록에 실린 **lemma 이름**들. v7 에서 정규화 대상에 추가한다.
+
+    ## 왜 (실측 근거)
+
+        gold 상태에서 다음 한 수를 물었을 때, 고른 lemma 가 **프롬프트 안에 있는 비율**
+
+            1.3B base(SFT 없음)   5.9%     ← [PREMISES] 를 사실상 안 본다
+            1.3B rango SFT       26.5%
+            3B v5 SFT            47.1%
+            3B v6 SFT(5k)        67.6%
+
+      "검색 결과를 읽어 고르는" 능력은 사전학습에 없고 **SFT 로만** 생긴다.
+      그러면 그 능력은 학습 분포(CompCert)에 묶이고 다른 프로젝트로 전이되지 않는다.
+      이름을 익명화하면 "본 적 있는 이름"으로는 못 풀고 **문장을 읽어 goal 과 맞추는**
+      것 외에 방법이 없어진다 — 이름에 의존하지 않으므로 전이 가능성이 높다.
+
+    ## 대가
+
+      gold 가 쓴 lemma 중 프롬프트에 있는 비율은 77% 다. 나머지 23% 는 사전학습 기억으로
+      맞히던 것인데 정규화하면 그 경로가 막힌다. 그래서 NORMALIZE_RATE(0.5)로 섞는다.
+    """
+    out = []
+    for p in (premises or []):
+        m = _PREM_DECL.match((p or "").strip())
+        if m and m.group(1) not in _PROTECTED:
+            out.append(m.group(1))
+    return list(dict.fromkeys(out))
+
+
+def build_mapping(injected: dict, seed_key: str, avoid_text: str = "",
+                  premises: Optional[list] = None) -> dict:
     """**실제로 주입된 정의**의 이름과 그 생성자만 치환 대상으로 삼는다.
 
     ★ 왜 좁히나 (실측 실패): 처음엔 텍스트의 모든 식별자 중 인덱스에 있는 것을 바꿨더니
@@ -129,13 +165,27 @@ def build_mapping(injected: dict, seed_key: str, avoid_text: str = "") -> dict:
                 m = re.match(r"\s*([A-Za-z_][\w']*)", part)
                 if m and m.group(1) not in _PROTECTED and m.group(1) not in _HEADERS:
                     ctors.append(m.group(1))
+    # ★ v7: [PREMISES] 의 lemma 이름도 대상에 넣는다(NORMALIZE_PREMISES=1 일 때만).
+    #   주입 정의 이름과 겹치면 그쪽 매핑을 따른다(중복 금지).
+    prem_names = []
+    if os.environ.get("NORMALIZE_PREMISES", "0") == "1":
+        for pn in premise_names(premises):
+            # ★ renameable() 을 쓰면 안 된다 — 그건 **정의 인덱스(func_defs)** 에 있는 이름만
+            #   허용하는데 premise 는 lemma 라 인덱스에 없다(실측: 235건 중 134건이 이 필터에
+            #   걸려 하나도 치환되지 않았다). premise 이름은 `Lemma X :` 선언에서 직접 뽑은
+            #   것이라 출처가 확실하므로 보호목록·길이만 확인하면 된다.
+            if (pn not in names and pn not in ctors
+                    and pn not in _PROTECTED and pn not in _HEADERS and len(pn) > 1):
+                prem_names.append(pn)
     names = list(dict.fromkeys(names))
     ctors = [c for c in dict.fromkeys(ctors) if c not in names]
-    if not names and not ctors:
+    prem_names = [p for p in dict.fromkeys(prem_names) if p not in names and p not in ctors]
+    if not names and not ctors and not prem_names:
         return {}
     # ★ 충돌 검사는 **T\d+/f\d+/C\d+ 형태만** 훑으면 된다.
     #   프롬프트 전체(~8KB)를 일반 식별자 정규식으로 훑으면 예제마다 비용이 크다.
-    taken = set(re.findall(r"\b[TfC]\d+\b", avoid_text or "")) | set(names) | set(ctors)
+    taken = (set(re.findall(r"\b[TfCL]\d+\b", avoid_text or ""))
+             | set(names) | set(ctors) | set(prem_names))
 
     def fresh(prefix, k):
         """taken 과 겹치지 않는 첫 이름과 다음 인덱스."""
@@ -154,6 +204,11 @@ def build_mapping(injected: dict, seed_key: str, avoid_text: str = "") -> dict:
             mapping[n], n_f = fresh("f", n_f)
     for c in ctors:
         mapping[c], n_c = fresh("C", n_c)
+    # ★ premise lemma 는 **L** 접두사 — 타입(T)·함수(f)·생성자(C)와 구분해 모델이
+    #   "이건 인용할 lemma 다"를 형태로 알 수 있게 한다.
+    n_l = 0
+    for pn in prem_names:
+        mapping[pn], n_l = fresh("L", n_l)
     return mapping
 
 
