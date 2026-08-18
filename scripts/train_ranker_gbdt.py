@@ -46,13 +46,29 @@ def ranks_pct(v):
     return r
 
 
+MAXC = int(sys.argv[4]) if len(sys.argv) > 4 else 500
+MAXCASE = int(sys.argv[5]) if len(sys.argv) > 5 else 100000
+
+
 def load(path):
+    """사례를 읽되 후보를 상위 MAXC 개로 자른다(gold 는 유지).
+
+    ★ CAP=1500 덤프를 통째로 올리면 5048건×1500후보×36특징 = 2.7억 float 로 메모리가
+      터진다(exit 143). 상위 후보만 써도 랭킹 학습에는 충분하다.
+    """
     cases = []
     for line in open(path):
+        if len(cases) >= MAXCASE:
+            break
         d = json.loads(line)
         F, gold = d["feats"], set(d["gold"])
         if not gold or len(F) < 5:
             continue
+        if len(F) > MAXC:
+            keep = list(range(MAXC)) + [g for g in gold if g >= MAXC]
+            remap = {j: i for i, j in enumerate(keep)}
+            F = [F[j] for j in keep]
+            gold = {remap[g] for g in gold}
         cols = [[r[c] for r in F] for c in range(NF)]
         pcts = [ranks_pct(c) for c in cols]
         mx = [max((abs(x) for x in cols[c]), default=1.0) or 1.0 for c in range(NF)]

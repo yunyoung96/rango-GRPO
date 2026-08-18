@@ -366,6 +366,101 @@ def sig_locality(cur_file: str, _unused, p) -> float:
     return min(0.6, 0.1 * k)
 
 
+# ── Coq 도메인 신호 (학습 불필요 · 이름 문자열이 아니라 증명시스템의 성질) ──────
+#
+#   I 타입-모듈 친화도 : goal 이 다루는 **타입**의 이름은 그 lemma 가 사는 **모듈/파일**에
+#     나타난다. `a : Z` 를 다루는 증명은 `ZArith/BinInt.v` 의 lemma 를 쓴다.
+#     이건 lemma 작명 관례가 아니라 **Coq 라이브러리가 타입별로 조직된다는 구조**이고,
+#     타입 이름은 표준 라이브러리 어휘라 프로젝트를 건너 공유된다.
+#
+#   J evar 개수 : `apply X` 는 X 의 메타변수를 goal 과 단일화해 정한다. **결론에 안 나오는**
+#     변수는 정할 수가 없어 evar 로 남고 `eapply` 가 필요해진다. 그런 변수가 적을수록
+#     쓰기 쉬운 lemma다 — Coq 의 실제 동작을 그대로 반영한 난이도 지표.
+#
+#   K rewrite 방향 : 항 재작성 시스템은 보통 **항을 줄이는** 방향으로 쓴다(정지성).
+#     `length (rev l) = length l` 는 왼쪽이 크다. goal 에 큰 쪽이 있으면 정방향이 유망.
+_TYHEAD = re.compile(r"[A-Za-z_][\w']*")
+
+
+def goal_type_names(state: str) -> set:
+    """goal 가설의 **타입**에 나오는 이름들. `a, b : Z` → {Z}, `l : list A` → {list}."""
+    body = (state or "").split("[GOAL]")[0]
+    parts = re.split(r"\n\s*\n", body)
+    out = set()
+    if len(parts) > 1:
+        for ln in parts[0].split("\n"):
+            seg = ln.split(":", 1)
+            if len(seg) == 2:
+                for t in _TYHEAD.findall(seg[1])[:4]:
+                    if len(t) >= 2:
+                        out.add(t)
+    return out
+
+
+def sig_type_module(gtypes: set, p) -> float:
+    """I: goal 의 타입 이름이 premise 의 모듈·파일경로에 나타나는가."""
+    if not gtypes:
+        return 0.0
+    where = set()
+    for m in (getattr(p, "module", None) or []):
+        where |= set(_TYHEAD.findall(str(m)))
+    fp = getattr(p, "file_path", "") or ""
+    for seg in fp.replace("\\", "/").split("/"):
+        where |= set(_TYHEAD.findall(seg.replace(".v", "")))
+    if not where:
+        return 0.0
+    # 타입 이름과 모듈 이름의 겹침(부분 일치도 인정: Z ⊂ ZArith)
+    hit = 0
+    for t in gtypes:
+        if any(t == w or (len(t) >= 2 and t in w) for w in where):
+            hit += 1
+    return hit / len(gtypes)
+
+
+def _vars_in(t, out=None):
+    if out is None:
+        out = set()
+    if t is None:
+        return out
+    if t[0] == "id":
+        out.add(t[1])
+    elif t[0] == "app":
+        _vars_in(t[1], out)
+        _vars_in(t[2], out)
+    elif t[0] == "op":
+        _vars_in(t[2], out)
+        _vars_in(t[3], out)
+    return out
+
+
+def sig_evars(ps) -> float:
+    """J: 결론에 안 나오는 메타변수(=evar)가 적을수록 1 에 가깝다."""
+    mv, c = ps[0], ps[1]
+    if c is None or not mv:
+        return 1.0
+    ev = set(mv) - _vars_in(c)
+    return 1.0 / (1.0 + len(ev))
+
+
+def sig_rewrite_dir(gs, ps) -> float:
+    """K: 등식이면 **큰 쪽**이 goal 에 있는지(항을 줄이는 방향인지)."""
+    c = ps[1]
+    if c is None:
+        return 0.0
+    eq = as_eq(c)
+    if not eq:
+        return 0.0
+    mv = ps[0]
+    ls, rs = shape(eq[0])[0], shape(eq[1])[0]
+    big, small = (eq[0], eq[1]) if ls >= rs else (eq[1], eq[0])
+    if shape(big)[0] <= shape(small)[0]:
+        return 0.0
+    for sub in gs[5]:                      # goal 부분항에 큰 쪽이 맞물리나
+        if match(big, sub, mv, {}):
+            return 1.0
+    return 0.0
+
+
 def sig_anti_unify(gs, ps):
     """AU 유지 노드수 / 두 항 중 큰 쪽 크기. goal 결론 전체와 부분항 모두 시도."""
     c = ps[1]
@@ -463,6 +558,16 @@ METHODS = [
     ("◐ RRF(tfidf, C', H) 이름 0", "RRF_CH"),
     ("◐ RRF(tfidf,C',H,이름sub)", "RRF_CHN"),
     ("◐ RRF(tfidf,C',H,이름sub)+A'E", "RRF_CHNAE"),
+    ("★I 타입-모듈만", "I"),
+    ("★J evar 적음만", "J"),
+    ("★K rewrite 방향만", "K"),
+    ("★ RRF(tfidf,C',H,I) 이름 0", "RRF_CHI"),
+    ("★ RRF(tfidf,C',H,I)+JK 가산", "RRF_CHIJK"),
+    ("★ RRF(tfidf,C',I) 이름 0", "RRF_CI"),
+    ("▣ [필터] 적용가능만 → RRF3", "F_A_RRF3"),
+    ("▣ [필터] 적용가능만 → RRF(C',H,I)", "F_A_CHI"),
+    ("▣ [계층] 적용가능 우선 + RRF3", "L_A_RRF3"),
+    ("▣ [필터] 적용가능+판정불가 → RRF3", "F_AU_RRF3"),
 ]
 KS = (10, 20, 50)
 hits = {m[0]: collections.Counter() for m in METHODS}
@@ -577,6 +682,14 @@ for i in range(N):
     h_all = [sig_locality(_cf, _cl, pool[j]) if j in set(cand) else 0.0
              for j in range(len(pool))]
     r_h = ranks_of(h_all)
+    _gt = goal_type_names(st)
+    i_all = [sig_type_module(_gt, pool[j]) if j in set(cand) else 0.0
+             for j in range(len(pool))]
+    j_all = [sig_evars(pss[j]) if (j in pss and pss[j] is not None) else 0.0
+             for j in range(len(pool))]
+    k_all = [sig_rewrite_dir(gs, pss[j]) if (j in pss and pss[j] is not None) else 0.0
+             for j in range(len(pool))]
+    r_i = ranks_of(i_all)
     # 이름subword 랭킹은 3-way RRF 에 필요하므로 미리 구한다
     _docs_ns = [list(d) + [w for w in _SUBW.split(nm or "") if len(w) >= 2] * 2
                 for d, nm in zip(docs_full, names)]
@@ -668,6 +781,41 @@ for i in range(N):
                     v = (1 / (RRF_K + r_tfidf[j]) + 1 / (RRF_K + r_c2[j])
                          + 1 / (RRF_K + r_h[j]) + 1 / (RRF_K + r_nsub[j])
                          + (a2 + e2) * 0.001)
+                elif kind == "I":
+                    v = i_all[j]
+                elif kind == "J":
+                    v = j_all[j]
+                elif kind == "K":
+                    v = k_all[j]
+                elif kind == "RRF_CHI":
+                    v = (1 / (RRF_K + r_tfidf[j]) + 1 / (RRF_K + r_c2[j])
+                         + 1 / (RRF_K + r_h[j]) + 1 / (RRF_K + r_i[j]))
+                elif kind == "RRF_CHIJK":
+                    v = (1 / (RRF_K + r_tfidf[j]) + 1 / (RRF_K + r_c2[j])
+                         + 1 / (RRF_K + r_h[j]) + 1 / (RRF_K + r_i[j])
+                         + (j_all[j] + k_all[j]) * 0.002)
+                elif kind == "RRF_CI":
+                    v = (1 / (RRF_K + r_tfidf[j]) + 1 / (RRF_K + r_c2[j])
+                         + 1 / (RRF_K + r_i[j]))
+                elif kind in ("F_A_RRF3", "F_A_CHI", "L_A_RRF3", "F_AU_RRF3"):
+                    # ▣ **"적용 가능한 것 먼저 찾고" 그 안에서 랭킹** — 지금까지는
+                    #   적용가능성을 랭킹 신호로만 썼다(이진이라 절반이 동점 → R@50 3.1%).
+                    #   여기서는 순서를 뒤집어 **필터를 먼저** 건다.
+                    base_rrf = (1 / (RRF_K + r_tfidf[j]) + 1 / (RRF_K + r_c2[j])
+                                + 1 / (RRF_K + r_nsub[j]))
+                    chi = (1 / (RRF_K + r_tfidf[j]) + 1 / (RRF_K + r_c2[j])
+                           + 1 / (RRF_K + r_h[j]) + 1 / (RRF_K + r_i[j]))
+                    _ps = pss.get(j)
+                    parsed = _ps is not None and _ps[1] is not None
+                    usable = (a > 0) or (not parsed)     # 판정불가는 보수적으로 통과
+                    if kind == "F_A_RRF3":
+                        v = base_rrf if a > 0 else -1e9   # 적용불가는 완전 배제
+                    elif kind == "F_A_CHI":
+                        v = chi if a > 0 else -1e9
+                    elif kind == "F_AU_RRF3":
+                        v = base_rrf if usable else -1e9  # 판정불가까지 살림(재현율↑)
+                    else:                                  # 계층: 배제하지 않고 뒤로
+                        v = base_rrf + (1e6 if a > 0 else 0.0)
                 elif kind == "RRF3WAE":
                     v = (1 / (RRF_K + r_tfidf[j]) + 1 / (RRF_K + r_c2[j])
                          + 1 / (RRF_K + r_nsub[j]) + (a2 + e2) * 0.001)

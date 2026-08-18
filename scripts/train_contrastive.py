@@ -53,7 +53,8 @@ rng = random.Random(0)
 class Encoder(nn.Module):
     """작은 Transformer. 어휘가 57개뿐이라 이 정도로 충분하다."""
 
-    def __init__(self, d=192, layers=4, heads=6):
+    def __init__(self, d=int(os.environ.get('DIM','256')),
+                 layers=int(os.environ.get('LAYERS','6')), heads=8):
         super().__init__()
         self.emb = nn.Embedding(len(VOCAB), d)
         self.pos = nn.Embedding(MAXLEN, d)
@@ -107,7 +108,11 @@ if len(train) < 50:
     print("학습 데이터 부족 — 덤프가 끝나지 않았다"), sys.exit(1)
 
 model = Encoder().to(DEV)
-opt = torch.optim.AdamW(model.parameters(), lr=3e-4, weight_decay=0.01)
+opt = torch.optim.AdamW(model.parameters(), lr=float(os.environ.get('LR','5e-4')),
+                        weight_decay=0.01)
+sched = torch.optim.lr_scheduler.OneCycleLR(
+    opt, max_lr=float(os.environ.get('LR', '5e-4')),
+    total_steps=max(EPOCHS * min(len(train), NCASE), 100), pct_start=0.1)
 n_params = sum(p.numel() for p in model.parameters())
 print(f"파라미터 {n_params/1e6:.2f}M", flush=True)
 
@@ -158,6 +163,7 @@ for ep in range(EPOCHS):
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         opt.step()
+        sched.step()
         tot += loss.item()
         cnt += 1
         if cnt % 400 == 0:
