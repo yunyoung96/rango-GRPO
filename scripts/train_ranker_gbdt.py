@@ -10,7 +10,7 @@
 
 ## 어떻게
 
-  · 특징: 원시 8 + 순위백분위 8 + RRF변환 8 = 24
+  · 특징: 원시 12 + 순위백분위 12 + RRF변환 12 = 36
   · 라벨: gold=1, 나머지=0
   · 모델: HistGradientBoostingClassifier (sklearn). 사례별 순위는 예측 확률로 매긴다
   · 학습/평가 분리: train.jsonl 로 배우고 val/test.jsonl 로 **전이**를 본다
