@@ -66,11 +66,15 @@ ap.add_argument("--nrank", type=int, default=3000)
 ap.add_argument("--rankers", default="tfidf,rrf,struct,gbdt")
 ap.add_argument("--stage1", type=int, default=2000)
 ap.add_argument("--selftest", action="store_true")
+ap.add_argument("--ctr_top", type=int, default=200,
+                help="contrastive 로 재정렬할 RRF 상위 개수")
 ap.add_argument("--out", default="")
 A = ap.parse_args()
 SPLIT = A.split.upper()
+CTR_TOP = A.ctr_top
 RANKERS = [x for x in A.rankers.split(",") if x]
 KS = (1, 20, 50)
+CTR_TOP = 200
 
 
 class _G:
@@ -85,7 +89,20 @@ def _query_tree(state: str):
     return canon(t) if t is not None else None
 
 
-def rank_all(state, texts, pool, tf, tr, kinds, docs=None, names=None):
+def _cov(q_ids, docs, n):
+    """질의 토큰을 premise 가 **얼마나 담고 있나** (0~1).
+
+    ★ TF-IDF 의 길이 정규화가 만드는 실패를 정면으로 겨눈다: 질의를 통째로 담고 있는
+      긴 lemma 가, 토큰 하나뿐인 짧은 정의에 지는 문제(실측 58/161 건).
+      포함률은 문서 길이로 나누지 않으므로 그 편향이 없다.
+    """
+    if not q_ids:
+        return [0.0] * n
+    qs = set(q_ids)
+    return [len(qs & set(docs[j])) / len(qs) for j in range(n)]
+
+
+def rank_all(state, texts, pool, tf, tr, kinds, docs=None, names=None, q_ids=None):
     """랭커별 점수를 **한 번의 신호 계산으로** 모두 만든다. 큰 값이 상위."""
     out = {}
     n = len(tf)
@@ -93,6 +110,35 @@ def rank_all(state, texts, pool, tf, tr, kinds, docs=None, names=None):
         return {"tfidf": list(tf)}
     base, c2r, apl, ms, au, cand = tr.signals(state, tf)
     rrf = [base[j] + c2r[j] for j in range(n)]
+
+    # ★ 트리 완전일치 — assert 하위목표에서만 발화하고 일반 goal 에서는 거의 안 걸린다.
+    #   그래서 **A 를 해치지 않으면서 C 를 살리는** 단일 랭커의 핵심이 된다.
+    _eqb = None
+
+    def eq_bonus():
+        nonlocal _eqb
+        if _eqb is None:
+            _eqb = [0.0] * n
+            qt = _query_tree(state)
+            if qt is not None:
+                for j in cand:
+                    ps = prem_struct(texts[j])
+                    if ps is not None and ps[1] is not None and ps[1] == qt:
+                        _eqb[j] = 1.0
+        return _eqb
+
+    _covv = None
+
+    def cov_rrf():
+        nonlocal _covv
+        if _covv is None:
+            c = _cov(q_ids or [], docs, n)
+            o = sorted(range(n), key=lambda j: -c[j])
+            r = [0] * n
+            for pp, j in enumerate(o):
+                r[j] = pp
+            _covv = [1.0 / (60 + r[j]) for j in range(n)]
+        return _covv
     for k in kinds:
         if k == "tfidf":
             out[k] = list(tf)
@@ -112,6 +158,30 @@ def rank_all(state, texts, pool, tf, tr, kinds, docs=None, names=None):
                     elif match(ps[1], qt, ps[0], {}):
                         sc[j] += 1.0
             out[k] = sc
+        elif k == "eq":
+            eb = eq_bonus()
+            out[k] = [rrf[j] + 3.0 * eb[j] for j in range(n)]
+        elif k == "cov":
+            cv = cov_rrf()
+            out[k] = [rrf[j] + cv[j] for j in range(n)]
+        elif k == "eqcov":
+            eb, cv = eq_bonus(), cov_rrf()
+            out[k] = [rrf[j] + cv[j] + 3.0 * eb[j] for j in range(n)]
+        elif k == "ctr":
+            # ★ cross-encoder 는 후보마다 한 번씩 돌려야 해서 비싸다 → RRF 상위
+            #   CTR_TOP 개만 재정렬하고 나머지는 RRF 순서를 유지한다(3단계 구조).
+            from tactic_gen import contrastive_rank as CR
+            top = sorted(range(n), key=lambda j: -rrf[j])[:CTR_TOP]
+            gl = state.split("\n\n")[-1] if "\n\n" in state else state
+            cs = CR.score(gl, texts, top)
+            if cs:
+                # ★ CE 순서로 **덮어쓰면** RRF 신호를 통째로 버린다(실측: 크게 손해).
+                #   RRF 융합으로 합친다 — CE 가 약해도 RRF 밑으로 안 떨어진다.
+                o = sorted(cs, key=lambda j: -cs[j])
+                add = {j: 1.0 / (60 + r) for r, j in enumerate(o)}
+                out[k] = [rrf[j] + add.get(j, 0.0) for j in range(n)]
+            else:
+                out[k] = rrf
         elif k == "gbdt":
             from tactic_gen import gbdt_rank
             gl = state.split("\n\n")[-1] if "\n\n" in state else state
@@ -222,9 +292,10 @@ pfilter = PremiseFilter(pf.coq_excludes, pf.non_coq_excludes, pf.general_exclude
 RA = {r: collections.Counter() for r in RANKERS}
 ALLA = {r: collections.Counter() for r in RANKERS}
 RC = {r: collections.Counter() for r in RANKERS}
+ALLC = {r: collections.Counter() for r in RANKERS}
 D = collections.Counter()
 TM = collections.Counter()
-nA = nC = nmulti = 0
+nA = nC = nmulti = nCname = nCmulti = 0
 t0 = time.time()
 
 for i in range(200000):
@@ -268,7 +339,8 @@ for i in range(200000):
     tr = TierRanker(texts, stage1=A.stage1)
     ta = time.time()
     try:
-        sc = rank_all(st, texts, pool, tf, tr, RANKERS, docs, names)
+        sc = rank_all(st, texts, pool, tf, tr, RANKERS, docs, names,
+                      q_ids=h_ids + g_ids)
     except Exception as ex:
         D[f"랭킹 예외: {type(ex).__name__} {str(ex)[:40]}"] += 1
         continue
@@ -290,30 +362,67 @@ for i in range(200000):
             RA[r][k] += (best < k)
             ALLA[r][k] += (worst < k)
 
-    # ── C: gold 가 top50 밖일 때 L' 을 세우면 L 이 잡히나 ──────────────
+    # ── C: 못 찾은 gold **하나하나** 에 대해 L' 을 세우고 그 L 이 잡히나 ───
+    #   ★ 예전엔 gold 중 첫 번째 하나로만 질의를 만들고 순위는 전체 중 최선을 봤다.
+    #     tactic 이 lemma 를 2개 쓰면 assert 도 2개 만들어야 하므로, **각 gold 마다**
+    #     따로 L' 을 세워 그 gold 자신이 잡히는지를 재야 맞다. ALL 도 그래야 의미가 있다.
     ref = "rrf" if "rrf" in sc else RANKERS[0]
-    best_ref, _ = recall(sc[ref], gset, names)
-    if best_ref >= 50:
-        g0 = min(gset)
-        d = decompose(texts[g0])
-        if d is None:
-            D["C: gold 문장 파싱 실패 → L' 을 못 만듦"] += 1
-        else:
+    rpos = {}
+    o_ = sorted(range(len(pool)), key=lambda j: -sc[ref][j])
+    for r_, j in enumerate(o_):
+        rpos[j] = r_
+    # 이름 단위로 최선 순위 → top50 밖인 gold 이름만 assert 대상
+    per_name = {}
+    for j in gset:
+        per_name.setdefault(names[j], []).append(j)
+    missing = {nm: js for nm, js in per_name.items()
+               if min(rpos[j] for j in js) >= 50}
+    if missing:
+        found = {r: {k: True for k in KS} for r in RANKERS}   # ALL 판정용
+        any_ok = {r: {k: False for k in KS} for r in RANKERS}
+        cnt = 0
+        for nm, js in missing.items():
+            g0 = js[0]
+            d = decompose(texts[g0])
+            if d is None:
+                D["C: gold 문장 파싱 실패 → L' 을 못 만듦"] += 1
+                for r in RANKERS:
+                    for k in KS:
+                        found[r][k] = False
+                continue
             q = " ".join(d[2])
             hyp = st.split("\n\n")[0] if "\n\n" in st else ""
             st2 = (hyp + "\n\n" + q) if hyp else ("\n\n" + q)
-            _, q_ids = get_ids_from_goal(_G(q, []))
-            tf2 = tf_idf(q_ids, docs)
+            _, qi = get_ids_from_goal(_G(q, []))
+            tf2 = tf_idf(qi, docs)
             tr2 = TierRanker(texts, stage1=A.stage1)
             try:
-                sc2 = rank_all(st2, texts, pool, tf2, tr2, RANKERS, docs, names)
-                nC += 1
-                for r, v in sc2.items():
-                    b2, _ = recall(v, gset, names)
-                    for k in KS:
-                        RC[r][k] += (b2 < k)
+                sc2 = rank_all(st2, texts, pool, tf2, tr2, RANKERS, docs, names, q_ids=qi)
             except Exception as ex:
                 D[f"C 랭킹 예외: {type(ex).__name__} {str(ex)[:40]}"] += 1
+                for r in RANKERS:
+                    for k in KS:
+                        found[r][k] = False
+                continue
+            cnt += 1
+            for r, v in sc2.items():
+                o2 = sorted(range(len(pool)), key=lambda j: -v[j])
+                p2 = {j: rr for rr, j in enumerate(o2)}
+                # ★ **그 gold 자신**의 순위를 본다 (전체 중 최선이 아니라)
+                b2 = min(p2[j] for j in js)
+                for k in KS:
+                    if b2 < k:
+                        any_ok[r][k] = True
+                    else:
+                        found[r][k] = False
+        if cnt:
+            nC += 1
+            nCname += len(missing)
+            nCmulti += (len(missing) >= 2)
+            for r in RANKERS:
+                for k in KS:
+                    RC[r][k] += any_ok[r][k]      # R: 하나라도
+                    ALLC[r][k] += found[r][k]     # ALL: 전부
     if nA % 100 == 0:
         el = time.time() - t0
         print(f"   {nA}/{A.nrank}  ({el:.0f}s · {el/max(nA,1):.2f}s/건 · "
@@ -336,14 +445,38 @@ for r in RANKERS:
 for r in RANKERS:
     print(row(f"{r} · ALL", ALLA[r], nA))
 
-print(f"\n【C】 gold 가 (rrf 기준) top50 밖일 때, L' 을 assert 하고 재검색한 L 의 순위")
-print(f"      분모: 위 {nA}건 중 해당하고 L' 을 만들 수 있던 {nC}건")
+print(f"\n【C】 못 찾은 gold **마다** L' 을 assert 하고 그 goal 로 재검색했을 때")
+print(f"      분모: 위 {nA}건 중 top50 밖 gold 가 있던 {nC}건")
+print(f"           (그 안에서 만든 L' 총 {nCname}개 · L' 을 2개 이상 만들어야 한 스텝 "
+      f"{nCmulti}건 = {nCmulti/max(nC,1)*100:.1f}%)")
 if nC:
     print(f"      {'':16s}" + " ".join(f"{'top'+str(k):>8s}" for k in KS))
     for r in RANKERS:
         print(row(f"{r} · R", RC[r], nC))
+    for r in RANKERS:
+        print(row(f"{r} · ALL", ALLC[r], nC))
 else:
     print("      (해당 사례 없음)")
+
+# ★ experiment.txt 의 목표 지표: A 로 잡은 것 + 못 잡은 것을 assert 로 건진 것
+print(f"\n【목표】 A + (1-A)×C  — experiment.txt 기준 90~95% 필요")
+print(f"      ※ C 는 'A 가 top50 밖'인 사례가 분모이므로 이렇게 합성한다.")
+print(f"      {'':16s}" + f"{'R@50':>10s}{'ALL@50':>10s}   {'R@20':>10s}{'ALL@20':>10s}")
+best = (None, -1)
+for r in RANKERS:
+    line = f"      {r:16s}"
+    for k in (50, 20):
+        for cnt_a, cnt_c in ((RA, RC), (ALLA, ALLC)):
+            a_ = cnt_a[r][k] / max(nA, 1)
+            c_ = cnt_c[r][k] / max(nC, 1)
+            tot = a_ + (1 - a_) * c_
+            line += f"{tot*100:9.1f}%"
+            if k == 50 and cnt_a is ALLA and tot > best[1]:
+                best = (r, tot)
+        if k == 50:
+            line += "   "
+    print(line)
+print(f"      → ALL@50 기준 최선: {best[0]} {best[1]*100:.1f}%")
 
 if D:
     print(f"\n【D】 그 밖에 걸린 것")
@@ -355,6 +488,8 @@ res = {"split": SPLIT, "stage1": A.stage1, "nA": nA, "nC": nC, "nmulti": nmulti,
        "A_R": {r: dict(RA[r]) for r in RANKERS},
        "A_ALL": {r: dict(ALLA[r]) for r in RANKERS},
        "C_R": {r: dict(RC[r]) for r in RANKERS},
+       "C_ALL": {r: dict(ALLC[r]) for r in RANKERS},
+       "nCname": nCname, "nCmulti": nCmulti,
        "D": dict(D), "sec": round(time.time() - t0, 1)}
 out = A.out or ("/tmp/claude-0/-app-coq-modeling/e02d0688-7cb1-43a8-aa0e-ee8afd60ce19/"
                 f"scratchpad/abcd_{SPLIT.lower()}.json")
