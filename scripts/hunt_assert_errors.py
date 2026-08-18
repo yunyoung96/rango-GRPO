@@ -79,6 +79,18 @@ def find_decl(src: str, decl: str) -> int:
     return -1
 
 
+def _clean_ty(t: str) -> str:
+    """`Check` 출력에서 **타입만** 남긴다.
+
+    ★ Coq 은 미결정 evar 가 있으면 타입 뒤에 `where ?h : [ …컨텍스트… ]` 를 덧붙인다.
+      그걸 타입의 일부로 삼키면 `Syntax error: 'as' or 'in' … after [term level 200]`
+      이 난다 — B 실험 실패 37건 중 15건(최다)의 원인이었다(실측).
+      `where` 를 잘라내고 `?x` 를 `_` 로 바꿔 `eassert` 로 세우면 통과한다.
+    """
+    t = " ".join((t or "").split())
+    return re.split(r"\s+where\s+\?", t)[0].strip()
+
+
 def norm_err(msg: str) -> str:
     """오류 메시지를 유형으로 접는다 (구체 이름·항을 지운다)."""
     m = (msg or "").strip().replace("\n", " ")
@@ -224,7 +236,7 @@ for i in range(20000):
             for m in msgs:
                 mm = re.match(r"\s*(.+?)\s*:\s*(.+)$", m, re.S)
                 if mm:
-                    got.append(" ".join(mm.group(2).split()))
+                    got.append(_clean_ty(mm.group(2)))
             for t, ty in zip(terms, got):
                 out[t] = ty
         except Exception:
@@ -266,7 +278,7 @@ for i in range(20000):
             for m in msgs:
                 mm = re.match(r"\s*(.+?)\s*:\s*(.+)$", m, re.S)
                 if mm:
-                    got.append(" ".join(mm.group(2).split()))
+                    got.append(_clean_ty(mm.group(2)))
             for t, ty in zip(terms, got):
                 out[t] = ty
         except Exception:
