@@ -32,7 +32,13 @@ _DECL = re.compile(
     r"Proposition|Example|Let|Program\s+\w+)\s+"
     r"([A-Za-z_][\w']*(?:\.[A-Za-z_][\w']*)*)\s*", re.S)
 
-# bullet 은 증명 깊이마다 달라야 한다. 이미 쓰인 것을 피해 고른다.
+# ★ bullet 은 쓰지 않는다 — 중괄호만 쓴다.
+#
+#   Coq 은 **현재 열려 있는** bullet 안에서 같은 bullet 을 다시 쓰면 거부한다:
+#       [Focus] Wrong bullet -: Current bullet - is not finished.
+#   그런데 proof_script 를 봐도 **어떤 bullet 이 아직 안 닫혔는지 알 수 없다**
+#   (과거에 쓰인 `-` 가 이미 닫혔는지 열려 있는지 구분이 불가능하다).
+#   반면 `{ }` 는 bullet 깊이와 무관하게 항상 안전하다 — 중첩 `- +` 안에서도 오류 0건(실측).
 _BULLETS = ["-", "+", "*", "--", "++", "**"]
 
 
@@ -113,8 +119,9 @@ def _rename(tac: str, old: str, new: str) -> str:
 def pick_bullet(proof_script: str) -> str:
     """이미 쓰인 bullet 과 겹치지 않는 것을 고른다.
 
-    ★ 같은 bullet 을 중첩하면 Coq 이 "Wrong bullet" 으로 거부한다. 지금까지의 증명에서
-      쓰인 bullet 을 보고 안 쓴 것을 고른다.
+    ⚠ **신뢰할 수 없다** — 현재 열려 있는 bullet 을 알 방법이 없기 때문이다.
+      과거에 `-` 가 쓰였어도 이미 닫혔을 수 있고, 안 보여도 열려 있을 수 있다.
+      `transform` 은 기본적으로 중괄호를 쓴다. 이 함수는 호환용으로만 남긴다.
     """
     used = set(re.findall(r"^\s*([-+*]{1,3})\s", proof_script or "", re.M))
     for b in _BULLETS:
@@ -125,6 +132,7 @@ def pick_bullet(proof_script: str) -> str:
 
 def transform(gold_tactic: str, lemmas, proof_script: str = "",
               state: str = "", use_bullet: bool = False) -> str | None:
+    """(use_bullet 은 **쓰지 말 것** — 아래 경고 참조. 호환용으로만 남긴다.)"""
     """gold tactic → assert 형태. `lemmas` 는 [(이름, premise 텍스트), …].
 
     **여러 개도 지원한다** (`t1; apply L1; apply L2; tn` 같은 경우). 그때는 중괄호가
@@ -161,6 +169,12 @@ def transform(gold_tactic: str, lemmas, proof_script: str = "",
     if not n_ok:
         return None
     if use_bullet and n_ok == 1:
+        # ⚠ **깨진다. 쓰지 말 것.** 바깥 bullet 이 아직 **열려 있으면** Coq 이 거부한다:
+        #     split.
+        #     - assert (…) as H.
+        #     - exact L.        ← [Focus] Wrong bullet -: Current bullet - is not finished.
+        #   pick_bullet 으로는 못 막는다 — proof_script 의 `-` 가 이미 닫혔는지 아직
+        #   열려 있는지 구분할 방법이 없기 때문이다(실증: scripts/verify_assert_split.py ⑩).
         b = pick_bullet(proof_script)
         if b != "{":
             stmt, h, nm = lines[0]

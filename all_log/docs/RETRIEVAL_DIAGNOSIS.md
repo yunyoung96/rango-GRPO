@@ -894,9 +894,17 @@ IDF 코사인)가 거의 완전 일치한다. 지금까지 올린 모든 검색 
     변환 :  assert (L 의 statement) as Hasrt. { exact L. }
             t1; apply Hasrt; t3.
 
-**중괄호가 기본**이다. bullet 은 중첩 규칙이 까다로워 개수가 늘면 깨지지만, `{ }` 는 나란히
-놓을 수 있고 이미 쓰인 bullet 과 충돌하지도 않는다. 단일 lemma 일 때만 `use_bullet=True` 로
-bullet 형태를 쓴다.
+**중괄호만 쓴다. bullet 은 쓰면 안 된다** — 실증으로 확인했다.
+
+바깥 bullet 이 아직 **열려 있으면** Coq 이 거부한다.
+
+    split.
+    - assert (…) as H.
+    - exact L.        ← [Focus] Wrong bullet -: Current bullet - is not finished.
+
+**`pick_bullet` 같은 회피 로직으로는 못 막는다** — proof_script 의 `-` 가 이미 닫혔는지
+아직 열려 있는지 구분할 방법이 없기 때문이다. 반면 `{ }` 는 bullet 깊이와 무관하게 항상
+안전하다(중첩 `- +` 안에서도 오류 0건).
 
 ### 12.2 `;` 중간에 lemma 가 있어도 된다
 
@@ -926,6 +934,11 @@ assert 를 맨 앞으로 빼고 원래 tactic 을 통째로 뒤에 두면 `;` �
 | ④ `;` 중간에 lemma | ✓ |
 | ⑤ bullet 이미 사용중 | ✓ |
 | ⑥ 암묵인자 `{A}` | ✓ |
+| ⑨ **`-` bullet 안에서 생성**·중괄호 | ✓ |
+| ⑩ **`-` bullet 안에서 생성**·bullet 강제 | **✗ 깨짐(예상대로)** |
+
+⑨⑩ 이 결정적이다. ⑦⑧ 은 assert 가 증명 맨 앞에 와서 bullet 밖이라 위험이 재현되지 않았고,
+**모델이 이미 `-` 안에 있는 상태에서 생성하는** ⑨⑩ 에서야 드러났다.
 
 **검증에서 잡은 함정 셋**
 

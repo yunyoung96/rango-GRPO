@@ -67,6 +67,30 @@ CASES = [
      "intros n. split.\n- apply my_le_refl.\n- apply my_add_0.",
      [("my_le_refl", "Lemma my_le_refl : forall n : nat, n <= n.")],
      dict(use_bullet=True)),
+    ("⑦ - bullet 안에서 변환",
+     "Goal forall n : nat, n <= n /\\ n + 0 = n.",
+     "split.\n- apply my_le_refl.\n- apply my_add_0.",
+     [("my_le_refl", "Lemma my_le_refl : forall n : nat, n <= n.")],
+     dict()),
+    ("⑧ - bullet 안 · bullet 강제",
+     "Goal forall n : nat, n <= n /\\ n + 0 = n.",
+     "split.\n- apply my_le_refl.\n- apply my_add_0.",
+     [("my_le_refl", "Lemma my_le_refl : forall n : nat, n <= n.")],
+     dict(use_bullet=True)),
+    # ★ 진짜 위험 상황: 모델이 **이미 - bullet 안에 있는 상태**에서 다음 tactic 을 생성한다.
+    #   ⑦⑧ 은 assert 가 증명 맨 앞에 와서 bullet 밖이라 위험이 재현되지 않았다.
+    ("⑨ [prefix] - 안에서 생성·중괄호",
+     "Goal forall n : nat, n <= n /\\ n + 0 = n.",
+     "split.\n-",
+     "apply my_le_refl.",
+     [("my_le_refl", "Lemma my_le_refl : forall n : nat, n <= n.")],
+     dict(), "\n- apply my_add_0."),
+    ("⑩ [prefix] - 안에서 생성·bullet강제",
+     "Goal forall n : nat, n <= n /\\ n + 0 = n.",
+     "split.\n-",
+     "apply my_le_refl.",
+     [("my_le_refl", "Lemma my_le_refl : forall n : nat, n <= n.")],
+     dict(use_bullet=True), "\n- apply my_add_0."),
     ("⑥ 암묵인자 {A}",
      "Goal forall (l : list nat), length (l ++ l) = length l + length l.",
      "intros l. apply my_len_app.",
@@ -91,22 +115,38 @@ def run(body: str, tag: str):
         f.unlink(missing_ok=True)
 
 
+# ⑧⑩ 은 bullet 강제 케이스다. ⑩ 은 **깨지는 것이 정상** — bullet 을 쓰면 안 된다는 증거.
+EXPECT_FAIL = {"⑩"}
 ok = 0
-for i, (name, thm, proof, lemmas, opt) in enumerate(CASES):
+for i, case in enumerate(CASES):
+    if len(case) == 5:
+        name, thm, proof, lemmas, opt = case
+        prefix, suffix = "", ""
+        target = proof
+    else:
+        name, thm, prefix, target, lemmas, opt, suffix = case
+        proof = prefix + " " + target + suffix
     orig = f"{thm}\nProof.\n{proof}"
-    tr = transform(proof, lemmas, proof_script=proof, state="", **opt)
+    tr = transform(target, lemmas, proof_script=(prefix or proof), state="", **opt)
     if tr is None:
-        print(f"{name:20s} ✗ 변환 불가")
+        print(f"{name:26s} ✗ 변환 불가")
         continue
-    trans = f"{thm}\nProof.\n{tr}"
+    body = (prefix + " " + tr + suffix) if prefix else tr
+    trans = f"{thm}\nProof.\n{body}"
     e0 = run(orig, f"o{i}")
     e1 = run(trans, f"t{i}")
     good = (not e0) and (not e1)
+    if name[0] in EXPECT_FAIL:
+        good = bool(e1)          # 깨져야 정상
+        print(f"{name:26s} {'✓(예상대로 깨짐)' if good else '✗(안 깨졌다?)'}"
+              f"  변환오류 {len(e1)}")
+        ok += good
+        continue
     ok += good
-    print(f"{name:20s} {'✓' if good else '✗'}  원본오류 {len(e0)} · 변환오류 {len(e1)}")
+    print(f"{name:26s} {'✓' if good else '✗'}  원본오류 {len(e0)} · 변환오류 {len(e1)}")
     if not good:
         print("   변환문:")
-        for ln in tr.split("\n"):
+        for ln in body.split("\n"):
             print("     " + ln)
         for m in (e1 or e0)[:2]:
             print("   오류:", m)
