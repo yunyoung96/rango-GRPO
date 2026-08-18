@@ -986,3 +986,69 @@ assert 할 명제를 **모델이 스스로 만드는 것**은 어려운 과제�
 
 보상이 명확하다(assert 한 명제가 증명되고 원래 goal 이 닫히면 성공). GRPO 는 critic-free 라
 희소보상에 PPO 보다 적합하다([[ppo-bigscale-pending]]).
+
+---
+
+## 13. assert 변환 — VAL/TEST 대규모 동적 사냥
+
+`scripts/hunt_assert_errors.py`. 실제 gold step 을 변환해 **원본·변환을 둘 다 Coq 에 넣어**
+비교하고, 실패 오류를 유형별로 모은다.
+
+### 13.1 TRAIN 에서는 Coq 을 못 돌린다
+
+| | 원본 .v |
+|---|---|
+| TRAIN 프로젝트 | **없음** (`/coq-dataset/repos` 를 가리키지만 디렉토리가 없다) |
+| VAL | 있음 (`CoqStoq/val-repos`, 6개) |
+| TEST | 있음 (`CoqStoq/test-repos`, 12개) |
+| cutoff | 있음 (`CoqStoq/cutoff-repos`, 2개) |
+
+**복원을 시도했으나 1/8 만 성공했다** (`scripts/restore_train_file.py`).
+sentences.db 에 TRAIN 문장 541,835개가 줄 번호와 함께 있어 골격은 만들어지지만:
+
+| 실패 | 원인 |
+|---|---|
+| `The reference etudiant was not found` | 파일 밖 의존 정의가 없다 |
+| `The reference Z was not found` | **`Require Import` 가 db 에 없다** — 무엇을 import 했는지 모른다 |
+| `Syntax error: [lconstr] expected` | notation 정의가 빠져 파싱 불가 |
+| `Lexer: Undefined token` | 커스텀 기호 notation 없음 |
+
+의존을 재귀적으로 복원해야 하는데 실패율이 곱해진다. **가용한 20개 프로젝트에서 검증하고
+그 규칙을 TRAIN 정적 변환에 적용**하는 편이 현실적이다.
+
+### 13.2 최대 실패 원인은 Section 변수였다
+
+`sentences.db` 의 premise 텍스트는 **Section 안의 원문**이라 Section 변수가 그대로 들어 있다.
+Section 밖에서는 그것들이 인자로 바뀌므로 원문을 그대로 assert 하면 깨진다.
+
+    원래 : apply inImpInEq; auto with stalmarck.
+    변환 : assert (forall (a : A) (L : list A), In a L -> InEq a L) as Hasrt. …
+    오류 : The variable A was not found in the current environment.   ← A 는 Section 변수
+
+**해결: Coq 에게 물어본다.** `Check @L.` 이 Section 밖에서 본 실제 타입을 준다.
+
+| | 원문 statement | **Check 사용** |
+|---|---|---|
+| VAL | 50.0% | **66.7%** |
+| TEST | — | **75.0%** |
+
+### 13.3 남은 실패 — 인스턴스화된 사용
+
+    원래 : have := ltn_rmodp (phi p) (phi q).
+    변환 : assert (forall (R : ringType) (p q : {poly R}), …) as Hasrt. …
+    오류 : The term "p…" — 인자 적용이 안 맞는다
+
+`apply H` 는 전칭 명제로 충분하지만, `have := L a b` 처럼 **인자를 직접 적용**하는 형태는
+`Hasrt` 의 인자 개수가 어긋난다(암묵인자가 이미 채워진 상태로 쓰이기 때문). 인스턴스화된
+형태로 assert 해야 하는데, 어떤 인자로 채울지는 goal 문맥에 의존한다.
+
+### 13.4 지금까지 잡은 함정 전체
+
+| 함정 | 증상 | 수정 |
+|---|---|---|
+| `forall {A}` | Coq 문법 오류 | `{A}` → `A` (타입 추론됨) |
+| 암묵인자를 `exact L` 로 | `has type forall … : list ?A` 불일치 | `exact @L` |
+| `Definition foo : nat := 3.` | statement 로 오인 | body 의 `:=` 로 제외 |
+| **bullet** | `Wrong bullet -: Current bullet - is not finished` | **중괄호만 쓴다** |
+| **Section 변수** | `The variable A was not found` | **`Check @L.` 로 실제 타입 획득** |
+| 인스턴스화된 사용(`have := L a b`) | 인자 개수 불일치 | 미해결 |
