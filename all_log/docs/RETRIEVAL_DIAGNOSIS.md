@@ -1161,3 +1161,172 @@ intros 생성 / 뒤 증명 사용 / goal 바인더+전역충돌 / 가설 타입 
 | 위험 타입: SSReflect 집합표기 | 1 | 0 | **0%** |
 
 표본이 너무 작아 결론을 낼 수 없다. v6(val 150 / test 150 / train 300)로 다시 잰다.
+
+---
+
+## 15. 알고리즘 — 지금 무엇으로 찾고 있나 (2026-08-18)
+
+### 15.1 파일 지도
+
+**실제 파이프라인이 쓰는 코드** (여기를 고쳐야 학습/추론에 반영된다)
+
+| 파일 | 역할 |
+|---|---|
+| `src/premise_selection/premise_client.py` L343 `SparseClient` | ★ 실제 랭킹 진입점. `get_premise_scores` |
+| `src/data_management/dataset_file.py` L27 `ID_FORM` | 질의·문서를 **토큰으로 자르는 정규식** |
+| `src/data_management/dataset_file.py` L30 `get_ids_from_goal` | goal→토큰 (가설 이름 제거) |
+| `src/data_management/dataset_file.py` L48 `get_ids_from_sentence` | premise→토큰 (제거 없음) |
+| `src/proof_retrieval/tfidf.py` | TF-IDF 점수 |
+| `src/premise_selection/premise_filter.py` | 후보 풀 필터 |
+| `src/tactic_gen/tactic_data.py` | 프롬프트 조립 + 재랭킹 블렌드(`APPLICABLE_RERANK`) |
+
+**연구용으로 만든 코드** (아직 파이프라인에 안 들어감)
+
+| 파일 | 역할 |
+|---|---|
+| `src/tactic_gen/applicable.py` | ★ Coq 항 파서 + **단방향 유니피케이션** |
+| `src/tactic_gen/structural_repr.py` | 정렬 기반 익명 구조 표현(닫힌 어휘 57토큰) |
+| `src/tactic_gen/search_query.py` | goal→검색 패턴(추상화 사다리) |
+| `scripts/research_structural.py` | 신호 A~K 정의 + RRF 조합 실험대 |
+| `scripts/measure_assert_query.py` | assert 질의로 gold 가 잡히는지 |
+
+**문서**: 이 파일(`all_log/docs/RETRIEVAL_DIAGNOSIS.md`)이 검색 관련 **전부**다.
+
+### 15.2 지금 쓰는 알고리즘 — TF-IDF over ID_FORM 토큰
+
+```python
+ID_FORM = re.compile(r"[^\[\]\{\}\(\):=,\s]+")   # 괄호·콜론·등호·쉼표·공백으로 자른다
+```
+
+세 단계뿐이다.
+
+    ① goal 을 ID_FORM 으로 자른다 → 토큰열
+       ★ 이때 **가설 블록에 선언된 이름은 제거한다**(get_ids_from_goal 의 h_ids 필터)
+    ② premise 들도 각각 ID_FORM 으로 자른다 (제거 없음)
+    ③ TF-IDF 코사인으로 점수 → 내림차순 정렬
+
+**구조를 전혀 안 본다.** 항 트리도, 인자 위치도, 유니피케이션도 없다. 토큰 가방이다.
+
+### 15.3 그래서 무엇이 잘못되나 — 실측
+
+goal `a + b = b + a` 로 `forall x y, x + y = y + x` 를 찾을 수 있는가.
+
+```
+goal        : a + b = b + a
+goal 의 ids : ['+', '+']       ← a, b 는 가설 이름이라 지워진다. + 두 개만 남는다
+```
+
+같은 풀(8개)에 넣고 실제로 돌린 결과.
+
+| premise | tfidf | RRF(tfidf+C') | **계층** |
+|---|---|---|---|
+| ★ `forall x y, x + y = y + x` (변수명 다름) | 2위 | 3위 | **2위** |
+| ★ `forall a b, a + b = b + a` (변수명 같음) | 3위 | 2위 | **1위** |
+| `forall x y z, x + (y+z) = x+y+z` (**오답**) | **1위** | **1위** | 4위 |
+| `forall x y, x * y = y * x` | 5위 | 5위 | 5위 |
+
+**오답이 1위다.** `+` 가 세 개라 term frequency 가 높아서다. 순수한 개수 세기다.
+
+### 15.4 결론구조 C' 도 이걸 못 고친다
+
+`sig_concl_heads` 는 결론 부분항의 **head 다중집합**을 IDF 가중 코사인으로 비교한다.
+
+    goal      a + b = b + a          heads = {=:1, +:2}
+    정답      x + y = y + x          heads = {=:1, +:2}      코사인 0.482
+    오답      x + (y+z) = x+y+z      heads = {=:1, +:3}      코사인 0.496  ← 더 높다
+
+다중집합이라 **인자가 어떻게 맞물리는지**를 안 본다. 개수만 본다.
+
+### 15.5 ★ 실제로 가르는 것 — 단방향 유니피케이션 (`applicable.py`)
+
+premise 를 **패턴**, goal 을 **고정 항**으로 두고 패턴의 메타변수만 대입해 맞춘다.
+Coq 의 `apply` 가 하는 일과 같은 방향이다.
+
+**① 파싱** — Pratt 파서로 항 트리를 만든다 (`tokenize` → `parse_toks`).
+중위 연산자 우선순위를 Coq 문법대로 넣었다.
+
+```python
+_INFIX = {",":(200,True), "->":(99,True), "<->":(95,True), "\/":(85,True),
+          "/\\":(80,True), "=":(70,False), "||":(50,True), "+":(50,False),
+          "&&":(40,True), "*":(40,False), "^":(30,True)}
+```
+
+**② 분해** (`decompose`) — premise 를 (메타변수, 가설들, 결론)으로 쪼갠다.
+
+    Lemma add_comm : forall x y : nat, x + y = y + x.
+      → 메타변수 {x, y}
+      → 가설      []
+      → 결론      x + y = y + x
+
+`forall` 바인더, 선언부 바인더 `(n : nat)`, **화살표 중간의 forall**
+(`A -> forall l, B l -> C l`) 까지 전부 메타변수로 묶는다.
+
+**③ 정규화** (`canon`) — 표기 차이를 없앤다.
+
+    중위 → 함수적용     x + y      →  app(app(add, x), y)
+    모듈 접두사 제거     Nat.add    →  add
+    방향 통일           a > b      →  lt b a
+
+**④ 매칭** (`match`) — 패턴의 메타변수만 대입한다. goal 쪽은 절대 안 건드린다.
+
+```python
+if pat 이 메타변수:  이미 묶였으면 같은지 확인, 아니면 묶는다   # 선형성 검사
+if pat 이 opq:      판정 유보 → 보수적으로 통과              # 파싱 못 한 부분
+if 노드종류 다름:     실패
+if id:              모듈 접두사 뗀 이름이 같은가
+if app/op:          자식들 재귀
+```
+
+**⑤ 적용가능 판정** (`sig_applicable`)
+
+    apply    premise 결론이 goal 결론(또는 화살표를 벗긴 것들)과 맞는가
+    rewrite  premise 결론이 등식이면, 양변 중 하나가 goal 의 **부분항**과 맞는가
+
+같은 풀에서의 값:
+
+| | `x+y=y+x` | `a+b=b+a` | `x*y=y*x` | `x+(y+z)=…` | 나머지 |
+|---|---|---|---|---|---|
+| 적용가능 A | **1.0** | **1.0** | 0.0 | 0.0 | 0.0 |
+
+**변수명이 달라도 잡고, 곱셈과 결합법칙은 뺀다.** 이것이 사용자가 물은
+"구조로 찾는가"에 해당하는 유일한 신호다.
+
+### 15.6 왜 지금까지 못 썼나 — 이진값
+
+A 는 0/1 이라 **순위를 못 매긴다**. 풀의 절반이 1.0 으로 동점이면 그 안의 순서는 무작위다.
+§10 에서 A 를 **필터**로 쓴 실험(`[필터] 적용가능만 → RRF3`)이 R@50 0% 로 무너진 이유가
+이것과, 파서 recall 이 90% 라 **gold 를 10% 놓치는** 것이다.
+
+그래서 **필터가 아니라 계층 가산**으로 쓴다.
+
+```python
+rrf  = 1/(60+rank_tfidf) + 1/(60+rank_C')        # 기존 조합
+tier = rrf + (1.0 if 적용가능 else 0.0) + 0.01 * anti_unify
+```
+
+  · 적용가능한 것이 **무조건 위**로 간다 (RRF 값은 1/60 ≈ 0.017 이 최대라 1.0 을 못 넘는다)
+  · 그 안의 순서는 기존 RRF 가 정한다 → 동점 문제 해소
+  · 파서가 놓쳐도 **탈락하지 않는다** — 아래 계층에 남아 RRF 순서대로 나온다
+  · anti-unification(최소일반화) 유사도로 미세 조정
+
+15.3 표의 `계층` 열이 이 조합이다. 정답 둘이 1·2위, 오답이 4위로 내려간다.
+
+### 15.7 지금 재고 있는 것
+
+`scripts/measure_assert_query.py` — 질의 3종 × 랭커 3종.
+
+| 질의 | 무엇 |
+|---|---|
+| 원래 goal | 지금 상태 (비교 기준) |
+| **assert 실제** | Coq `Check (L a b).` 가 준 **인스턴스화된** 타입 + 가설 문맥 |
+| assert 상한 | L 의 결론 그대로 — §11 에서 45.6% 로 보고한 것 |
+
+| 랭커 | 무엇 |
+|---|---|
+| tfidf | 현재 rango |
+| RRF | tfidf + 결론구조 C' |
+| **계층** | 적용가능성 우선 (15.6) |
+
+★ §11 의 45.6%/84.8% 는 **질의를 gold lemma 자신의 문장에서 만든 상한선**이다.
+  실제 assert 명제는 인스턴스화된 형태라 더 어렵다. 예비 6건에서 R@50 상한 100% vs
+  실제 50% 로 크게 벌어졌다 — 정식 표본으로 다시 재는 중이다.
