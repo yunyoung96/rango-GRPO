@@ -44,12 +44,17 @@ from data_management.sentence_db import SentenceDB  # noqa: E402
 from tactic_gen.tactic_data import TacticDataConf, LmDataset  # noqa: E402
 from tactic_gen.gold_lemma import gold_lemmas  # noqa: E402
 from tactic_gen.search_query import local_names  # noqa: E402
+from tactic_gen import assert_split as A  # noqa: E402
 from tactic_gen.assert_split import (transform, extract_application,  # noqa: E402
                                      transform_with_types)
 
 NSTEP = int(sys.argv[1]) if len(sys.argv) > 1 else 40
 SPLIT = (sys.argv[2] if len(sys.argv) > 2 else "test").upper()
-REPOS = Path(f"CoqStoq/{SPLIT.lower()}-repos")
+# TRAIN 은 splits/commits.json 으로 복구한 /tmp/coq-dataset/repos 를 쓴다
+#   (VAL/TEST 는 CoqStoq 가 빌드해 둔 트리). TRAIN 은 빌드가 없어 의존성이 안 맞으면
+#   **원본도 컴파일 실패**하므로 그 케이스는 자동으로 스킵된다 — 비교가 오염되지 않는다.
+REPOS = (Path("/tmp/coq-dataset/repos") if SPLIT == "TRAIN"
+         else Path(f"CoqStoq/{SPLIT.lower()}-repos"))
 
 _NAME = re.compile(r"^\s*(?:Lemma|Theorem|Definition|Corollary|Remark|Fact|Fixpoint|"
                    r"Instance|Axiom|Proposition|Example|Let|Program\s+\w+)\s+"
@@ -91,6 +96,9 @@ ds = LmDataset.from_conf(conf, getattr(Split, SPLIT), 20000)
 sdb = SentenceDB.load(conf.sentence_db_loc)
 
 stat = collections.Counter()
+why = collections.Counter()
+gate = collections.Counter()
+name_bad = []
 errs = collections.Counter()
 samples = collections.defaultdict(list)
 tmp_files = []
@@ -135,7 +143,11 @@ for i in range(20000):
         stat["경로 파싱 실패"] += 1
         continue
     proj_dir, rel = mm.group(1), mm.group(2)
-    cands = list(REPOS.glob(f"*/{rel}")) or list(REPOS.glob(f"**/{rel}"))
+    if SPLIT == "TRAIN":
+        p0 = REPOS / proj_dir / rel
+        cands = [p0] if p0.exists() else list(REPOS.glob(f"{proj_dir}/{rel}"))
+    else:
+        cands = list(REPOS.glob(f"*/{rel}")) or list(REPOS.glob(f"**/{rel}"))
     if not cands:
         stat["소스 파일 없음"] += 1
         continue
@@ -151,6 +163,34 @@ for i in range(20000):
         continue
 
     ws = str((REPOS / cands[0].relative_to(REPOS).parts[0]).resolve())
+
+    # ★ **뒤 증명(suffix)까지 검증**하기 위해 원본에서 전체 증명을 뽑는다.
+    #   assert 는 가설 H 를 컨텍스트에 추가하므로 뒤 증명이 영향받을 수 있다:
+    #   `assumption`/`auto` 가 H 를 잘못 집거나, 가설 번호(H0·H1)가 밀리거나,
+    #   `intros` 패턴 개수가 어긋난다. 스텝만 확인하면 그걸 놓친다.
+    _end = -1
+    for _kw in ("\nQed.", "\nDefined.", "\nAdmitted.", " Qed.", " Defined."):
+        _i = src.find(_kw, at)
+        if _i >= 0 and (_end < 0 or _i < _end):
+            _end = _i + len(_kw)
+    full_proof = src[at:_end] if _end > at else None
+    # prefix(=proof_script) 다음이 suffix 다. 공백이 다를 수 있어 정규화해 찾는다
+    suffix = None
+    if full_proof:
+        _norm = lambda x: re.sub(r"\s+", " ", x).strip()
+        _np, _nf = _norm(script + " " + tac), _norm(full_proof)
+        if _np and _nf.startswith(_np[:min(len(_np), 400)]):
+            # 원문에서 prefix+tac 이 끝나는 지점을 문자 단위로 되짚는다
+            _cnt, _k = 0, 0
+            _target = len(_np)
+            _sq = _norm(script + " " + tac)
+            # 간단하고 안전한 방법: 원문을 정규화하며 같은 길이에 도달하는 위치를 찾는다
+            _acc = []
+            for _k, _ch in enumerate(full_proof):
+                _acc.append(_ch)
+                if len(_norm("".join(_acc))) >= _target:
+                    break
+            suffix = full_proof[_k + 1:]
 
     def check_terms_all(terms):
         """★ `Set Printing All` 로 **notation 없는** 타입을 얻는다.
@@ -294,6 +334,11 @@ for i in range(20000):
     if e0:
         stat["원본이 이미 오류(스킵)"] += 1
         continue
+    # 원본도 suffix 까지 되는지 먼저 확인 — 원본이 안 되면 비교가 무의미하다
+    if suffix is not None:
+        if try_proof(script + "\n" + tac + "\n" + suffix, "os"):
+            stat["원본 suffix 실패(스킵)"] += 1
+            suffix = None
 
     # ── ① 적용 항 전체를 뽑아 그 타입을 Coq 에 묻는다 (인자 개수 문제 원천 제거) ──
     terms = []
@@ -301,24 +346,39 @@ for i in range(20000):
         r = extract_application(tac, nm)
         if r and r[0] not in terms:
             terms.append(r[0])
+    A.WHY.clear()
     tr = None
     if terms:
         tt = check_terms(terms)
         apps = [(t, tt.get(t)) for t in terms if tt.get(t)]
         stat["Check(항) 타입 획득"] += len(apps)
         if apps:
-            tr = transform_with_types(tac, apps, state=st, proof_script=script)
+            tr = transform_with_types(tac, apps, state=st, proof_script=script,
+                                      suffix=(suffix or ""), premises=ptexts)
     # ── ② 실패하면 lemma 이름만으로 (기존 방식) ──
     if tr is None:
         types = check_types([n for n, _ in pick])
         pick2 = [(nm, f"Lemma {nm.split('.')[-1]} : {ty}." if
                   (ty := types.get(nm.split('.')[-1])) else pt) for nm, pt in pick]
         stat["Check(이름) 폴백"] += 1
-        tr = transform(tac, pick2, proof_script=script, state=st)
+        tr = transform(tac, pick2, proof_script=script, state=st,
+                       suffix=(suffix or ""), premises=ptexts)
+    why_snap = list(A.WHY)
     if tr is None:
         stat["변환 포기(위험/불가)"] += 1
+        for _w in (A.WHY or ["이유 미기록"]):
+            why[_w] += 1
         continue
     e1 = try_proof(script + "\n" + tr, "t")
+    # 스텝이 통과하면 **뒤 증명까지 붙여 Qed 에 도달하는지** 본다
+    if not e1 and suffix is not None:
+        stat["suffix 검증 시도"] += 1
+        e1s = try_proof(script + "\n" + tr + "\n" + suffix, "s")
+        if e1s:
+            stat["✗ suffix 에서 깨짐"] += 1
+            e1 = e1s
+        else:
+            stat["✓ suffix 까지 통과"] += 1
     # ★ notation 형태가 깨지면 **Printing All 형태**로 다시 시도한다.
     #   장황하지만 재파싱이 보장된다 — assert 를 아예 못 만드는 것보다 낫다.
     if e1 and terms:
@@ -326,13 +386,36 @@ for i in range(20000):
         apps2 = [(t, ta.get(t)) for t in terms if ta.get(t)]
         if apps2:
             tr2 = transform_with_types(tac, apps2, state=st, proof_script=script,
-                                       skip_risk=True)
+                                       skip_risk=True, suffix=(suffix or ""),
+                                       premises=ptexts)
             if tr2:
                 e2 = try_proof(script + "\n" + tr2, "t2")
                 if not e2:
                     stat["★ PrintingAll 폴백으로 성공"] += 1
                     tr, e1 = tr2, e2
+    # ★ 이름 침범 검사 — 만든 `H_asrt*` 가 state/앞증명/뒤증명/premise 어디에도
+    #   원래 있던 이름이 아니어야 한다. 한 건이라도 걸리면 즉시 드러나게 센다.
+    for _nm in set(re.findall(r"as\s+(H_asrt\d+)", tr)):
+        if not A.name_is_free(_nm, st, script, suffix or "", ptexts):
+            stat["★★ 이름 침범!"] += 1
+            name_bad.append((_nm, tac[:60]))
+    # ── gold premise **없이** assert 만 넣었을 때 뒤 증명이 도는가 ───────────
+    #   `{ exact L. }` 를 `{ admit. }` 로 바꾸면 "필요한 명제를 선언만 했을 때"가 된다.
+    #   이것이 통과하면 **assert 구문 자체는 안전**하고, 남는 문제는 그 명제를
+    #   증명할 lemma 를 찾는 것뿐이라는 뜻이다(= 우리 아이디어의 핵심 가정).
+    if not e1 and suffix is not None:
+        tr_ad = re.sub(r"\{ exact [^{}]*\. \}", "{ admit. }", tr)
+        if tr_ad != tr:
+            stat["admit 시도"] += 1
+            if try_proof(script + "\n" + tr_ad + "\n" + suffix, "ad"):
+                stat["✗ admit 만으로는 suffix 실패"] += 1
+            else:
+                stat["✓ admit 만으로 suffix 통과"] += 1
     stat["검증"] += 1
+    # ★ 필터를 껐을 때(ASSERT_RISK=0) "걸렸을 텐데 통과시킨" 항목의 실제 결과를 센다.
+    #   이것이 곧 필터별 정확도다 — 실패율이 낮으면 그 필터는 과하다.
+    for _w in {w[1:] for w in why_snap if w.startswith("~")}:
+        gate[(_w, "실패" if e1 else "성공")] += 1
     if not e1:
         stat["✓ 변환 성공"] += 1
     else:
@@ -363,6 +446,23 @@ print(f"\n   변환 성공률(시도분): {stat['✓ 변환 성공']}/{n} = {sta
 _att = stat["검증"] + stat["변환 포기(위험/불가)"]
 print(f"   적용률(포기 포함)  : {n}/{_att} = {n/max(_att,1)*100:.1f}%"
       f"   — 포기 {stat['변환 포기(위험/불가)']}건")
+if name_bad:
+    print(f"\n   ■ ★★ 이름 침범 {len(name_bad)}건")
+    for _nm, _t in name_bad[:10]:
+        print(f"     {_nm}  ← {_t}")
+else:
+    print(f"\n   ✓ 이름 침범 0건 (state·앞증명·뒤증명·premise 전부 대조)")
+if gate:
+    print(f"\n   ■ 필터별 정확도 — 필터를 끄고 통과시킨 결과 (ASSERT_RISK=0)")
+    _rs = sorted({k[0] for k in gate}, key=lambda r: -(gate[(r, "성공")] + gate[(r, "실패")]))
+    print(f"     {'필터':44s} {'통과':>5s} {'실패':>5s} {'실패율':>7s}")
+    for _r in _rs:
+        _o, _x = gate[(_r, "성공")], gate[(_r, "실패")]
+        print(f"     {_r:44s} {_o+_x:5d} {_x:5d} {_x/max(_o+_x,1)*100:6.1f}%")
+if why:
+    print(f"\n   ■ 포기 이유 (많은 순)")
+    for _k, _v in why.most_common(20):
+        print(f"     [{_v:4d}] {_k}")
 if errs:
     print(f"\n   ■ 실패 유형 (많은 순)")
     for k, v in errs.most_common(12):
