@@ -1,0 +1,211 @@
+"""검색 실패한 gold tactic 을 **assert 2단계**로 바꾼다.
+
+## 왜
+
+gold lemma 가 검색 결과에 없으면, 익명화된 프롬프트에서 모델은 **읽을 수 없는 이름**을
+지어내야 한다 — 원리적으로 불가능하다. 이름 대신 **명제**를 세우면 프롬프트에서 읽을 수
+있는 것만으로 증명이 이어진다.
+
+    원래 :  t1; apply L; t3.
+
+    변환 :  assert (L 의 statement) as H.
+            - exact L.            ← 이 goal 이 곧 L 의 statement → 검색이 L 을 1~5위로 찾는다
+            - t1; apply H; t3.    ← 원래 구조 그대로, L→H 치환만
+
+## 왜 assert 를 맨 앞에 두나
+
+`t1; apply L; t3` 처럼 lemma 가 복합 tactic **중간**에 있어도(실측 16.0%),
+L 은 전역 lemma 라 그 statement 가 **컨텍스트와 무관하게 성립**한다. 따라서 assert 를
+맨 앞으로 빼고 원래 tactic 을 통째로 둘째 bullet 에 넣으면 `;` 구조가 보존된다.
+
+## 언제 쓰나
+
+**검색이 성공했으면 쓰지 않는다.** assert 는 증명을 길게 만들고 "명제 생성" 이라는 어려운
+과제를 더한다. gold premise 가 top-K 안에 있으면 원래 gold tactic 이 1순위다.
+"""
+from __future__ import annotations
+
+import re
+
+_DECL = re.compile(
+    r"^\s*(?:Lemma|Theorem|Definition|Corollary|Remark|Fact|Fixpoint|Instance|Axiom|"
+    r"Proposition|Example|Let|Program\s+\w+)\s+"
+    r"([A-Za-z_][\w']*(?:\.[A-Za-z_][\w']*)*)\s*", re.S)
+
+# bullet 은 증명 깊이마다 달라야 한다. 이미 쓰인 것을 피해 고른다.
+_BULLETS = ["-", "+", "*", "--", "++", "**"]
+
+
+def has_implicit(premise_text: str) -> bool:
+    """선언부에 암묵인자 `{A}` 가 있나. 있으면 `exact @L` 로 받아야 한다."""
+    t = re.sub(r"\(\*.*?\*\)", " ", premise_text or "", flags=re.S).strip()
+    m = _DECL.match(t)
+    if not m:
+        return False
+    rest = t[m.end():]
+    depth = 0
+    for i, c in enumerate(rest):
+        if c in "([":
+            depth += 1
+        elif c in ")]":
+            depth -= 1
+        elif depth == 0 and c == "{":
+            return True
+        elif depth == 0 and c == ":" and not rest.startswith(":=", i):
+            return False
+    return False
+
+
+def statement_of(premise_text: str) -> str | None:
+    """premise 선언에서 **타입(statement)** 만 뽑는다.
+
+    `Lemma foo : forall n, P n.`            → `forall n, P n`
+    `Lemma foo (n : nat) : P n.`            → `forall (n : nat), P n`   (인자를 forall 로)
+    본문(`:= ...`)이 있는 정의는 대상이 아니다(None).
+    """
+    t = re.sub(r"\(\*.*?\*\)", " ", premise_text or "", flags=re.S).strip()
+    m = _DECL.match(t)
+    if not m:
+        return None
+    rest = t[m.end():]
+    # `:= 본문` 이 있으면 정의라 assert 대상이 아니다
+    depth = 0
+    binder_end = -1
+    colon = -1
+    i = 0
+    while i < len(rest):
+        c = rest[i]
+        if c in "({[":
+            depth += 1
+        elif c in ")}]":
+            depth -= 1
+        elif depth == 0 and rest.startswith(":=", i):
+            return None
+        elif depth == 0 and c == ":" and not rest.startswith(":=", i):
+            colon = i
+            break
+        i += 1
+    if colon < 0:
+        return None
+    binders = rest[:colon].strip()
+    body = rest[colon + 1:].strip().rstrip(".").strip()
+    if not body:
+        return None
+    # ★ `Definition foo : nat := 3.` 처럼 본문이 있으면 정의라 assert 대상이 아니다.
+    #   `:` 를 먼저 만나므로 위 루프에서 못 걸러진다 → body 에서 다시 본다.
+    if re.search(r"(?<![:<>=]):=(?!=)", body):
+        return None
+    if binders:
+        # `(n : nat) (m : nat)` → `forall (n : nat) (m : nat),`
+        # ★ 암묵인자 `{A}` 는 `forall {A}` 가 **Coq 문법 오류**다 → 괄호를 벗겨 `A` 로.
+        #   타입은 Coq 이 추론한다(`forall A (l : list A), …` 는 유효).
+        binders = re.sub(r"\{([^{}]*)\}", r"\1", binders)
+        return f"forall {binders}, {body}"
+    return body
+
+
+def _rename(tac: str, old: str, new: str) -> str:
+    """tactic 안의 lemma 이름을 바꾼다. 한정이름(`Z.le_trans`)도 통째로."""
+    pat = re.compile(r"(?<![\w'.])((?:[A-Za-z_][\w']*\.)*)" + re.escape(old) + r"(?![\w'])")
+    return pat.sub(new, tac)
+
+
+def pick_bullet(proof_script: str) -> str:
+    """이미 쓰인 bullet 과 겹치지 않는 것을 고른다.
+
+    ★ 같은 bullet 을 중첩하면 Coq 이 "Wrong bullet" 으로 거부한다. 지금까지의 증명에서
+      쓰인 bullet 을 보고 안 쓴 것을 고른다.
+    """
+    used = set(re.findall(r"^\s*([-+*]{1,3})\s", proof_script or "", re.M))
+    for b in _BULLETS:
+        if b not in used:
+            return b
+    return "{"                      # 전부 쓰였으면 중괄호로 (항상 안전)
+
+
+def transform(gold_tactic: str, lemmas, proof_script: str = "",
+              state: str = "", use_bullet: bool = False) -> str | None:
+    """gold tactic → assert 형태. `lemmas` 는 [(이름, premise 텍스트), …].
+
+    **여러 개도 지원한다** (`t1; apply L1; apply L2; tn` 같은 경우). 그때는 중괄호가
+    안전하다 — bullet 은 중첩 규칙이 까다로워 개수가 늘면 깨지기 쉽지만, `{ }` 는
+    나란히 놓으면 되고 이미 쓰인 bullet 과 충돌하지도 않는다.
+
+        assert (S1) as H0. { exact L1. }
+        assert (S2) as H1. { exact L2. }
+        t1; apply H0; apply H1; tn.
+
+    변환 불가(정의라 statement 가 없다 / 치환이 안 된다)면 None.
+    """
+    if isinstance(lemmas, str):
+        lemmas = [(lemmas, proof_script)]        # 옛 호출 형태 방어
+    used = _taken_names(state, proof_script)
+    lines, inner = [], gold_tactic.strip()
+    n_ok = 0
+    for nm, ptext in lemmas:
+        stmt = statement_of(ptext)
+        if not stmt:
+            continue
+        h = _fresh(used)
+        used.add(h)
+        base = nm.split(".")[-1]
+        new_inner = _rename(inner, base, h)
+        if new_inner == inner:
+            continue                              # 이 lemma 는 tactic 에 안 나온다
+        inner = new_inner
+        # ★ `{A}` 를 `A` 로 바꿔 명시했으므로 lemma 도 **@** 로 받아야 타입이 맞는다.
+        #   안 그러면 "has type forall l1 l2 : list ?A" 로 불일치한다(실측).
+        ref = ("@" + nm) if has_implicit(ptext) else nm
+        lines.append((stmt, h, ref))
+        n_ok += 1
+    if not n_ok:
+        return None
+    if use_bullet and n_ok == 1:
+        b = pick_bullet(proof_script)
+        if b != "{":
+            stmt, h, nm = lines[0]
+            return (f"assert ({stmt}) as {h}.\n{b} exact {nm}.\n{b} {inner}")
+    out = [f"assert ({stmt}) as {h}. {{ exact {nm}. }}" for stmt, h, nm in lines]
+    out.append(inner)
+    return "\n".join(out)
+
+
+def _taken_names(state: str, proof_script: str) -> set:
+    """goal 가설블록 + 지금까지의 증명에 등장한 이름 전부.
+
+    ★ 가설블록만 보면 부족하다 — 증명 앞부분에서 `intros H0 H1` 처럼 이름을 만들었으면
+      그것도 피해야 한다. 정규화(v8)는 **지역 가설을 건드리지 않으므로** 여기서 고른
+      이름이 프롬프트에 그대로 나타난다.
+    """
+    body = (state or "").split("[GOAL]")[0]
+    out = set()
+    for n in re.findall(r"^\s*([A-Za-z_][\w']*(?:\s*,\s*[A-Za-z_][\w']*)*)\s*:",
+                        body, re.M):
+        out |= {x.strip() for x in n.split(",")}
+    out |= set(re.findall(r"[A-Za-z_][\w']*", proof_script or ""))
+    return out
+
+
+def _fresh(used: set, want: str = "Hasrt") -> str:
+    if want not in used:
+        return want
+    i = 0
+    while f"{want}{i}" in used:
+        i += 1
+    return f"{want}{i}"
+
+
+def fresh_hyp(state: str, want: str = "Hasrt") -> str:
+    """goal 가설블록과 겹치지 않는 이름."""
+    body = (state or "").split("[GOAL]")[0]
+    names = set(re.findall(r"^\s*([A-Za-z_][\w']*(?:\s*,\s*[A-Za-z_][\w']*)*)\s*:",
+                           body, re.M))
+    flat = set()
+    for n in names:
+        flat |= {x.strip() for x in n.split(",")}
+    if want not in flat:
+        return want
+    for i in range(100):
+        if f"{want}{i}" not in flat:
+            return f"{want}{i}"
+    return want + "_x"
