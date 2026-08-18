@@ -254,6 +254,16 @@ def selftest() -> int:
             print(f"   [✗] 변환 반환형 이상: {tac} → {type(r).__name__}")
             bad += 1
 
+    # ★ evar 구제 — `?x` 가 있는 타입은 `_` + eassert 로 살려야 한다
+    AS.WHY.clear()
+    r = AS.transform_with_types(
+        "apply L", [("L", "forall (l : list ?A) (d : ?A), nth 0 l d = d")],
+        state="", proof_script="")
+    ok = r is not None and r.startswith("eassert") and "?" not in r.split("as ")[0]
+    print(f"   [{'✓' if ok else '✗'}] evar 타입이 eassert + _ 로 구제되는가 → "
+          f"{(r or 'None').splitlines()[0][:70]}")
+    bad += (not ok)
+
     # gold lemma 추출
     from tactic_gen.gold_lemma import gold_lemmas as GL
     cases = [("apply Nat.add_comm.", {"add_comm"}),

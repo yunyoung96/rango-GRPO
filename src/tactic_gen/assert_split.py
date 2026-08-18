@@ -254,6 +254,9 @@ def _no(reason: str):
     return False                       # 호출부에서 "포기 아님" 으로 읽는다
 
 
+# evar 를 `_` 로 바꾸고 eassert 로 살리는 구제책 (끄려면 ASSERT_EVAR=0)
+_EVAR_OK = os.environ.get("ASSERT_EVAR", "1") == "1"
+
 _WANT = "H_asrt"
 
 
@@ -391,10 +394,18 @@ def transform_with_types(gold_tactic: str, applications, state: str = "",
     # ★ 긴 항부터 치환해야 부분 치환이 안 생긴다 (`L a b` 를 먼저, 그 다음 `L`)
     for term, ty in sorted([a for a in applications if a[1]],
                            key=lambda a: -len(a[0])):
+        use_e = False                      # evar 를 `_` 로 바꿨으면 eassert 를 쓴다
         # ★ 타입에 evar(`?h`)가 있으면 assert 못 한다 — Coq 이 미결정 항을 그대로
         #   출력한 것이고, 그대로 쓰면 `Syntax error … after [term level 200]` 이 난다.
         if re.search(r"\?[A-Za-z_]", ty):
-            if (r := _no("타입에 evar(?x) 남음")) is None:
+            # ★ evar 를 그대로 쓰면 `Syntax error … after [term level 200]` 이 난다
+            #   (실측 실패의 절반). 그런데 **`?x` 를 `_` 로 바꾸고 `eassert` 를 쓰면**
+            #   Coq 이 `exact` 에서 구멍을 채운다 — 실측으로 통과 확인.
+            #   `assert` 는 미해결 evar 를 거부하므로 반드시 `eassert` 여야 한다.
+            ty2 = re.sub(r"\?[A-Za-z_][\w']*", "_", ty)
+            if _EVAR_OK and "_" in ty2:
+                ty, use_e = ty2, True
+            elif (r := _no("타입에 evar(?x) 남음")) is None:
                 return r
         # ★ `rewrite <-?L` / `rewrite ?L` 은 **여러 번** 재작성한다. 한 번만 치환하면
         #   `Found no subterm matching` 이 난다 → 변환하지 않는다(실측).
@@ -416,13 +427,13 @@ def transform_with_types(gold_tactic: str, applications, state: str = "",
         # ★ **모든** 등장을 바꾼다. 한 번만 바꾸면 나머지가 원래 이름으로 남아
         #   `Found no subterm matching` 이 난다(실측).
         inner = inner.replace(term, h)
-        lines.append((ty, h, term))
+        lines.append((ty, h, term, use_e))
     if not lines:
         WHY.append("적용 항이 tactic 문자열에 없음")
         return None          # ★ 구조적 불가 — 필터와 무관하게 항상 None
     # ★ 치환 후에도 원래 이름이 남아 있으면(다른 형태로 쓰인 것) 변환을 포기한다 —
     #   섞여 있으면 `The variable Hasrt was not found` 같은 어긋남이 생긴다.
-    for _ty, _h, term in lines:
+    for _ty, _h, term, _ue in lines:
         head = re.match(r"[A-Za-z_][\w']*(?:\.[A-Za-z_][\w']*)*", term)
         if head and re.search(r"(?<![\w'.])" + re.escape(head.group(0).split(".")[-1])
                               + r"(?![\w'])", inner):
@@ -431,11 +442,12 @@ def transform_with_types(gold_tactic: str, applications, state: str = "",
     # ★ 최종 방어선 — 고른 이름이 정말 어디에도 없는지 **다시** 확인한다.
     #   _taken_names 가 한 글자라도 놓치면 뒤 증명의 assumption/auto 가 엉뚱한 가설을
     #   집어 조용히 다른 증명이 된다. 조용한 오염보다 포기가 낫다.
-    for _ty, _h, _tm in lines:
+    for _ty, _h, _tm, _ue in lines:
         if not name_is_free(_h, state, proof_script, suffix, premises):
             WHY.append("이름 충돌 회피 실패(방어선)")
             return None
-    out = [f"assert ({ty}) as {h}. {{ exact ({term}). }}" for ty, h, term in lines]
+    out = [f"{'eassert' if ue else 'assert'} ({ty}) as {h}. {{ exact ({term}). }}"
+           for ty, h, term, ue in lines]
     out.append(inner)
     return "\n".join(out)
 
