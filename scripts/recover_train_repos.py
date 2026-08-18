@@ -35,6 +35,19 @@ import sqlite3
 import sys
 from pathlib import Path
 
+# ★ VS Code 원격 컨테이너의 git 인증 헬퍼가 깨져 있어(`Cannot find module
+#   /tmp/vscode-remote-containers-*.js`) 없거나 비공개인 저장소에서 clone 이 실패한다.
+#   인증 프롬프트를 완전히 끄면 즉시 실패하고 다음으로 넘어간다.
+_ENV = dict(os.environ)
+for k in ("GIT_ASKPASS", "SSH_ASKPASS", "GIT_CREDENTIAL_HELPER",
+          "VSCODE_GIT_ASKPASS_NODE", "VSCODE_GIT_ASKPASS_MAIN",
+          "VSCODE_GIT_ASKPASS_EXTRA_ARGS", "VSCODE_GIT_IPC_HANDLE"):
+    _ENV.pop(k, None)
+_ENV["GIT_TERMINAL_PROMPT"] = "0"
+_ENV["GIT_CONFIG_COUNT"] = "1"
+_ENV["GIT_CONFIG_KEY_0"] = "credential.helper"
+_ENV["GIT_CONFIG_VALUE_0"] = ""
+
 N = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1].isdigit() else 20
 DEST = Path(sys.argv[2]) if len(sys.argv) > 2 and not sys.argv[2].startswith("-") \
     else Path("/tmp/coq-dataset/repos")
@@ -94,14 +107,14 @@ for name, slug, sha, nf in targets[:N]:
         # blob 을 지연 받아 대역폭을 아끼고, 필요한 커밋만 체크아웃한다
         subprocess.run(["git", "clone", "-q", "--filter=blob:none", "--no-checkout",
                         f"https://github.com/{slug}.git", str(d)],
-                       check=True, capture_output=True, timeout=900)
+                       check=True, capture_output=True, timeout=900, env=_ENV)
         subprocess.run(["git", "-C", str(d), "checkout", "-q", sha],
-                       check=True, capture_output=True, timeout=900)
+                       check=True, capture_output=True, timeout=900, env=_ENV)
         n_v = len(list(d.rglob("*.v")))
         print(f"  ✓ {name:44s} {slug}@{sha[:8]}  .v {n_v}개 (db {nf})", flush=True)
         ok += 1
     except subprocess.CalledProcessError as ex:
-        err = (ex.stderr or b"").decode(errors="ignore")[:80]
+        err = " ".join((ex.stderr or b"").decode(errors="ignore").split())[:90]
         print(f"  ✗ {name:44s} {err}", flush=True)
         fail += 1
     except subprocess.TimeoutExpired:

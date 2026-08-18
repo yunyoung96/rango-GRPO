@@ -154,6 +154,10 @@ def transform(gold_tactic: str, lemmas, proof_script: str = "",
         stmt = statement_of(ptext)
         if not stmt:
             continue
+        # ★ 이 경로(이름 기반 폴백)도 위험 감지를 거쳐야 한다. 안 거치면 mathcomp
+        #   notation 이 그대로 들어가 깨진다 — 실측에서 폴백 77건이 감지를 우회했다.
+        if risky_type(stmt) or risky_tactic(gold_tactic):
+            continue
         h = _fresh(used)
         used.add(h)
         base = nm.split(".")[-1]
@@ -283,7 +287,7 @@ def extract_application(tac: str, lemma: str):
 
 
 def transform_with_types(gold_tactic: str, applications, state: str = "",
-                         proof_script: str = ""):
+                         proof_script: str = "", skip_risk: bool = False):
     """`applications` = [(항 문자열, 그 항의 타입)] 로 assert 를 만든다.
 
     타입은 호출부가 `Check (항).` 으로 **Coq 에게 물어서** 넘긴다 — Section 변수·암묵인자·
@@ -303,7 +307,9 @@ def transform_with_types(gold_tactic: str, applications, state: str = "",
         #   `Found no subterm matching` 이 난다 → 변환하지 않는다(실측).
         if re.search(r"[?!]\s*" + re.escape(term.split()[0]), gold_tactic):
             return None
-        if risky_type(ty) or risky_tactic(gold_tactic):
+        # skip_risk: `Set Printing All` 로 얻은 타입은 notation 이 이미 다 펴져 있어
+        #   notation 위험 검사가 무의미하다(`@eq` 같은 형태가 오탐된다).
+        if not skip_risk and (risky_type(ty) or risky_tactic(gold_tactic)):
             return None
         if term not in inner:
             continue

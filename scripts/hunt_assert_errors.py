@@ -152,6 +152,49 @@ for i in range(20000):
 
     ws = str((REPOS / cands[0].relative_to(REPOS).parts[0]).resolve())
 
+    def check_terms_all(terms):
+        """★ `Set Printing All` 로 **notation 없는** 타입을 얻는다.
+
+        실패 119건을 분류하니 근본 원인이 하나였다: **Coq 의 출력이 항상 다시 파싱되지
+        않는다.** `{fpmodR}` · `'Mor(M,N)` · `- _` 같은 notation 은 출력용 형태라
+        assert 에 넣으면 `Unknown interpretation for notation` 이 난다(실패의 67% 가
+        SSReflect/mathcomp 계열).
+
+        `Set Printing All` 은 notation 을 전부 펴서 `@eq R (Ropp x) (Rmult …)` 처럼
+        만든다 — 검증: 이 형태는 assert 에서 오류 0 으로 파싱된다.
+
+        대가: 항이 길고 사람이 쓰는 형태가 아니다. 그래서 **notation 형태를 먼저 쓰고
+        실패할 때만** 이쪽으로 폴백한다.
+        """
+        f = vf
+        bak = vf.parent / (vf.name + ".abak")
+        out = {}
+        try:
+            body = (script + "\nSet Printing All.\n"
+                    + "\n".join(f"Check ({t})." for t in terms) + "\n")
+            vf.rename(bak)
+            tmp_files.append(f)
+            f.write_text(src[:at] + body)
+            cf = CoqFile(str(f), timeout=180, workspace=ws)
+            cf.run()
+            msgs = [getattr(d, "message", "") for d in cf.diagnostics
+                    if getattr(d, "severity", 0) == 3]
+            cf.close()
+            got = []
+            for m in msgs:
+                mm = re.match(r"\s*(.+?)\s*:\s*(.+)$", m, re.S)
+                if mm:
+                    got.append(" ".join(mm.group(2).split()))
+            for t, ty in zip(terms, got):
+                out[t] = ty
+        except Exception:
+            pass
+        finally:
+            f.unlink(missing_ok=True)
+            if bak.exists():
+                bak.rename(vf)
+        return out
+
     def check_terms(terms):
         """★ **증명 지점에서** `Check (항).` 을 실행해 타입을 얻는다.
 
@@ -273,9 +316,22 @@ for i in range(20000):
         stat["Check(이름) 폴백"] += 1
         tr = transform(tac, pick2, proof_script=script, state=st)
     if tr is None:
-        stat["변환 불가(정의/치환실패)"] += 1
+        stat["변환 포기(위험/불가)"] += 1
         continue
     e1 = try_proof(script + "\n" + tr, "t")
+    # ★ notation 형태가 깨지면 **Printing All 형태**로 다시 시도한다.
+    #   장황하지만 재파싱이 보장된다 — assert 를 아예 못 만드는 것보다 낫다.
+    if e1 and terms:
+        ta = check_terms_all(terms)
+        apps2 = [(t, ta.get(t)) for t in terms if ta.get(t)]
+        if apps2:
+            tr2 = transform_with_types(tac, apps2, state=st, proof_script=script,
+                                       skip_risk=True)
+            if tr2:
+                e2 = try_proof(script + "\n" + tr2, "t2")
+                if not e2:
+                    stat["★ PrintingAll 폴백으로 성공"] += 1
+                    tr, e1 = tr2, e2
     stat["검증"] += 1
     if not e1:
         stat["✓ 변환 성공"] += 1
@@ -299,7 +355,10 @@ print(f"\n■ {SPLIT} — assert 변환 동적 검증")
 for k in sorted(stat, key=lambda x: -stat[x]):
     print(f"   {k:28s} {stat[k]:5d}")
 n = max(stat["검증"], 1)
-print(f"\n   변환 성공률: {stat['✓ 변환 성공']}/{n} = {stat['✓ 변환 성공']/n*100:.1f}%")
+print(f"\n   변환 성공률(시도분): {stat['✓ 변환 성공']}/{n} = {stat['✓ 변환 성공']/n*100:.1f}%")
+_att = stat["검증"] + stat["변환 포기(위험/불가)"]
+print(f"   적용률(포기 포함)  : {n}/{_att} = {n/max(_att,1)*100:.1f}%"
+      f"   — 포기 {stat['변환 포기(위험/불가)']}건")
 if errs:
     print(f"\n   ■ 실패 유형 (많은 순)")
     for k, v in errs.most_common(12):
