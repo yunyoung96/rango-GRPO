@@ -150,6 +150,7 @@ def transform(gold_tactic: str, lemmas, proof_script: str = "",
     if isinstance(lemmas, str):
         lemmas = [(lemmas, proof_script)]        # 옛 호출 형태 방어
     used = _taken_names(state, proof_script, suffix, premises)
+    _texts = (state, proof_script, suffix, *(premises or ()))
     base = _fresh_base(used)
     lines, inner = [], gold_tactic.strip()
     n_ok = 0
@@ -166,7 +167,7 @@ def transform(gold_tactic: str, lemmas, proof_script: str = "",
         if risky_tactic(gold_tactic):
             if _no("위험 tactic: " + _tac_kind(gold_tactic)) is None:
                 continue
-        h = _fresh(used, base)
+        h = _fresh(used, base, _texts)
         used.add(h)
         base = nm.split(".")[-1]
         new_inner = _rename(inner, base, h)
@@ -275,18 +276,32 @@ def _fresh_base(used: set, want: str = _WANT) -> str:
     return want + "_zz"
 
 
-def _fresh(used: set, want: str = _WANT) -> str:
-    """**항상 인덱스를 붙인다**: H_asrt0, H_asrt1, …
+def _fresh(used: set, want: str = _WANT, texts=()) -> str:
+    """**어떤 이유로든 겹치면 다음 인덱스로 넘어간다.**
 
-    ★ 맨 이름(`H_asrt`)을 첫 번째로 쓰면 위험하다. 한 증명에서 gold premise 가 여러 스텝에서
-      빠지면 assert 가 여러 개 생기는데, 학습 데이터는 스텝별로 **독립 생성**되므로 각각
-      맨 이름을 골라 충돌한다(프롬프트의 proof_script 는 원본 tactic 이라 앞 스텝의 assert 를
-      못 본다). 항상 인덱스를 붙이면 규칙이 하나로 통일되고, 이미 쓰인 번호는 건너뛴다.
+    후보 `want0`, `want1`, `want2`, … 를 순서대로 보면서 아래를 **모두** 통과할 때까지
+    인덱스를 올린다. 하나라도 걸리면 그 인덱스는 버린다.
+
+      ① 수집된 이름 집합(`used`)에 있다
+      ② 원문(state·앞증명·뒤증명·premise)에 **단어 단위로** 나타난다
+         — 집합 수집이 한 글자라도 놓쳤을 때를 위한 직접 대조다
+      ③ 그 후보로 **시작하는** 이름이 이미 있다 (`H_asrt0` vs `H_asrt01`)
+
+    이름 후보는 무한하므로 과하게 건너뛰어도 손해가 없다. 반대로 좁게 잡아 놓치면
+    Coq 이 `already used` 로 거절하거나, 더 나쁘게는 뒤 증명의 `assumption`·`auto` 가
+    **엉뚱한 가설**을 집어 조용히 다른 증명이 된다.
     """
-    i = 0
-    while f"{want}{i}" in used:
-        i += 1
-    return f"{want}{i}"
+    for i in range(1000):
+        c = f"{want}{i}"
+        if c in used:
+            continue                                        # ①
+        if any(u.startswith(c) for u in used):
+            continue                                        # ③
+        pat = re.compile(r"(?<![\w'])" + re.escape(c) + r"(?![\w'])")
+        if any(pat.search(t or "") for t in texts):
+            continue                                        # ②
+        return c
+    return f"{want}_zz"                                     # 사실상 도달 불가
 
 
 def fresh_hyp(state: str, want: str = _WANT) -> str:
@@ -369,6 +384,7 @@ def transform_with_types(gold_tactic: str, applications, state: str = "",
     인스턴스화가 전부 정리된 형태라 원문 statement 보다 정확하다.
     """
     used = _taken_names(state, proof_script, suffix, premises)
+    _texts = (state, proof_script, suffix, *(premises or ()))
     base = _fresh_base(used)
     inner = gold_tactic.strip()
     lines = []
@@ -395,7 +411,7 @@ def transform_with_types(gold_tactic: str, applications, state: str = "",
                 return r
         if term not in inner:
             continue
-        h = _fresh(used, base)
+        h = _fresh(used, base, _texts)
         used.add(h)
         # ★ **모든** 등장을 바꾼다. 한 번만 바꾸면 나머지가 원래 이름으로 남아
         #   `Found no subterm matching` 이 난다(실측).
