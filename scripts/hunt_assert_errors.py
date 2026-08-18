@@ -173,7 +173,7 @@ for i in range(20000):
             body = (script + "\nSet Printing All.\n"
                     + "\n".join(f"Check ({t})." for t in terms) + "\n")
             vf.rename(bak)
-            tmp_files.append(f)
+            pass  # ★ 원본 vf 를 tmp_files 에 넣으면 스크립트 끝에서 삭제된다
             f.write_text(src[:at] + body)
             cf = CoqFile(str(f), timeout=180, workspace=ws)
             cf.run()
@@ -214,7 +214,7 @@ for i in range(20000):
         try:
             body = script + "\n" + "\n".join(f"Check ({t})." for t in terms) + "\n"
             vf.rename(bak)
-            tmp_files.append(f)
+            pass  # ★ 원본 vf 를 tmp_files 에 넣으면 스크립트 끝에서 삭제된다
             f.write_text(src[:at] + body)
             cf = CoqFile(str(f), timeout=180, workspace=ws)
             cf.run()
@@ -252,7 +252,7 @@ for i in range(20000):
         out = {}
         try:
             vf.rename(bak)
-            tmp_files.append(f)
+            pass  # ★ 원본 vf 를 tmp_files 에 넣으면 스크립트 끝에서 삭제된다
             f.write_text(src[:at] + "\n".join(f"Check @{n}." for n in names) + "\n")
             cf = CoqFile(str(f), timeout=180, workspace=ws)
             cf.run()
@@ -276,7 +276,7 @@ for i in range(20000):
         bak = vf.parent / (vf.name + f".pbak{tag}")
         try:
             vf.rename(bak)
-            tmp_files.append(vf)
+            pass  # ★ 원본 vf 를 tmp_files 에 넣으면 스크립트 끝에서 삭제된다
             vf.write_text(src[:at] + body + "\n")
             cf = CoqFile(str(vf), timeout=180, workspace=ws)
             cf.run()
@@ -345,9 +345,13 @@ for i in range(20000):
         print(f"  {stat['검증']}건 검증 · 성공 {stat['✓ 변환 성공']} "
               f"({time.time()-t_start:.0f}s)", flush=True)
 
-for f in tmp_files:
+# ★ 여기서 tmp_files 를 지우면 안 된다 — 한때 원본 .v 경로가 담겨 있어 소스를 삭제했다.
+#   각 함수의 finally 가 이미 임시본을 지우고 백업을 복원한다. 남은 백업만 되돌린다.
+for _b in list(REPOS.rglob("*.?bak*")) + list(REPOS.rglob("*.v.*bak*")):
     try:
-        f.unlink(missing_ok=True)
+        _t = Path(str(_b).split(".v.")[0] + ".v") if ".v." in str(_b) else None
+        if _t and not _t.exists():
+            _b.rename(_t)
     except Exception:
         pass
 
