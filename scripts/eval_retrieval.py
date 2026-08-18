@@ -40,6 +40,7 @@ from tactic_gen.tactic_data import TacticDataConf, LmDataset  # noqa: E402
 from tactic_gen.gold_lemma import gold_lemmas  # noqa: E402
 from tactic_gen.search_query import local_names  # noqa: E402
 from tactic_gen.tier_rank import TierRanker, declname  # noqa: E402
+from tactic_gen import gbdt_rank  # noqa: E402
 
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 400
 SPLIT = (sys.argv[2] if len(sys.argv) > 2 else "test").upper()
@@ -63,13 +64,12 @@ class _G:
 
 
 # 비교할 랭킹 변형
-METHODS = ("tfidf", "RRF", "RRF+A.005", "RRF+A.02", "RRF+A.05",
-           "RRF+AU.05", "계층A")
+METHODS = ("tfidf", "RRF", "RRF+A.005", "GBDT")
 R = {m: collections.Counter() for m in METHODS}
 A = {m: collections.Counter() for m in METHODS}
 n = 0
 n_multi = 0
-t_tf = t_ti = 0.0
+t_tf = t_ti = t_gb = 0.0
 pool_sizes = []
 diag = collections.Counter()
 sel = []            # 후보 중 적용가능 판정 비율 (선택성)
@@ -140,14 +140,21 @@ for i in range(40000):
     # ★ RRF 한 항의 최대값은 1/60 ≈ 0.0167 이다. 가산 크기를 그 언저리로 두면
     #   "밀어 올리는 힌트" 가 되고, 1.0 처럼 크면 "계층" 이 되어 판정 못 받은 gold 를
     #   통째로 밀어낸다(실측: gold recall 46% 라서 손해가 크다).
+    # ★ GBDT — 학습된 모델. 특징 12개를 학습 때와 **같은 순서**로 만들어야 한다.
+    ta = time.time()
+    ns_docs = gbdt_rank.name_docs(docs, names)
+    ns = tf_idf(h_ids + g_ids, ns_docs)
+    gb = gbdt_rank.score(st, texts, tf, ns,
+                         cur_file=getattr(dp.file_context, "file", "") or "",
+                         prem_files=[getattr(p_, "file_path", "") or "" for p_ in pool],
+                         cand=cand)
+    t_gb += time.time() - ta
+
     scores = {
         "tfidf": tf,
         "RRF": rrf,
         "RRF+A.005": [rrf[j] + 0.005 * (1.0 if ap[j] > 0 else 0.0) for j in range(nn)],
-        "RRF+A.02": [rrf[j] + 0.02 * (1.0 if ap[j] > 0 else 0.0) for j in range(nn)],
-        "RRF+A.05": [rrf[j] + 0.05 * (1.0 if ap[j] > 0 else 0.0) for j in range(nn)],
-        "RRF+AU.05": [rrf[j] + 0.05 * au[j] for j in range(nn)],
-        "계층A": [rrf[j] + 1.0 * (1.0 if ap[j] > 0 else 0.0) for j in range(nn)],
+        "GBDT": gb,
     }
     for m, sc in scores.items():
         order = sorted(range(len(pool)), key=lambda j: -sc[j])
@@ -192,4 +199,4 @@ if sel:
     print(f"     후보 중 적용가능 비율(선택성) 중앙값     "
           f"{sel[len(sel)//2]*100:5.1f}%  평균 {sum(sel)/len(sel)*100:5.1f}%")
 print(f"\n   시간/스텝: tfidf {t_tf/max(n,1)*1000:.1f}ms · "
-      f"구조신호 추가 {t_ti/max(n,1)*1000:.1f}ms")
+      f"구조신호 {t_ti/max(n,1)*1000:.1f}ms · GBDT {t_gb/max(n,1)*1000:.1f}ms")

@@ -21,6 +21,7 @@ pointwise 분류지만 **트리 + 확률 순위**는 랭킹에서 잘 통하는 
 사용: python3 scripts/train_ranker_gbdt.py <train.jsonl> [eval1,eval2,...]
 """
 import json
+import os
 import random
 import sys
 
@@ -129,6 +130,19 @@ print(f"트리 {clf.n_iter_}개 학습", flush=True)
 
 def gbdt_scores(X):
     return clf.predict_proba(X)[:, 1]
+
+
+# ★ 모델을 저장한다 — 안 그러면 쓸 때마다 다시 학습해야 해서 실제로 못 쓴다.
+#   특징 구성(NF·RRF_K)도 같이 저장해야 추론 때 벡터를 똑같이 만들 수 있다.
+import joblib  # noqa: E402
+
+MODEL_OUT = os.environ.get("GBDT_OUT", "data/gbdt_ranker.joblib")
+joblib.dump({"clf": clf, "NF": NF, "RRF_K": RRF_K,
+             "feat_names": ["A\'매칭크기", "B head", "C 연산자", "D 모양", "C\' 결론head",
+                            "E 가설매칭", "tfidf", "이름subword", "H 지역성",
+                            "G anti-unify", "premise 가설수", "메타변수비"],
+             "n_trees": int(clf.n_iter_)}, MODEL_OUT)
+print(f"모델 저장 → {MODEL_OUT}", flush=True)
 
 
 print(f"\n{'대상':32s} {'방식':12s} {'R@10':>8s} {'R@20':>8s} {'R@50':>8s}")

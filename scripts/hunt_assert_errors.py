@@ -405,9 +405,13 @@ for i in range(20000):
     #   증명할 lemma 를 찾는 것뿐이라는 뜻이다(= 우리 아이디어의 핵심 가정).
     if not e1 and suffix is not None:
         tr_ad = re.sub(r"\{ exact [^{}]*\. \}", "{ admit. }", tr)
+        # ★ `admit` 뒤에 `Qed.` 가 오면 **무조건** 실패한다:
+        #   "Attempt to save a proof with given up goals … use Admitted".
+        #   suffix 는 원본 증명의 끝이라 `Qed.` 를 포함한다 → 바꿔 줘야 측정이 성립한다.
+        suf_ad = re.sub(r"\b(Qed|Defined)\s*\.", "Admitted.", suffix)
         if tr_ad != tr:
             stat["admit 시도"] += 1
-            if try_proof(script + "\n" + tr_ad + "\n" + suffix, "ad"):
+            if try_proof(script + "\n" + tr_ad + "\n" + suf_ad, "ad"):
                 stat["✗ admit 만으로는 suffix 실패"] += 1
             else:
                 stat["✓ admit 만으로 suffix 통과"] += 1

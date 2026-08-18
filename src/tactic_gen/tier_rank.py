@@ -272,6 +272,67 @@ def sig_anti_unify(gs, ps) -> float:
     return best
 
 
+def sig_head(gs, ps) -> float:
+    """B: 결론 최상위 head 일치. head 는 lemma 이름이 아니라 **전역 상수**다."""
+    return 1.0 if (ps[2] is not None and ps[2] == gs[2]) else 0.0
+
+
+def sig_ops(gs, ps) -> float:
+    """C: 연산자 집합 Jaccard — 순수 기호라 이름 무관."""
+    a_, b_ = ps[3], gs[3]
+    if not a_ and not b_:
+        return 0.0
+    u = len(a_ | b_)
+    return len(a_ & b_) / u if u else 0.0
+
+
+def sig_shape(gs, ps) -> float:
+    """D: 결론 크기·깊이 유사도."""
+    (pn, pd), (gn, gd) = ps[4], gs[4]
+    return (1.0 / (1 + abs(pn - gn) / max(gn, 1))) * 0.5 + \
+           (1.0 / (1 + abs(pd - gd))) * 0.5
+
+
+def sig_hyp_match(gs, ps) -> float:
+    """E: lemma **가설부** head 가 goal 가설블록에 이미 있는가.
+
+    `apply X` 는 X 의 가설을 새 subgoal 로 남긴다. 그게 이미 있으면 바로 닫힌다 —
+    결론만 보는 신호들이 통째로 놓치는 축이다.
+    """
+    ph = ps[6]
+    if not ph:
+        return 0.0
+    gh = gs[7]
+    if not gh:
+        return 0.0
+    return len(ph & gh) / len(ph)
+
+
+def sig_locality(cur_file: str, prem_file: str) -> float:
+    """H: 파일 경로 근접성. 같은 파일 > 같은 디렉토리 > 같은 프로젝트.
+
+    (줄 번호 기반 거리도 넣고 싶었으나 데이터에 없다 — `step.term.line` 이 None.)
+    """
+    if not prem_file or not cur_file:
+        return 0.0
+    a_ = [x for x in prem_file.split("/") if x and x != ".."]
+    b_ = [x for x in cur_file.split("/") if x and x != ".."]
+    if a_ and b_ and a_[-1] == b_[-1]:
+        return 1.0
+    k = 0
+    for x, y in zip(a_, b_):
+        if x != y:
+            break
+        k += 1
+    return min(0.6, 0.1 * k)
+
+
+def n_hyps(text: str) -> float:
+    """premise 가설 수 (0~8 정규화). 가설이 많으면 적용이 어렵다."""
+    d = decompose(text)
+    return min(float(len(d[1])), 8.0) / 8.0 if d else 0.0
+
+
 # ── 랭커 ─────────────────────────────────────────────────────────────────
 RRF_K = 60
 TIER_W = 1.0            # 적용가능 계층 가산 — RRF 최대(1/60)보다 훨씬 커야 한다
