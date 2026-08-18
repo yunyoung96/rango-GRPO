@@ -1,0 +1,362 @@
+#!/usr/bin/env python3
+"""★ 통합 실험 — `all_log/docs/retrieval/experiment.txt` 의 A/B/C/D.
+
+방법론이 바뀔 때마다 이 스크립트를 다시 돌린다. 세 스플릿 · 랭커 여러 종을 **한 번의
+순회로** 잰다(데이터 로드와 tfidf·구조신호 계산을 공유한다 — 랭커마다 따로 돌리면
+같은 일을 4번 한다).
+
+## 무엇을 재나
+
+  A. gold premise 가 검색 상위에 있는 비율            R@1/20/50 · ALL@1/20/50
+  C. gold 가 top50 밖일 때 **L' 을 assert 하고** 그 goal 로 재검색한 L 의 순위
+  D. 그 밖에 걸린 이상 징후
+  (B 는 Coq 실행이 필요해 `hunt_assert_errors.py` 가 맡는다)
+
+## 지표
+
+분모는 **gold lemma 를 쓰고 그 lemma 가 후보 풀에 실제로 있는 스텝**.
+
+  R@k    필요한 gold 중 **하나라도** 상위 k 안       (관행 지표)
+  ALL@k  필요한 gold 를 **전부** 상위 k 안           ← 실제로 중요한 것
+
+프롬프트에 상위 N 개만 들어가므로, tactic 이 lemma 를 2개 쓰는데 하나만 들어가면 모델은
+나머지를 지어내야 한다 — 불가능하다.
+
+## 동적 자기검사
+
+실험 **전**에 합성 사례로 랭커·assert 를 점검하고(`--selftest`), 실험 **중**에는 매 스텝
+불변식을 확인한다(점수 길이·NaN·gold 인덱스 범위). 깨지면 D 에 쌓이고 즉시 눈에 띈다.
+
+사용:
+  python3 scripts/exp_abcd.py --split test --nrank 3000
+  python3 scripts/exp_abcd.py --selftest        # 자기검사만
+"""
+import argparse
+import collections
+import copy
+import json
+import math
+import os
+import sys
+import time
+from pathlib import Path
+
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+sys.path.insert(0, "src")
+import logging  # noqa: E402
+
+logging.disable(logging.CRITICAL)
+import yaml  # noqa: E402
+from data_management.splits import Split  # noqa: E402
+from data_management.dataset_file import (DatasetFile, get_ids_from_goal,  # noqa: E402
+                                          get_ids_from_sentence)
+from data_management.sentence_db import SentenceDB  # noqa: E402
+from proof_retrieval.tfidf import tf_idf  # noqa: E402
+from premise_selection.premise_filter import PremiseFilter, PremiseFilterConf  # noqa: E402
+from tactic_gen.tactic_data import TacticDataConf, LmDataset  # noqa: E402
+from tactic_gen.gold_lemma import gold_lemmas  # noqa: E402
+from tactic_gen.search_query import local_names  # noqa: E402
+from tactic_gen.applicable import canon, decompose, match, parse  # noqa: E402
+from tactic_gen.tier_rank import TierRanker, declname, prem_struct  # noqa: E402
+
+ap = argparse.ArgumentParser()
+ap.add_argument("--split", default="test")
+ap.add_argument("--nrank", type=int, default=3000)
+ap.add_argument("--rankers", default="tfidf,rrf,struct,gbdt")
+ap.add_argument("--stage1", type=int, default=2000)
+ap.add_argument("--selftest", action="store_true")
+ap.add_argument("--out", default="")
+A = ap.parse_args()
+SPLIT = A.split.upper()
+RANKERS = [x for x in A.rankers.split(",") if x]
+KS = (1, 20, 50)
+
+
+class _G:
+    def __init__(self, g, h):
+        self.goal, self.hyps = g, h
+
+
+def _query_tree(state: str):
+    """state 의 goal 결론을 항 트리로. struct 랭커의 질의."""
+    g = state.split("\n\n")[-1] if "\n\n" in state else state
+    t = parse(g)
+    return canon(t) if t is not None else None
+
+
+def rank_all(state, texts, pool, tf, tr, kinds, docs=None, names=None):
+    """랭커별 점수를 **한 번의 신호 계산으로** 모두 만든다. 큰 값이 상위."""
+    out = {}
+    n = len(tf)
+    if kinds == ["tfidf"]:
+        return {"tfidf": list(tf)}
+    base, c2r, apl, ms, au, cand = tr.signals(state, tf)
+    rrf = [base[j] + c2r[j] for j in range(n)]
+    for k in kinds:
+        if k == "tfidf":
+            out[k] = list(tf)
+        elif k == "rrf":
+            out[k] = rrf
+        elif k == "struct":
+            # ★ 질의가 lemma 문장일 때 옳은 질문: **항 트리가 같은가**
+            qt = _query_tree(state)
+            sc = list(rrf)
+            if qt is not None:
+                for j in cand:
+                    ps = prem_struct(texts[j])
+                    if ps is None or ps[1] is None:
+                        continue
+                    if ps[1] == qt:
+                        sc[j] += 3.0
+                    elif match(ps[1], qt, ps[0], {}):
+                        sc[j] += 1.0
+            out[k] = sc
+        elif k == "gbdt":
+            from tactic_gen import gbdt_rank
+            gl = state.split("\n\n")[-1] if "\n\n" in state else state
+            h_, g_ = get_ids_from_goal(_G(gl, []))
+            ns = tf_idf(h_ + g_, gbdt_rank.name_docs(docs, names))
+            out[k] = gbdt_rank.score(state, texts, tf, ns, cand=cand)
+        else:
+            raise ValueError(k)
+    return out
+
+
+def recall(sc, gset, names):
+    o = sorted(range(len(sc)), key=lambda j: -sc[j])
+    pos = {j: r for r, j in enumerate(o)}
+    best = min(pos[j] for j in gset)
+    per = {}
+    for j in gset:
+        per[names[j]] = min(per.get(names[j], 10 ** 9), pos[j])
+    return best, max(per.values())
+
+
+# ══ 실험 전 동적 자기검사 ═════════════════════════════════════════════════
+def selftest() -> int:
+    """합성 사례로 랭커가 **상식적인 순서**를 내는지 확인한다.
+
+    여기서 깨지면 큰 실험을 돌릴 이유가 없다 — 몇 시간을 버리기 전에 잡는다.
+    """
+    bad = 0
+    POOL = ["Lemma add_comm : forall x y : nat, x + y = y + x.",
+            "Lemma mul_comm : forall x y : nat, x * y = y * x.",
+            "Lemma add_assoc : forall x y z : nat, x + (y + z) = x + y + z.",
+            "Lemma le_refl : forall n : nat, n <= n.",
+            "Lemma add_0 : forall n : nat, n + 0 = n."]
+    st = "a, b : nat\n\na + b = b + a"
+    docs = [d.split() for d in POOL]
+    tf = tf_idf(["+", "+"], docs)
+    tr = TierRanker(POOL, stage1=100)
+    sc = rank_all(st, POOL, POOL, tf, tr, ["rrf", "struct"], docs, [None] * 5)
+    for k, v in sc.items():
+        top = max(range(len(POOL)), key=lambda j: v[j])
+        ok = (top == 0)
+        print(f"   [{'✓' if ok else '✗'}] {k:7s} `a+b=b+a` 로 add_comm 이 1위인가 "
+              f"→ {POOL[top].split(':')[0].strip()}")
+        bad += (not ok)
+    # 점수 위생
+    for k, v in sc.items():
+        if len(v) != len(POOL) or any(not math.isfinite(x) for x in v):
+            print(f"   [✗] {k}: 점수 길이/NaN 이상")
+            bad += 1
+    # assert 변환 + 이름 충돌
+    from tactic_gen import assert_split as AS
+    AS.WHY.clear()
+    tr2 = AS.transform_with_types(
+        "apply L", [("L", "forall n : nat, n <= n")],
+        state="H_asrt0 : True\n\nn <= n", proof_script="intros n H_asrt0.")
+    ok = tr2 is not None and "H_asrt0" not in tr2.split("as ")[1][:12]
+    print(f"   [{'✓' if ok else '✗'}] assert 이름이 기존 H_asrt0 을 피하는가 → "
+          f"{tr2.splitlines()[0] if tr2 else 'None'}")
+    bad += (not ok)
+    # ★ 변환 반환형 — 필터 계측 모드(ASSERT_RISK=0)에서 False 가 새면
+    #   호출부가 문자열로 쓰다 TypeError 로 죽는다(실측: B 실험이 190/200 에서 크래시).
+    for tac, apps in [("apply L", [("L", "forall n:nat, n<=n")]),
+                      ("apply Q", [("L", "forall n:nat, n<=n")]),
+                      ("apply L", [("L", "forall (T:eqType)(x:T), x==x")]),
+                      ("rewrite ?L", [("L", "forall n:nat, n+0=n")]),
+                      ("apply L", [("L", "forall n, P ?x n")])]:
+        AS.WHY.clear()
+        r = AS.transform_with_types(tac, apps, state="", proof_script="")
+        if not (r is None or isinstance(r, str)):
+            print(f"   [✗] 변환 반환형 이상: {tac} → {type(r).__name__}")
+            bad += 1
+
+    # gold lemma 추출
+    from tactic_gen.gold_lemma import gold_lemmas as GL
+    cases = [("apply Nat.add_comm.", {"add_comm"}),
+             ("rewrite <- app_assoc.", {"app_assoc"}),
+             ("by rewrite -catA.", {"catA"}),
+             ("exact: foo_bar.", {"foo_bar"}),
+             ("intros n.", set())]
+    for tac, exp in cases:
+        got = set(GL(tac, set()))
+        ok = got == exp
+        if not ok:
+            print(f"   [✗] gold_lemma `{tac}` → {got} (기대 {exp})")
+            bad += 1
+    print(f"   자기검사: {'통과' if bad == 0 else str(bad) + '건 실패'}")
+    return bad
+
+
+print(f"■ 실험 전 동적 자기검사", flush=True)
+nbad = selftest()
+if A.selftest:
+    sys.exit(1 if nbad else 0)
+if nbad:
+    print(f"   ★ 자기검사 {nbad}건 실패 — 그래도 진행하되 결과를 의심할 것", flush=True)
+
+# ══ 데이터 ════════════════════════════════════════════════════════════════
+cc = yaml.safe_load(open("all_log/ft_qwen3b_v8_conf.yaml"))
+tdc = copy.deepcopy(cc["tactic_data"])
+tdc["formatter_conf"].pop("proof_ret", None)
+tdc["formatter_conf"].pop("num_proofs", None)
+conf = TacticDataConf.from_yaml(tdc)
+ds = LmDataset.from_conf(conf, getattr(Split, SPLIT), 200000)
+sdb = SentenceDB.load(conf.sentence_db_loc)
+pf = PremiseFilterConf.from_yaml(tdc["formatter_conf"]["premise"]["premise_filter"])
+pfilter = PremiseFilter(pf.coq_excludes, pf.non_coq_excludes, pf.general_excludes)
+
+RA = {r: collections.Counter() for r in RANKERS}
+ALLA = {r: collections.Counter() for r in RANKERS}
+RC = {r: collections.Counter() for r in RANKERS}
+D = collections.Counter()
+TM = collections.Counter()
+nA = nC = nmulti = 0
+t0 = time.time()
+
+for i in range(200000):
+    if nA >= A.nrank:
+        break
+    try:
+        e = ds.raw_example(i)
+    except Exception:
+        continue
+    st = getattr(e, "proof_state", "") or ""
+    tac = (e.next_steps[0] if getattr(e, "next_steps", None) else "").strip()
+    golds = gold_lemmas(tac, local_names(st))
+    if not golds:
+        continue
+    sid = ds.shuffled_idx.get_idx(ds.split, i)
+    try:
+        dp = DatasetFile.load(conf.data_loc / "data_points" / sid.file, sdb)
+        proof = dp.proofs[sid.proof_idx]
+        step = proof.steps[sid.step_idx]
+    except Exception:
+        D["DatasetFile 로드 실패"] += 1
+        continue
+    if not step.goals:
+        continue
+    pool = [p for p in dp.get_premises_before(proof) if pfilter.filter_premise(p)]
+    if not pool:
+        D["후보 풀이 비어 있음"] += 1
+        continue
+    texts = [getattr(p, "text", "") or "" for p in pool]
+    names = [declname(t) for t in texts]
+    gset = {j for j, nm in enumerate(names) if nm and nm in golds}
+    if not gset:
+        D["gold 가 풀에 없음(랭킹으로 해결 불가)"] += 1
+        continue
+    nA += 1
+    nmulti += (len({names[j] for j in gset}) >= 2)
+
+    docs = [get_ids_from_sentence(p) for p in pool]
+    h_ids, g_ids = get_ids_from_goal(step.goals[0])
+    tf = tf_idf(h_ids + g_ids, docs)
+    tr = TierRanker(texts, stage1=A.stage1)
+    ta = time.time()
+    try:
+        sc = rank_all(st, texts, pool, tf, tr, RANKERS, docs, names)
+    except Exception as ex:
+        D[f"랭킹 예외: {type(ex).__name__} {str(ex)[:40]}"] += 1
+        continue
+    TM["rank"] += time.time() - ta
+
+    # ── 실험 중 불변식 검사 ──────────────────────────────────────────────
+    for r, v in sc.items():
+        if len(v) != len(pool):
+            D[f"불변식: {r} 점수 길이 불일치"] += 1
+            continue
+        if any(not math.isfinite(x) for x in v):
+            D[f"불변식: {r} 에 NaN/Inf"] += 1
+            continue
+        best, worst = recall(v, gset, names)
+        if not (0 <= best <= worst < len(pool)):
+            D[f"불변식: {r} 순위 범위 이상"] += 1
+            continue
+        for k in KS:
+            RA[r][k] += (best < k)
+            ALLA[r][k] += (worst < k)
+
+    # ── C: gold 가 top50 밖일 때 L' 을 세우면 L 이 잡히나 ──────────────
+    ref = "rrf" if "rrf" in sc else RANKERS[0]
+    best_ref, _ = recall(sc[ref], gset, names)
+    if best_ref >= 50:
+        g0 = min(gset)
+        d = decompose(texts[g0])
+        if d is None:
+            D["C: gold 문장 파싱 실패 → L' 을 못 만듦"] += 1
+        else:
+            q = " ".join(d[2])
+            hyp = st.split("\n\n")[0] if "\n\n" in st else ""
+            st2 = (hyp + "\n\n" + q) if hyp else ("\n\n" + q)
+            _, q_ids = get_ids_from_goal(_G(q, []))
+            tf2 = tf_idf(q_ids, docs)
+            tr2 = TierRanker(texts, stage1=A.stage1)
+            try:
+                sc2 = rank_all(st2, texts, pool, tf2, tr2, RANKERS, docs, names)
+                nC += 1
+                for r, v in sc2.items():
+                    b2, _ = recall(v, gset, names)
+                    for k in KS:
+                        RC[r][k] += (b2 < k)
+            except Exception as ex:
+                D[f"C 랭킹 예외: {type(ex).__name__} {str(ex)[:40]}"] += 1
+    if nA % 100 == 0:
+        el = time.time() - t0
+        print(f"   {nA}/{A.nrank}  ({el:.0f}s · {el/max(nA,1):.2f}s/건 · "
+              f"C {nC}건 · D {sum(D.values())}건)", flush=True)
+
+# ══ 출력 ══════════════════════════════════════════════════════════════════
+def row(lbl, cnt, n):
+    return f"      {lbl:16s}" + " ".join(f"{cnt[k]/max(n,1)*100:7.1f}%" for k in KS)
+
+
+print(f"\n{'='*76}")
+print(f"■ {SPLIT} · stage1 {A.stage1} · {time.time()-t0:.0f}s")
+print(f"{'='*76}")
+print(f"\n【A】 gold premise 가 검색 상위에 있는 비율")
+print(f"      분모: gold lemma 를 쓰고 그 lemma 가 후보 풀에 있는 스텝 {nA}건")
+print(f"           (그중 lemma 2개 이상 필요 {nmulti}건 = {nmulti/max(nA,1)*100:.1f}%)")
+print(f"      {'':16s}" + " ".join(f"{'top'+str(k):>8s}" for k in KS))
+for r in RANKERS:
+    print(row(f"{r} · R", RA[r], nA))
+for r in RANKERS:
+    print(row(f"{r} · ALL", ALLA[r], nA))
+
+print(f"\n【C】 gold 가 (rrf 기준) top50 밖일 때, L' 을 assert 하고 재검색한 L 의 순위")
+print(f"      분모: 위 {nA}건 중 해당하고 L' 을 만들 수 있던 {nC}건")
+if nC:
+    print(f"      {'':16s}" + " ".join(f"{'top'+str(k):>8s}" for k in KS))
+    for r in RANKERS:
+        print(row(f"{r} · R", RC[r], nC))
+else:
+    print("      (해당 사례 없음)")
+
+if D:
+    print(f"\n【D】 그 밖에 걸린 것")
+    for k, v in D.most_common(15):
+        print(f"      [{v:6d}] {k}")
+
+res = {"split": SPLIT, "stage1": A.stage1, "nA": nA, "nC": nC, "nmulti": nmulti,
+       "rankers": RANKERS,
+       "A_R": {r: dict(RA[r]) for r in RANKERS},
+       "A_ALL": {r: dict(ALLA[r]) for r in RANKERS},
+       "C_R": {r: dict(RC[r]) for r in RANKERS},
+       "D": dict(D), "sec": round(time.time() - t0, 1)}
+out = A.out or ("/tmp/claude-0/-app-coq-modeling/e02d0688-7cb1-43a8-aa0e-ee8afd60ce19/"
+                f"scratchpad/abcd_{SPLIT.lower()}.json")
+Path(out).write_text(json.dumps(res, ensure_ascii=False, indent=1))
+print(f"\n   → {out}")

@@ -418,14 +418,16 @@ def transform_with_types(gold_tactic: str, applications, state: str = "",
         inner = inner.replace(term, h)
         lines.append((ty, h, term))
     if not lines:
-        return _no("적용 항이 tactic 문자열에 없음")
+        WHY.append("적용 항이 tactic 문자열에 없음")
+        return None          # ★ 구조적 불가 — 필터와 무관하게 항상 None
     # ★ 치환 후에도 원래 이름이 남아 있으면(다른 형태로 쓰인 것) 변환을 포기한다 —
     #   섞여 있으면 `The variable Hasrt was not found` 같은 어긋남이 생긴다.
     for _ty, _h, term in lines:
         head = re.match(r"[A-Za-z_][\w']*(?:\.[A-Za-z_][\w']*)*", term)
         if head and re.search(r"(?<![\w'.])" + re.escape(head.group(0).split(".")[-1])
                               + r"(?![\w'])", inner):
-            return _no("치환 후 원래 lemma 이름 잔존")
+            WHY.append("치환 후 원래 lemma 이름 잔존")
+            return None      # ★ 구조적 불가 — 필터와 무관하게 항상 None
     # ★ 최종 방어선 — 고른 이름이 정말 어디에도 없는지 **다시** 확인한다.
     #   _taken_names 가 한 글자라도 놓치면 뒤 증명의 assumption/auto 가 엉뚱한 가설을
     #   집어 조용히 다른 증명이 된다. 조용한 오염보다 포기가 낫다.
