@@ -303,6 +303,8 @@ def transform_with_types(gold_tactic: str, applications, state: str = "",
         #   `Found no subterm matching` 이 난다 → 변환하지 않는다(실측).
         if re.search(r"[?!]\s*" + re.escape(term.split()[0]), gold_tactic):
             return None
+        if risky_type(ty) or risky_tactic(gold_tactic):
+            return None
         if term not in inner:
             continue
         h = _fresh(used)
@@ -323,3 +325,38 @@ def transform_with_types(gold_tactic: str, applications, state: str = "",
     out = [f"assert ({ty}) as {h}. {{ exact ({term}). }}" for ty, h, term in lines]
     out.append(inner)
     return "\n".join(out)
+
+
+# ── 위험 패턴 감지 — "확실할 때만 변환" ─────────────────────────────────────
+#   목표는 변환 성공률을 **1 에 가깝게** 만드는 것이다. 적용률이 좀 떨어져도,
+#   변환했는데 깨지는 것보다 낫다(깨지면 그 학습 예제가 통째로 못 쓰게 된다).
+#   아래 패턴들은 실제 실패에서 반복해 나온 것들이다.
+
+# 실제 실패에서 반복해 나온 패턴들. 대부분 **mathcomp/SSReflect 커스텀 notation** 이다:
+#   `Check` 는 `{fpmodR}` · `'Mor(M, N)` · `{pred T}` · `'M_(1 + m)` 같은 표기로 출력하는데,
+#   그것을 `assert` 에 다시 넣으면 그 notation 의 scope 가 안 열려 파싱이 깨진다
+#   (`Unknown interpretation for notation "{ _ }"` · `Syntax error: [term level 200] …`).
+#   Set Printing All 로 notation 을 펼 수도 있지만 항이 거대해져 실용성이 없다.
+_RISKY_TY = re.compile(
+    r"\?[A-Za-z_]"                        # evar 가 남아 있다
+    r"|\{[^{}:|]*\}"                       # `{fpmodR}` `{pred T}` — 바인더가 아닌 중괄호 표기
+    r"|'[A-Za-z_]"                        # `'Mor(M,N)` `'M_(1+m)` — 프라임 notation
+    r"|#\|"                               # `#|T|` 카디널리티
+    r"|=i|\\in\b|\\subset\b"             # SSReflect 집합 표기
+    r"|\b\w+Type\b"                      # eqType · ringType · finType (canonical structure)
+    r"|\b\w+Class\b|\bProper\b|\bSetoid\b|\bMorphism\b|\baxioms_\b"
+    r"|\[set\b|\[pred\b|\[rel\b|\[seq\b"    # `[set z in p]` — SSReflect 내포 표기
+)
+
+# SSReflect 결합자는 goal 개수·순서를 바꾸므로 assert 를 끼우면 어긋나기 쉽다.
+_RISKY_TAC = re.compile(r"//|=>|\bexact:|\bapply:|\bcase:|\belim:|\bmove:|\brewrite\s+-")
+
+
+def risky_type(ty: str) -> bool:
+    """assert 명제로 쓰기 위험한 타입인가."""
+    return bool(_RISKY_TY.search(ty or "")) or len(ty or "") > 600
+
+
+def risky_tactic(tac: str) -> bool:
+    """assert 를 끼우면 구조가 어긋나기 쉬운 tactic 인가."""
+    return bool(_RISKY_TAC.search(tac or ""))
