@@ -223,3 +223,103 @@ def fresh_hyp(state: str, want: str = "Hasrt") -> str:
         if f"{want}{i}" not in flat:
             return f"{want}{i}"
     return want + "_x"
+
+
+# ── lemma **적용 항** 추출 ────────────────────────────────────────────────────
+#   `have := L a b.` 같은 형태는 `L` 만 assert 하면 인자 개수가 어긋난다.
+#   `assert (forall R p q, …) as H.` 로 만들면 H 는 인자가 전부 명시적인데
+#   원래 `L a b` 는 암묵인자가 채워진 상태라 `H a b` 가 다른 것을 가리킨다(실측 실패).
+#
+#   → **`L` 과 그 인자들을 통째로** assert 한다: `Check (L a b).` 로 타입을 얻고
+#     `assert (그 타입) as H. { exact (L a b). }` + `have := H.` 로 바꾼다.
+#     인자가 이미 적용된 형태라 개수 문제가 원천적으로 없다.
+
+# 인자 목록이 끝나는 지점 — tactic 구분자·수식어
+_ARG_STOP = re.compile(
+    r"^\s*(?:;|\.|\||\]|\}|\bin\b|\bwith\b|\bas\b|\bby\b|\bat\b|\busing\b|\beqn\b)")
+
+
+def extract_application(tac: str, lemma: str):
+    """tactic 에서 `lemma` 가 쓰인 **항 전체**(lemma + 인자들)를 뽑는다.
+
+    반환 (항 문자열, 시작, 끝) 또는 None.
+    `apply L.` → `L` · `have := L a b.` → `L a b` · `rewrite (L x) in H` → `(L x)`
+    """
+    base = lemma.split(".")[-1]
+    m = re.search(r"(?<![\w'.])((?:[A-Za-z_][\w']*\.)*)" + re.escape(base) + r"(?![\w'])",
+                  tac)
+    if not m:
+        return None
+    start, i = m.start(), m.end()
+    n = len(tac)
+    while i < n:
+        if _ARG_STOP.match(tac[i:]):
+            break
+        c = tac[i]
+        if c in "([{":                       # 괄호는 균형까지 통째로
+            d, j = 0, i
+            while j < n:
+                if tac[j] in "([{":
+                    d += 1
+                elif tac[j] in ")]}":
+                    d -= 1
+                    if d == 0:
+                        j += 1
+                        break
+                j += 1
+            i = j
+            continue
+        if c.isspace():
+            i += 1
+            continue
+        if c in ")]}":                       # 우리 것이 아닌 닫는 괄호
+            break
+        # 식별자·숫자·와일드카드만 인자로 인정 (연산자가 오면 항이 아니다)
+        mm = re.match(r"[A-Za-z_][\w']*(?:\.[A-Za-z_][\w']*)*|\d+|_", tac[i:])
+        if not mm:
+            break
+        i += mm.end()
+    return tac[start:i].rstrip(), start, i
+
+
+def transform_with_types(gold_tactic: str, applications, state: str = "",
+                         proof_script: str = ""):
+    """`applications` = [(항 문자열, 그 항의 타입)] 로 assert 를 만든다.
+
+    타입은 호출부가 `Check (항).` 으로 **Coq 에게 물어서** 넘긴다 — Section 변수·암묵인자·
+    인스턴스화가 전부 정리된 형태라 원문 statement 보다 정확하다.
+    """
+    used = _taken_names(state, proof_script)
+    inner = gold_tactic.strip()
+    lines = []
+    # ★ 긴 항부터 치환해야 부분 치환이 안 생긴다 (`L a b` 를 먼저, 그 다음 `L`)
+    for term, ty in sorted([a for a in applications if a[1]],
+                           key=lambda a: -len(a[0])):
+        # ★ 타입에 evar(`?h`)가 있으면 assert 못 한다 — Coq 이 미결정 항을 그대로
+        #   출력한 것이고, 그대로 쓰면 `Syntax error … after [term level 200]` 이 난다.
+        if re.search(r"\?[A-Za-z_]", ty):
+            return None
+        # ★ `rewrite <-?L` / `rewrite ?L` 은 **여러 번** 재작성한다. 한 번만 치환하면
+        #   `Found no subterm matching` 이 난다 → 변환하지 않는다(실측).
+        if re.search(r"[?!]\s*" + re.escape(term.split()[0]), gold_tactic):
+            return None
+        if term not in inner:
+            continue
+        h = _fresh(used)
+        used.add(h)
+        # ★ **모든** 등장을 바꾼다. 한 번만 바꾸면 나머지가 원래 이름으로 남아
+        #   `Found no subterm matching` 이 난다(실측).
+        inner = inner.replace(term, h)
+        lines.append((ty, h, term))
+    if not lines:
+        return None
+    # ★ 치환 후에도 원래 이름이 남아 있으면(다른 형태로 쓰인 것) 변환을 포기한다 —
+    #   섞여 있으면 `The variable Hasrt was not found` 같은 어긋남이 생긴다.
+    for _ty, _h, term in lines:
+        head = re.match(r"[A-Za-z_][\w']*(?:\.[A-Za-z_][\w']*)*", term)
+        if head and re.search(r"(?<![\w'.])" + re.escape(head.group(0).split(".")[-1])
+                              + r"(?![\w'])", inner):
+            return None
+    out = [f"assert ({ty}) as {h}. {{ exact ({term}). }}" for ty, h, term in lines]
+    out.append(inner)
+    return "\n".join(out)

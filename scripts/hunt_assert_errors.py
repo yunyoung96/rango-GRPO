@@ -44,7 +44,8 @@ from data_management.sentence_db import SentenceDB  # noqa: E402
 from tactic_gen.tactic_data import TacticDataConf, LmDataset  # noqa: E402
 from tactic_gen.gold_lemma import gold_lemmas  # noqa: E402
 from tactic_gen.search_query import local_names  # noqa: E402
-from tactic_gen.assert_split import transform  # noqa: E402
+from tactic_gen.assert_split import (transform, extract_application,  # noqa: E402
+                                     transform_with_types)
 
 NSTEP = int(sys.argv[1]) if len(sys.argv) > 1 else 40
 SPLIT = (sys.argv[2] if len(sys.argv) > 2 else "test").upper()
@@ -151,6 +152,48 @@ for i in range(20000):
 
     ws = str((REPOS / cands[0].relative_to(REPOS).parts[0]).resolve())
 
+    def check_terms(terms):
+        """★ **증명 지점에서** `Check (항).` 을 실행해 타입을 얻는다.
+
+        `have := L a b` 처럼 인자를 적용하는 형태는 `L` 만 assert 하면 인자 개수가
+        어긋난다(H 는 인자가 전부 명시적인데 `L a b` 는 암묵인자가 채워진 상태).
+        **항 전체**의 타입을 물으면 인스턴스화·Section 변수·암묵인자가 전부 정리된
+        형태가 나와 그 문제가 원천적으로 사라진다.
+
+        지역 변수(`p`, `q`)가 보이려면 반드시 **증명 안에서** 물어야 한다.
+        """
+        # ★ 임시 파일 이름이 **모듈 경로**가 되어 타입 안에 샌다
+        #   (`_hct_2538238.pre_graph was not found` — 실측 최다 실패).
+        #   원본과 같은 이름을 써야 한다: 원본을 잠시 옮기고 그 자리에 쓴다.
+        f = vf
+        bak = vf.parent / (vf.name + ".hbak")
+        out = {}
+        try:
+            body = script + "\n" + "\n".join(f"Check ({t})." for t in terms) + "\n"
+            vf.rename(bak)
+            tmp_files.append(f)
+            f.write_text(src[:at] + body)
+            cf = CoqFile(str(f), timeout=180, workspace=ws)
+            cf.run()
+            msgs = [getattr(d, "message", "") for d in cf.diagnostics
+                    if getattr(d, "severity", 0) == 3]
+            cf.close()
+            # `Check (t).` 순서대로 답이 온다고 보고 매칭 (': ' 뒤가 타입)
+            got = []
+            for m in msgs:
+                mm = re.match(r"\s*(.+?)\s*:\s*(.+)$", m, re.S)
+                if mm:
+                    got.append(" ".join(mm.group(2).split()))
+            for t, ty in zip(terms, got):
+                out[t] = ty
+        except Exception:
+            pass
+        finally:
+            f.unlink(missing_ok=True)
+            if bak.exists():
+                bak.rename(vf)
+        return out
+
     def check_types(names):
         """★ `Check L.` 로 **Coq 이 보는 실제 타입**을 얻는다.
 
@@ -159,10 +202,14 @@ for i in range(20000):
         하면 `The variable insT was not found` 로 깨진다(실측 최다 유형).
         Coq 에게 물어보면 정확한 타입을 준다.
         """
-        f = vf.parent / f"_hc_{os.getpid()}.v"
-        tmp_files.append(f)
+        # ★ 여기도 **원본과 같은 파일 이름**이어야 한다 — 임시 이름을 쓰면 그것이
+        #   모듈 경로가 되어 타입에 샌다(`_hc_2569394.pre_graph was not found`).
+        f = vf
+        bak = vf.parent / (vf.name + ".cbak")
         out = {}
         try:
+            vf.rename(bak)
+            tmp_files.append(f)
             f.write_text(src[:at] + "\n".join(f"Check @{n}." for n in names) + "\n")
             cf = CoqFile(str(f), timeout=180, workspace=ws)
             cf.run()
@@ -177,14 +224,18 @@ for i in range(20000):
             pass
         finally:
             f.unlink(missing_ok=True)
+            if bak.exists():
+                bak.rename(vf)
         return out
 
     def try_proof(body: str, tag: str):
-        f = vf.parent / f"_ha_{tag}_{os.getpid()}.v"
-        tmp_files.append(f)
+        # 증명 검증도 **원본과 같은 파일 이름**으로 해야 모듈 경로가 어긋나지 않는다
+        bak = vf.parent / (vf.name + f".pbak{tag}")
         try:
-            f.write_text(src[:at] + body + "\n")
-            cf = CoqFile(str(f), timeout=180, workspace=ws)
+            vf.rename(bak)
+            tmp_files.append(vf)
+            vf.write_text(src[:at] + body + "\n")
+            cf = CoqFile(str(vf), timeout=180, workspace=ws)
             cf.run()
             out = [getattr(d, "message", "") for d in cf.errors]
             cf.close()
@@ -192,25 +243,35 @@ for i in range(20000):
         except Exception as ex:
             return [f"예외: {ex}"]
         finally:
-            f.unlink(missing_ok=True)
+            vf.unlink(missing_ok=True)
+            if bak.exists():
+                bak.rename(vf)
 
     e0 = try_proof(script + "\n" + tac, "o")
     if e0:
         stat["원본이 이미 오류(스킵)"] += 1
         continue
 
-    # Coq 이 보는 실제 타입으로 assert 한다 (Section 변수·암묵인자가 정리된 형태)
-    types = check_types([n for n, _ in pick])
-    pick2 = []
-    for nm, ptext in pick:
-        ty = types.get(nm.split(".")[-1])
-        if ty:
-            pick2.append((nm, f"Lemma {nm.split('.')[-1]} : {ty}."))
-        else:
-            pick2.append((nm, ptext))
-    stat["Check 로 타입 획득"] += sum(
-        1 for nm, _ in pick if types.get(nm.split(".")[-1]))
-    tr = transform(tac, pick2, proof_script=script, state=st)
+    # ── ① 적용 항 전체를 뽑아 그 타입을 Coq 에 묻는다 (인자 개수 문제 원천 제거) ──
+    terms = []
+    for nm, _pt in pick:
+        r = extract_application(tac, nm)
+        if r and r[0] not in terms:
+            terms.append(r[0])
+    tr = None
+    if terms:
+        tt = check_terms(terms)
+        apps = [(t, tt.get(t)) for t in terms if tt.get(t)]
+        stat["Check(항) 타입 획득"] += len(apps)
+        if apps:
+            tr = transform_with_types(tac, apps, state=st, proof_script=script)
+    # ── ② 실패하면 lemma 이름만으로 (기존 방식) ──
+    if tr is None:
+        types = check_types([n for n, _ in pick])
+        pick2 = [(nm, f"Lemma {nm.split('.')[-1]} : {ty}." if
+                  (ty := types.get(nm.split('.')[-1])) else pt) for nm, pt in pick]
+        stat["Check(이름) 폴백"] += 1
+        tr = transform(tac, pick2, proof_script=script, state=st)
     if tr is None:
         stat["변환 불가(정의/치환실패)"] += 1
         continue
