@@ -28,6 +28,8 @@ from __future__ import annotations
 import os
 import re
 
+from tactic_gen.name_alloc import NameAllocator
+
 _DECL = re.compile(
     r"^\s*(?:Lemma|Theorem|Definition|Corollary|Remark|Fact|Fixpoint|Instance|Axiom|"
     r"Proposition|Example|Let|Program\s+\w+)\s+"
@@ -149,9 +151,11 @@ def transform(gold_tactic: str, lemmas, proof_script: str = "",
     """
     if isinstance(lemmas, str):
         lemmas = [(lemmas, proof_script)]        # 옛 호출 형태 방어
-    used = _taken_names(state, proof_script, suffix, premises)
+    # ★ 이름 할당은 name_alloc.NameAllocator 한 곳으로 통합 (정규화와 공통 규칙).
+    #   assert 는 **빡센 모드**: 집합 + 원문 직접 대조 + Coq 자동 개명 회피.
     _texts = (state, proof_script, suffix, *(premises or ()))
-    base = _fresh_base(used)
+    alloc = NameAllocator.from_texts(*_texts, scan_family=True, scan_text=True,
+                                     avoid_family=True)
     lines, inner = [], gold_tactic.strip()
     n_ok = 0
     for nm, ptext in lemmas:
@@ -167,8 +171,7 @@ def transform(gold_tactic: str, lemmas, proof_script: str = "",
         if risky_tactic(gold_tactic):
             if _no("위험 tactic: " + _tac_kind(gold_tactic)) is None:
                 continue
-        h = _fresh(used, base, _texts)
-        used.add(h)
+        h = alloc.alloc(_WANT)
         base = nm.split(".")[-1]
         new_inner = _rename(inner, base, h)
         if new_inner == inner:
@@ -186,7 +189,7 @@ def transform(gold_tactic: str, lemmas, proof_script: str = "",
     #   _taken_names 가 한 글자라도 놓치면 뒤 증명의 assumption/auto 가 엉뚱한 가설을
     #   집어 조용히 다른 증명이 된다. 조용한 오염보다 포기가 낫다.
     for _ty, _h, _tm in lines:
-        if not name_is_free(_h, state, proof_script, suffix, premises):
+        if not alloc.is_free(_h):
             WHY.append("이름 충돌 회피 실패(방어선)")
             return None
     if use_bullet and n_ok == 1:
@@ -386,9 +389,11 @@ def transform_with_types(gold_tactic: str, applications, state: str = "",
     타입은 호출부가 `Check (항).` 으로 **Coq 에게 물어서** 넘긴다 — Section 변수·암묵인자·
     인스턴스화가 전부 정리된 형태라 원문 statement 보다 정확하다.
     """
-    used = _taken_names(state, proof_script, suffix, premises)
+    # ★ 이름 할당은 name_alloc.NameAllocator 한 곳으로 통합 (정규화와 공통 규칙).
+    #   assert 는 **빡센 모드**: 집합 + 원문 직접 대조 + Coq 자동 개명 회피.
     _texts = (state, proof_script, suffix, *(premises or ()))
-    base = _fresh_base(used)
+    alloc = NameAllocator.from_texts(*_texts, scan_family=True, scan_text=True,
+                                     avoid_family=True)
     inner = gold_tactic.strip()
     lines = []
     # ★ 긴 항부터 치환해야 부분 치환이 안 생긴다 (`L a b` 를 먼저, 그 다음 `L`)
@@ -422,8 +427,7 @@ def transform_with_types(gold_tactic: str, applications, state: str = "",
                 return r
         if term not in inner:
             continue
-        h = _fresh(used, base, _texts)
-        used.add(h)
+        h = alloc.alloc(_WANT)
         # ★ **모든** 등장을 바꾼다. 한 번만 바꾸면 나머지가 원래 이름으로 남아
         #   `Found no subterm matching` 이 난다(실측).
         inner = inner.replace(term, h)
@@ -443,7 +447,7 @@ def transform_with_types(gold_tactic: str, applications, state: str = "",
     #   _taken_names 가 한 글자라도 놓치면 뒤 증명의 assumption/auto 가 엉뚱한 가설을
     #   집어 조용히 다른 증명이 된다. 조용한 오염보다 포기가 낫다.
     for _ty, _h, _tm, _ue in lines:
-        if not name_is_free(_h, state, proof_script, suffix, premises):
+        if not alloc.is_free(_h):
             WHY.append("이름 충돌 회피 실패(방어선)")
             return None
     out = [f"{'eassert' if ue else 'assert'} ({ty}) as {h}. {{ exact ({term}). }}"

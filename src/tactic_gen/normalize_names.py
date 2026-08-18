@@ -43,6 +43,8 @@ import os
 import re
 from typing import Optional
 
+from tactic_gen.name_alloc import NameAllocator  # noqa: E402
+
 _IDENT = re.compile(r"[A-Za-z_][\w']*")
 
 # 절대 바꾸면 안 되는 것: Coq 키워드 · tactic · stdlib 상식
@@ -259,15 +261,17 @@ def build_mapping(injected: dict, seed_key: str, avoid_text: str = "",
         return {}
     # ★ 충돌 검사는 **T\d+/f\d+/C\d+ 형태만** 훑으면 된다.
     #   프롬프트 전체(~8KB)를 일반 식별자 정규식으로 훑으면 예제마다 비용이 크다.
-    taken = (set(re.findall(r"\b[TfCLG]\d+\b", avoid_text or ""))
-             | set(names) | set(ctors) | set(prem_names) | ({thm} if thm else set()))
+    # ★ 이름 할당은 `name_alloc.NameAllocator` 한 곳으로 통합했다 (assert 와 공통).
+    #   여기서는 **가벼운 모드** — 프롬프트가 8KB 라 매 예제마다 일반 식별자 정규식으로
+    #   훑으면 비용이 크다. 정해진 형태(`[TfCLG]\d+`)만 본다.
+    alloc = NameAllocator.from_pattern(
+        avoid_text or "", r"\b[TfCLG]\d+\b",
+        extra=set(names) | set(ctors) | set(prem_names) | ({thm} if thm else set()))
 
     def fresh(prefix, k):
-        """taken 과 겹치지 않는 첫 이름과 다음 인덱스."""
-        while f"{prefix}{k}" in taken:
-            k += 1
-        taken.add(f"{prefix}{k}")
-        return f"{prefix}{k}", k + 1
+        """겹치면 **다음 인덱스로** 건너뛴 첫 이름과 다음 인덱스."""
+        nm = alloc.alloc(prefix, start=k)
+        return nm, int(nm[len(prefix):]) + 1
 
     # 결정적 순서(등장순) — 해시로 섞으면 예제마다 달라져 학습이 불안정
     mapping = {}
