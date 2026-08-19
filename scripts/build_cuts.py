@@ -80,6 +80,41 @@ _TOK = AutoTokenizer.from_pretrained(
 _TL: dict = {}
 
 
+
+# ── cut 품질 게이트 ───────────────────────────────────────────────────────
+#  ★ 예전에는 `cut_tac[:800]` 로 **잘랐다**. 잘린 assert 는 Coq 문법이 깨져서
+#    학습이 깨진 문자열을 외운다. 자르지 말고 **버린다**(→ hopeless 로 떨어져
+#    gold tactic + 정규화 OFF 로 학습된다).
+_CUT_TOK = None
+
+
+def _cut_ok(c: str) -> bool:
+    """cut 이 학습에 넣어도 되는 형태인가."""
+    import re as _re
+    if not _re.match(r"^e?assert\s*\(", c):
+        return False
+    if not _re.search(r"\bas\s+H_asrt[a-z]*\d+\s*\.", c):
+        return False   # 이름표가 없다 = 문장이 잘렸다
+    if "{" not in c or "}" not in c:
+        return False   # 증명 블록이 없다 = 잘렸다
+    if c.count("(") != c.count(")"):
+        return False   # 괄호 불균형 = 잘렸다
+    # 출력 예산(out_tokens) 을 넘으면 collator 가 라벨을 잘라 깨뜨린다
+    global _CUT_TOK
+    if _CUT_TOK is None:
+        try:
+            from transformers import AutoTokenizer
+            _CUT_TOK = AutoTokenizer.from_pretrained(
+                os.environ.get("CUT_TOKENIZER", "Qwen/Qwen2.5-Coder-3B-Instruct"))
+        except Exception:
+            _CUT_TOK = False
+    if _CUT_TOK:
+        lim = int(os.environ.get("CUT_MAX_TOKENS", "128"))
+        if len(_CUT_TOK.tokenize(c)) > lim:
+            return False
+    return True
+
+
 def _tlen(t: str) -> int:
     v = _TL.get(t)
     if v is None:
@@ -250,8 +285,8 @@ for i in range(min(N, len(ds))):
     rec = {"kind": "step", "sid": _key,
            "miss": missing, "have": ok_names, "need_coq": bad_names,
            "tac": tac[:400]}
-    if cut_tac:
-        rec["cut"] = cut_tac[:800]
+    if cut_tac and _cut_ok(cut_tac):
+        rec["cut"] = cut_tac
     else:
         # ★ cut 을 못 만들었거나 만들어도 재검색이 안 된다 → 가망 없음.
         rec["hopeless"] = True

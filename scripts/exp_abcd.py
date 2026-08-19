@@ -57,8 +57,10 @@ from premise_selection.premise_filter import PremiseFilter, PremiseFilterConf  #
 from tactic_gen.tactic_data import TacticDataConf, LmDataset  # noqa: E402
 from tactic_gen.gold_lemma import gold_lemmas  # noqa: E402
 from tactic_gen.search_query import local_names  # noqa: E402
-from tactic_gen.applicable import canon, decompose, match, parse  # noqa: E402
-from tactic_gen.tier_rank import TierRanker, declname, prem_struct  # noqa: E402
+from tactic_gen.applicable import (canon, decompose, match, parse,  # noqa: E402
+                                   subterms)
+from tactic_gen.tier_rank import (TierRanker, declname, prem_struct,  # noqa: E402
+                                  goal_struct, sig_hyp_match, head_of)
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--split", default="test",
@@ -81,7 +83,8 @@ RANKERS = [x for x in A.rankers.split(",") if x]
 # ★ 랭커 이름 오타/구버전 이름을 **시작 전에** 잡는다. 예전엔 잘못된 이름이 매 스텝
 #   예외로 빠져 결과가 전부 0.0% 로 나왔고, 20분을 버린 뒤에야 알았다.
 _KNOWN = {"tfidf", "rrf", "struct", "eq", "cov", "eqcov",
-          "structural", "structural_mmr", "gbdt", "ctr"}
+          "structural", "structural_mmr", "gbdt", "ctr",
+          "hyp", "sub", "cooc", "nsub", "allsig"}
 _bad = [r for r in RANKERS if r not in _KNOWN]
 if _bad:
     sys.stderr.write(f"알 수 없는 랭커: {_bad}\n사용 가능: {sorted(_KNOWN)}\n")
@@ -102,6 +105,16 @@ def _query_tree(state: str):
     return canon(t) if t is not None else None
 
 
+def _rrf_rank(vals, k=60.0):
+    """값 → 순위 → 1/(k+순위). 서로 다른 척도의 신호를 합칠 때 쓴다."""
+    n = len(vals)
+    o = sorted(range(n), key=lambda j: -vals[j])
+    r = [0] * n
+    for p_, j in enumerate(o):
+        r[j] = p_
+    return [1.0 / (k + r[j]) for j in range(n)]
+
+
 def _cov(q_ids, docs, n):
     """질의 토큰을 premise 가 **얼마나 담고 있나** (0~1).
 
@@ -115,7 +128,8 @@ def _cov(q_ids, docs, n):
     return [len(qs & set(docs[j])) / len(qs) for j in range(n)]
 
 
-def rank_all(state, texts, pool, tf, tr, kinds, docs=None, names=None, q_ids=None):
+def rank_all(state, texts, pool, tf, tr, kinds, docs=None, names=None,
+             q_ids=None, dp=None):
     """랭커별 점수를 **한 번의 신호 계산으로** 모두 만든다. 큰 값이 상위."""
     out = {}
     n = len(tf)
@@ -180,6 +194,61 @@ def rank_all(state, texts, pool, tf, tr, kinds, docs=None, names=None, q_ids=Non
         elif k == "eqcov":
             eb, cv = eq_bonus(), cov_rrf()
             out[k] = [rrf[j] + cv[j] + 3.0 * eb[j] for j in range(n)]
+        elif k in ("hyp", "sub", "cooc", "nsub", "allsig"):
+            # ★ future-idea 의 미시도 신호들 — A(직접 검색)를 올리려는 시도.
+            #   cut 은 생성 실패·문법 오류 위험이 있으므로 A 가 높을수록 안전하다.
+            add = [0.0] * n
+            if k in ("hyp", "allsig"):
+                # ③ 가설부 매칭 E — lemma 의 **가설**이 goal 문맥에 이미 있는가.
+                #   `apply X` 는 X 의 가설을 새 subgoal 로 남기는데, 이미 있으면
+                #   바로 닫히므로 훨씬 유망하다. GBDT 특징엔 있으나 랭커엔 없었다.
+                gs2 = goal_struct(state)
+                if gs2 is not None:
+                    v = [0.0] * n
+                    for j in cand:
+                        ps = prem_struct(texts[j])
+                        if ps is not None:
+                            v[j] = sig_hyp_match(gs2, ps)
+                    rr = _rrf_rank(v)
+                    for j in range(n):
+                        add[j] += rr[j]
+            if k in ("sub", "allsig"):
+                # ⑤ 부분항별 다중 질의 — rewrite 는 lemma 가 goal 의 **부분항**에 맞는다.
+                #   결론 전체로 한 번만 질의하면 그걸 놓친다. 부분항마다 질의해 RRF 합.
+                gtxt = state.split("\n\n")[-1] if "\n\n" in state else state
+                gt = parse(gtxt)
+                subs = []
+                if gt is not None:
+                    for t in list(subterms(canon(gt)))[:6]:
+                        h = head_of(t)
+                        if h and len(h) > 1:
+                            subs.append(h)
+                for h in dict.fromkeys(subs):
+                    v = [1.0 if h in (texts[j] or "") else 0.0 for j in range(n)]
+                    rr = _rrf_rank(v)
+                    for j in range(n):
+                        add[j] += rr[j] * 0.5
+            if k in ("cooc", "allsig"):
+                # ⑦ 같은 파일 안에서의 **동시출현 사전확률** — 학습 없이 카운트만.
+                #   "이 goal 의 상수를 쓰는 이전 증명들이 자주 쓴 lemma".
+                #   여기서는 근사로 **같은 파일 출처** premise 를 우대한다.
+                cur = getattr(dp.file_context, "file", "") or ""
+                v = [1.0 if (getattr(pool[j], "file_path", "") or "")[-30:] == cur[-30:]
+                     else 0.0 for j in range(n)]
+                rr = _rrf_rank(v)
+                for j in range(n):
+                    add[j] += rr[j]
+            if k in ("nsub", "allsig"):
+                # 이름 서브워드 tfidf — GBDT 특징엔 있으나 랭커엔 없었다.
+                from tactic_gen import gbdt_rank
+                nsd = gbdt_rank.name_docs(docs, names)
+                gl2 = state.split("\n\n")[-1] if "\n\n" in state else state
+                h2, g2 = get_ids_from_goal(_G(gl2, []))
+                ns = tf_idf(h2 + g2, nsd)
+                rr = _rrf_rank(ns)
+                for j in range(n):
+                    add[j] += rr[j]
+            out[k] = [rrf[j] + add[j] for j in range(n)]
         elif k in ("structural", "structural_mmr"):
             # ★ 파이프라인(SparseClient)이 쓰는 것과 **같은 함수**를 부른다 —
             #   하네스와 실제 경로가 갈라지면 측정이 의미를 잃는다.
@@ -430,7 +499,7 @@ for i in range(200000):
     ta = time.time()
     try:
         sc = rank_all(st, texts, pool, tf, tr, RANKERS, docs, names,
-                      q_ids=h_ids + g_ids)
+                      q_ids=h_ids + g_ids, dp=dp)
     except Exception as ex:
         D[f"랭킹 예외: {type(ex).__name__} {str(ex)[:40]}"] += 1
         continue
@@ -487,7 +556,8 @@ for i in range(200000):
             tf2 = tf_idf(qi, docs)
             tr2 = TierRanker(texts, stage1=A.stage1)
             try:
-                sc2 = rank_all(st2, texts, pool, tf2, tr2, RANKERS, docs, names, q_ids=qi)
+                sc2 = rank_all(st2, texts, pool, tf2, tr2, RANKERS, docs, names,
+                               q_ids=qi, dp=dp)
             except Exception as ex:
                 D[f"C 랭킹 예외: {type(ex).__name__} {str(ex)[:40]}"] += 1
                 for r in RANKERS:

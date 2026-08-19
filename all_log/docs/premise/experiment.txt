@@ -266,3 +266,105 @@ premise 길이 편차가 극심하다 — 최소 16 · p25 43 · 중앙 147 · �
   1200 에서 포화. 그 이상은 gold 동일한데 2048 초과율만 올린다.
 
   ※ 어텐션 희석은 이 실험으로 못 잰다 — 학습·평가로만 확인된다.
+
+
+================================================================================
+<7. 최종 확정 — v9 본학습 스펙>                                    2026-08-19 KST
+================================================================================
+
+  실험을 모두 끝내고 본학습에 넣기로 한 설정. 상세 근거는
+  all_log/docs/premise/final.md §10 에 있다.
+
+  RETRIEVAL_MODE=structural   RETRIEVAL_STAGE1=5000
+  PREMISE_PACK=hybrid         PREMISE_PACK_TOPK=4
+  NORMALIZE_NAMES=1           NORMALIZE_RATE=0.5
+  NORMALIZE_SKIP_STDLIB=1     INJECT_SKIP_STDLIB=1
+  STRIP_TARGET_NL=1           CUTS_PATH=data/cuts_train.jsonl
+
+
+<7-1. 목표지표 A+(1-A)xC — 프롬프트 기준 ALL>       각 스플릿 1,000건
+
+  랭커                  TRAIN     TEST      VAL
+  tfidf (rango 랭커)    80.5%    80.3%    79.7%
+  rrf                   90.2%    91.7%    89.5%
+  eqcov                 95.3%    95.1%    96.4%
+  structural            95.6%    95.3%    96.5%   ← 확정
+
+  목표 90~95% 를 세 스플릿 모두 초과.
+
+  ★ 위 네 줄은 전부 cut 을 포함한 값이다. 따라서 tfidf 줄은 "rango 원본"이 아니라
+    rango 의 검색 + 우리 cut 이다. cut 없는 rango 원본은 A 값 그대로 TEST 27.7% 다.
+
+      구성                              TEST ALL·프롬프트
+      rango 원본 (tfidf, cut 없음)           27.7%
+      tfidf + cut                            80.3%
+      structural + cut  (확정안)             95.3%
+
+
+<7-2. eqcov vs structural — 왜 structural 인가>
+
+  목표지표 차이는 TRAIN +0.3pp / TEST +0.2pp / VAL +0.1pp 로 노이즈 범위다.
+  갈리는 곳은 A(일반 goal)이고, 거기서는 세 스플릿 모두 structural 이 앞선다.
+
+  A · ALL[프롬프트]     TRAIN     TEST      VAL
+  eqcov                 42.8%    28.1%    21.9%
+  structural            46.6%    31.1%    24.1%
+
+  C(cut 후 재검색)는 두 랭커가 완전히 동률이다(91.8 / 93.1 / 95.3).
+
+
+<7-3. 3단계 판정 실측>                              TRAIN · gold 사용 14,292 스텝
+
+  판정                                          건수
+  (1) 검색 성공 -> gold tactic 그대로            4,973
+  (2) cut 으로 치환                              5,278
+  (3) 가망 없음 -> gold + 정규화 OFF             3,852
+      gold 가 후보 풀에 아예 없음                2,591
+
+  cut 파일: data/cuts_train.jsonl · 3.0MB · 스텝 9,318 · 고유 명제 3,634
+
+
+<7-4. cut 품질 게이트 — 자르지 말고 버린다>
+
+  예전 build_cuts.py 는 cut_tac[:800] 으로 잘랐다. 잘린 assert 는 Coq 문법이
+  깨지므로 모델이 깨진 문자열을 외운다. 아래를 하나라도 어기면 cut 을 버리고
+  (3) hopeless 로 강등한다.
+
+    - assert( / eassert( 로 시작
+    - as H_asrt<n>. 이름표 존재      (없으면 잘린 것)
+    - { } 증명 블록 존재             (없으면 잘린 것)
+    - 괄호 개수 균형                 (없으면 잘린 것)
+    - <= 128 토큰 (conf 의 out_tokens)
+        넘으면 collator 가 라벨을 잘라서 깨뜨린다
+
+  실측 강등 188 / 5,466 = 3.4%  (183건이 128토큰 초과, 5건이 잘림)
+
+
+<7-5. stdlib 제외는 무해하지만 이득이 없다>
+
+  "stdlib lemma 는 모델이 이미 아니까 익명화하지 말자"를 구현하고 재측정했다.
+
+  익명화 손실 (TRAIN 400건)          익명화 OFF   익명화 ON
+    (a) 프롬프트에서 읽을 수 있음        74.0%      73.8%
+    (b) tactic 키워드                    16.8%      16.9%
+    (c) Coq 기본 어휘                     1.2%       1.3%
+    (d) 어디에도 없음 (환각)              7.9%       8.0%
+  환각을 포함한 예제 비율                16.0%      16.0%
+
+  차이가 없다. 원인은 정규화가 아니라 "애초에 gold 가 프롬프트에 없는 것"이고
+  그건 stdlib 여부와 무관하다.
+
+  프로브로 직접 확인: 모델에게 stdlib lemma 의 명제를 물었다.
+    stdlib 이름  F1 0.292
+    가짜 이름    F1 0.291   (대조군)
+  -> 모델은 stdlib lemma 를 모른다. "stdlib 이면 검색 없이 gold 를 그대로 써도
+     된다"는 전제는 성립하지 않는다. stdlib 도 (1)(2)(3) 판정을 똑같이 거친다.
+
+
+<7-6. 채택하지 않은 것>
+
+  GBDT 랭커                structural 보다 낮고 학습·배포 비용 발생
+  Contrastive 크로스인코더  이득 없음, 추론 비용 큼
+  신규 신호 hyp/sub/cooc/nsub   차이가 노이즈 범위
+  hard_seq_len 2048->3072   효과는 크나(gold +14.6pp) 메모리·속도 비용 때문에
+                            이번 학습은 2048 유지, 다음 실험으로 미룸

@@ -114,7 +114,11 @@ for sid, d in steps.items():
         bad2["★ 이름 규칙 위반(H_asrt<n> 아님)"] += 1
     if "{" not in c or "}" not in c:
         bad2["중괄호 없음"] += 1
-    if re.search(r"\?[A-Za-z_]", c):
+    # ★ evar 는 **assert 의 타입 부분**에만 있으면 문제다. 후속 tactic 의
+    #   `rewrite ?H` 는 evar 가 아니라 **0회 이상 반복** 플래그다(실측 26건 전부 이것).
+    #   문자열 전체를 보면 정상 tactic 을 결함으로 잡는다.
+    _ty = re.match(r"^e?assert\s*\((.*?)\)\s*as\s+H_asrt", c, re.S)
+    if _ty and re.search(r"\?[A-Za-z_]", _ty.group(1)):
         bad2["★ evar(?x) 가 남아 있음"] += 1
 if lens:
     lens.sort()

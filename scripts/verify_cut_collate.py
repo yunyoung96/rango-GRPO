@@ -93,10 +93,22 @@ def check(mode: str):
 
         if hopeless:
             st[f"[{mode}] hopeless 스텝"] += 1
-            # ⑤ hopeless 는 정규화가 꺼져야 한다 → 정규화 이름이 없어야 한다
-            if mode == "norm" and re.search(r"\b[TfCLG]\d+\b", target):
-                st[f"[{mode}] ★ hopeless 인데 정규화됨"] += 1
-                bad["hopeless 정규화"].append(target.strip()[:70])
+            # ⑤ hopeless 는 정규화가 꺼져야 한다.
+            #   ★ 정규식(`[TfCLG]\d+`)으로 판정하면 원본 식별자 f1/T1/C0 를
+            #     정규화 산출물로 오인한다(실측 3건 전부 오탐). 정규화 OFF 로
+            #     같은 예제를 한 번 더 만들어 **타깃이 동일한지**로 판정한다.
+            if mode == "norm":
+                _sv = os.environ.get("NORMALIZE_NAMES", "1")
+                os.environ["NORMALIZE_NAMES"] = "0"
+                try:
+                    _s0 = coll.collate(tok, e)
+                    _t0 = _s0.rsplit("[TACTIC]", 1)[1] if "[TACTIC]" in _s0 else None
+                finally:
+                    os.environ["NORMALIZE_NAMES"] = _sv
+                if _t0 is not None and _t0.strip() != target.strip():
+                    st[f"[{mode}] ★ hopeless 인데 정규화됨"] += 1
+                    bad["hopeless 정규화"].append(
+                        f"norm={target.strip()[:45]} | plain={_t0.strip()[:45]}")
 
         if not expect:
             continue

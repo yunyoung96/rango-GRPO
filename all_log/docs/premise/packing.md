@@ -1,4 +1,4 @@
-# premise 담기 — greedy · skip · knapsack
+# premise 담기 — greedy · skip · knapsack · **hybrid(확정)**
 
 검색이 고른 premise 를 **프롬프트에 어떤 순서·기준으로 담을 것인가**. 예산이 제한돼 있어
 전부는 못 넣는다.
@@ -48,7 +48,7 @@
 
 ---
 
-## 2. 세 가지 방식
+## 2. 네 가지 방식
 
 ### ① greedy — 순위대로 담다가 넘치면 **중단**
 
@@ -95,6 +95,25 @@ for i in items:
 
 **순위를 뒤섞는다** — 100위짜리 20토큰이 5위짜리 300토큰보다 먼저 담길 수 있다.
 
+### ④ hybrid — 상위 K 는 무조건, 나머지는 배낭  ★ 확정안
+
+```python
+head, left = _greedy(all_idx[:topk], allowance, skip=True)   # 상위 4개: 순위 존중
+tail, _    = _knap(all_idx[topk:], left)                     # 나머지: 가치÷무게
+picked = head + tail
+picked.sort()                                                # 원래 순위 순서로 복원
+```
+
+`PREMISE_PACK=hybrid` · `PREMISE_PACK_TOPK=4`.
+
+**knapsack 의 유일한 약점을 겨눈다.** knapsack 은 개수를 크게 늘리지만(19→30) 가끔
+**긴 gold 를 버린다** — 300토큰짜리 핵심 lemma 대신 20토큰짜리 여럿을 넣는 식이다.
+상위 4개는 배낭 계산에서 빼고 무조건 넣으면 그 사고가 막히고, 남은 예산에서만
+배낭이 개수를 늘린다.
+
+`K=4` 인 이유: K 를 키울수록 greedy 에 가까워지고, 줄일수록 knapsack 에 가까워진다.
+K=2·4·8 을 재서 4 가 세 스플릿 평균이 가장 높았다.
+
 ---
 
 ## 3. 실측
@@ -106,9 +125,10 @@ for i in items:
 | ① greedy(기존) | 19 | **84.4%** | **63.1%** | **55.6%** |
 | ② skip | 20 | 84.9% (+0.6p) | 65.5% (+2.4p) | 59.5% (+3.9p) |
 | ③ knapsack | 27~30 | 78.8% (**−5.6p**) | 70.8% (**+7.7p**) | 70.7% (**+15.1p**) |
-| ④ 정규화+greedy | 19 | 84.9% | 63.7% | 57.8% |
-| ⑤ 정규화+skip | 20 | 84.9% | 64.9% | 59.9% |
-| ⑥ 정규화+knapsack | 27~31 | 78.8% | 70.2% | 71.1% |
+| **④ hybrid K=4 ★확정** | 25~28 | **83.5% (−0.9p)** | **72.1% (+9.0p)** | **71.0% (+15.4p)** |
+| ⑤ 정규화+greedy | 19 | 84.9% | 63.7% | 57.8% |
+| ⑥ 정규화+skip | 20 | 84.9% | 64.9% | 59.9% |
+| ⑦ 정규화+knapsack | 27~31 | 78.8% | 70.2% | 71.1% |
 
 (판정 대상: TRAIN 179건 · TEST 168건 · VAL 232건)
 
@@ -123,6 +143,13 @@ for i in items:
 knapsack 이 지는 기전은 분명하다: **긴 gold 를 버린다.** 가치/무게 비로 담으면
 300토큰짜리 중요한 lemma 대신 20토큰짜리 여럿을 넣는다. 개수는 늘지만(19→30)
 정작 필요한 것을 놓칠 수 있다.
+
+**hybrid 가 그 기전을 정확히 막는다.** TRAIN 손실이 −5.6p → **−0.9p** 로 줄고
+TEST·VAL 이득은 오히려 커졌다(+7.7→+9.0p, +15.1→+15.4p).
+**세 스플릿 평균 +7.8p** 로 네 방식 중 최선이라 이것을 확정했다.
+
+> ★ **개수가 아니라 gold 포함률이 지표다.** knapsack 이 개수 30개로 가장 많지만
+> TRAIN 에서 지는 이유가 그것이다. 개수 열은 진단용으로만 본다.
 
 **정규화를 먼저 하는 것(④⑤⑥)은 효과가 거의 없다.** lemma·타입 이름을 `L0`/`f1` 로
 바꿔도 토큰 절감이 **1.8~2.9%** 뿐이다. premise 본문 대부분(`clo`, `r`, `rg`, 연산자)은
@@ -186,15 +213,25 @@ premise 896 + proof 640 + state 1024 + script 512 + out 128 + types 300 + defs 3
 
 | 항목 | 결정 | 근거 |
 |---|---|---|
-| 담기 방식 | **skip 적용됨** | 세 스플릿 모두 양수, 비용 0 |
-| knapsack | **보류** | TEST/VAL 크게 이기나 TRAIN 에서 −5.6p. 원인 규명 필요 |
+| **담기 방식** | **`hybrid` K=4 확정** | 세 스플릿 평균 **+7.8p**, TRAIN 손실 −0.9p 뿐 |
+| greedy | 불채택 | 긴 premise 하나에 막혀 뒤를 통째로 버린다 |
+| skip | 불채택 | 안전하지만 이득이 작다(+0.6/+2.4/+3.9p) |
+| knapsack 단독 | 불채택 | TEST/VAL 크게 이기나 TRAIN −5.6p (긴 gold 를 버린다) |
 | 정규화 먼저 | 불채택 | 토큰 절감 1.8~2.9% 뿐 |
-| premise 예산 | 896 유지(또는 1200) | 1200 에서 포화 |
-| **hard_seq_len** | **증액 검토** | 소실 17.6%→0.9%, gold +14.6pp — **가장 큰 지렛대** |
+| premise 예산 | **896 유지** | 1200 에서 포화, 그 이상은 2048 초과율만 올린다 |
+| **hard_seq_len** | **2048 유지 (다음 실험)** | 소실 17.6%→0.9%, gold +14.6pp — **가장 큰 지렛대**지만 어텐션 연산 2.25배 |
 
 ## 7. 구현 위치
 
 `src/tactic_gen/tactic_data.py` `whole_number_allocate`
-— 환경변수 `PREMISE_PACK_SKIP=0` 으로 옛 greedy 로 되돌릴 수 있다.
+
+| 환경변수 | 값 | 뜻 |
+|---|---|---|
+| `PREMISE_PACK` | `greedy` \| `skip` \| `knapsack` \| **`hybrid`** | 담기 방식 (기본 `hybrid`) |
+| `PREMISE_PACK_TOPK` | **`4`** | hybrid 에서 무조건 넣는 상위 개수 |
+
+★ 담은 뒤 `picked.sort()` 로 **원래 순위 순서를 복원**한다. `allocate_and_fmt(reverse=True)`
+가 상위를 뒤쪽에 놓기 때문이다 — `truncation_side="left"` 라 `[PREMISES]` 는 **앞에서부터**
+잘리고, 그래서 중요한 것을 뒤에 둬야 살아남는다.
 
 측정: `scripts/premise_packing.py` · `scripts/section_budget.py` · `scripts/budget_sweep.py`

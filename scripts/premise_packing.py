@@ -113,8 +113,35 @@ def pack_knapsack(texts, budget):
     return sorted(out)
 
 
+def pack_hybrid(texts, budget, topk=8):
+    """★ 상위 topk 는 **순위대로** 담고(긴 gold 를 지킨다), 남은 예산을 knapsack 으로.
+
+    근거(TRAIN gold 261건 진단):
+      · knapsack 이 버리는 gold = 순위 중앙 3위 · 길이 중앙 64토큰 (36건 손해)
+      · knapsack 이 건지는 gold = 순위 중앙 34위 · 길이 중앙 22토큰 (21건 이득)
+    상위 K 를 지키면 손해를 막고 이득은 남는다.
+    """
+    left, out = budget, []
+    for i in range(min(topk, len(texts))):
+        n = tl(texts[i])
+        if n > left:
+            continue
+        left -= n
+        out.append(i)
+    rest = list(range(min(topk, len(texts)), len(texts)))
+    N = len(texts)
+    for i in sorted(rest, key=lambda j: -((N - j) / max(tl(texts[j]), 1))):
+        w = tl(texts[i])
+        if w <= left:
+            left -= w
+            out.append(i)
+    return sorted(out)
+
+
 METH = ["① greedy(현재)", "② skip", "③ knapsack", "④ 정규화+greedy",
-        "⑤ 정규화+skip", "⑥ 정규화+knapsack"]
+        "⑤ 정규화+skip", "⑥ 정규화+knapsack",
+        "⑦ ★hybrid(K=4)", "⑧ ★hybrid(K=8)", "⑨ ★hybrid(K=16)",
+        "⑩ 정규화+hybrid(K=8)"]
 cnt = {m: [] for m in METH}
 gold_ok = {m: 0 for m in METH}
 ngold = 0
@@ -146,6 +173,10 @@ for i in range(N * 4):
         "④ 정규화+greedy": pack_greedy(ntexts, BUDGET),
         "⑤ 정규화+skip": pack_greedy(ntexts, BUDGET, skip=True),
         "⑥ 정규화+knapsack": pack_knapsack(ntexts, BUDGET),
+        "⑦ ★hybrid(K=4)": pack_hybrid(texts, BUDGET, 4),
+        "⑧ ★hybrid(K=8)": pack_hybrid(texts, BUDGET, 8),
+        "⑨ ★hybrid(K=16)": pack_hybrid(texts, BUDGET, 16),
+        "⑩ 정규화+hybrid(K=8)": pack_hybrid(ntexts, BUDGET, 8),
     }
     for m in METH:
         cnt[m].append(len(sel[m]))

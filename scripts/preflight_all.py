@@ -107,13 +107,21 @@ for i in range(N * 3):
         if nlab:
             txt = tok.decode([t for t in lab.tolist() if t != -100],
                              skip_special_tokens=True).strip()
+            # ★ cut 치환이 켜져 있으면 '정답'은 gold 가 아니라 cut 이다.
+            #   (how-to-learn §3 ②: gold 가 프롬프트에 없으면 cut 으로 가르친다)
             tgt = (e.next_steps[0] or "").strip()
+            if os.environ.get("CUTS_PATH", ""):
+                from tactic_gen import cut_lookup
+                _c = cut_lookup.cut_for(f"{e.file_name}:{e.proof_idx}:{e.step_idx}")
+                if _c:
+                    tgt = _c.strip()
+                    st["C cut 기대"] += 1
             if STRIP := os.environ.get("STRIP_TARGET_NL", "0") == "1":
                 tgt = tgt.lstrip("\n")
             same = txt.replace(" ", "")[:60] == tgt.replace(" ", "")[:60]
             st["C 라벨==정답"] += same
-            if not same and len(bad["라벨≠정답"]) < 3:
-                bad["라벨≠정답"].append(f"라벨={txt[:50]!r} 정답={tgt[:50]!r}")
+            if not same:
+                bad["라벨≠정답"].append(f'라벨="{txt[:50]}" 정답={tgt[:50]!r}')
     except Exception as ex:
         st["B 마스킹 예외"] += 1
         bad["마스킹 예외"].append(str(ex)[:70])
