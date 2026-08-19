@@ -770,6 +770,28 @@ class ProofPremiseCollator:
         #      사라진다(실측). 반드시 원본으로 섹션을 만든 뒤 마지막에 치환해야 한다.
         input_str = self.collate_input(tokenizer, example)   # ← _LAST_INJECTED 가 채워짐
 
+        # ①-b ★ cut 치환 (how-to-learn.txt §3)
+        #   gold tactic 이 쓰는 lemma L 이 검색 결과에 없으면, 모델은 프롬프트에서
+        #   읽을 수 없는 이름을 지어내야 한다 — 배울 수 없는 예제다(실측 15.2%).
+        #   그럴 때 L 과 같은 명제 L' 을 **cut**(= `assert (P) as H`)으로 세우고
+        #   그것을 쓰는 형태로 정답을 바꾼다. 명제는 goal 에서 읽히므로 학습이 가능해진다.
+        #
+        #   ★ cut 은 여기서 만들지 않는다 — 정확한 명제를 얻으려면 Coq 이 필요한데
+        #     학습 머신에는 Coq 이 없다. `scripts/build_cuts.py` 로 미리 만들어 둔
+        #     jsonl 을 **조회만** 한다(CUTS_PATH).
+        #   ★ 조회 실패 = 그 스텝은 cut 이 없거나 cut 을 만들어도 재검색이 안 되는 경우.
+        #     그때는 원래 gold tactic 을 그대로 쓴다(환각을 감수한다 — how-to-learn §3).
+        #   ★ 정규화(③)보다 **먼저** 해야 한다. 정규화 후에 바꾸면 cut 명제 안의 이름이
+        #     프롬프트의 매핑과 어긋난다.
+        if os.environ.get("CUTS_PATH", ""):
+            from tactic_gen import cut_lookup
+            _ck = (f"{getattr(example, 'file_name', '')}:"
+                   f"{getattr(example, 'proof_idx', '')}:"
+                   f"{getattr(example, 'step_idx', '')}")
+            _cut = cut_lookup.cut_for(_ck)
+            if _cut:
+                target = _cut
+
         # ② 인용 타깃: 프롬프트에 실제로 주입된 정의만 인용(없는 걸 인용시키면 환각 조장)
         if os.environ.get("CITE_TARGET", "0") == "1":
             from tactic_gen.cite_target import make_cite

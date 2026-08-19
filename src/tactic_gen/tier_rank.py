@@ -508,7 +508,7 @@ def mmr_reorder(scores: list[float], texts: list[str], k: int = 50,
     return out
 
 
-def eqcov_scores(goal_text: str, hyps, texts: list[str], tfidf: list[float],
+def structural_scores(goal_text: str, hyps, texts: list[str], tfidf: list[float],
                  query_ids=None, docs=None, stage1: int = STAGE1,
                  use_eq: bool = True, use_cov: bool = True,
                  use_def: bool = True, use_mmr: bool = False,
@@ -568,3 +568,7 @@ def eqcov_scores(goal_text: str, hyps, texts: list[str], tfidf: list[float],
     if use_mmr:
         out = mmr_reorder(out, texts, k=mmr_k, lam=mmr_lam)
     return out
+
+
+# 옛 이름 호환 (문서·실험 스크립트가 참조한다)
+eqcov_scores = structural_scores
