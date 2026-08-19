@@ -408,3 +408,78 @@ class TierRanker:
         base, c2r, ap, ms, au, _ = self.signals(state, tfidf)
         return [base[j] + c2r[j] + TIER_W * (1.0 if ap[j] > 0 else 0.0)
                 + AU_W * au[j] for j in range(len(tfidf))]
+
+
+# ══ 최종 랭커 (final.md) ══════════════════════════════════════════════════
+#   eqcov = RRF(tfidf 순위, 결론구조 C' 순위, 질의 포함률 순위)
+#           + 3.0 × [premise 결론 트리 == goal 트리]
+#
+#   실측(각 스플릿 2,500건) 목표지표 ALL@50: TEST 95.6 / VAL 94.9 / TRAIN 97.2%
+#   (현재 tfidf 는 86.4 / 86.5 / 87.8%)
+#
+#   ★ 트리 완전일치는 일반 goal 에서 거의 발화하지 않아 **무해**하고, assert 하위목표
+#     (goal 이 곧 lemma 문장)에서는 정확히 그 질문이라 강력하다. 단방향 매칭까지 넣으면
+#     일반 goal 이 무너진다(ALL@50 45.4% → 18.2%) — 그래서 완전일치만 쓴다.
+
+STAGE1 = 2000            # 구조 판정을 걸 tfidf 상위 개수 (비용 제한)
+EQ_W = 3.0               # 트리 완전일치 가산. RRF 한 항의 최대(1/60)보다 훨씬 커야 한다
+
+
+def _rrf_of(vals) -> list[float]:
+    n = len(vals)
+    o = sorted(range(n), key=lambda j: -vals[j])
+    r = [0] * n
+    for p, j in enumerate(o):
+        r[j] = p
+    return [1.0 / (RRF_K + r[j]) for j in range(n)]
+
+
+def eqcov_scores(goal_text: str, hyps, texts: list[str], tfidf: list[float],
+                 query_ids=None, docs=None, stage1: int = STAGE1,
+                 use_eq: bool = True, use_cov: bool = True) -> list[float]:
+    """최종 랭킹 점수. 큰 값이 상위. `tfidf` 는 호출부가 이미 계산한 것을 넘긴다."""
+    n = len(texts)
+    if n == 0:
+        return []
+    out = _rrf_of(tfidf)
+    cand = sorted(range(n), key=lambda j: -tfidf[j])[:stage1]
+
+    state = ("\n".join(hyps or []) + "\n\n" + (goal_text or "")).strip("\n")
+    gs = goal_struct("\n" + state if not state.startswith("\n") else state)
+    if gs is not None:
+        # C' — 결론 부분항 head 의 IDF 가중 코사인
+        pss = {j: prem_struct(texts[j]) for j in cand}
+        df: collections.Counter = collections.Counter()
+        for j in cand:
+            ps = pss[j]
+            if ps is not None:
+                for k in ps[5]:
+                    df[k] += 1
+        nd = max(len(cand), 1)
+        idf = {k: math.log(nd / v) for k, v in df.items()}
+        c2 = [0.0] * n
+        for j in cand:
+            ps = pss[j]
+            if ps is not None:
+                c2[j] = sig_concl_heads(gs, ps, idf)
+        rc = _rrf_of(c2)
+        for j in range(n):
+            out[j] += rc[j]
+        # eq — 결론 트리 완전일치
+        if use_eq:
+            g = parse(goal_text or "")
+            qt = canon(g) if g is not None else None
+            if qt is not None:
+                for j in cand:
+                    ps = pss[j]
+                    if ps is not None and ps[1] is not None and ps[1] == qt:
+                        out[j] += EQ_W
+    # cov — 질의 포함률 (tfidf 길이 정규화 편향을 겨눈다)
+    if use_cov and query_ids and docs is not None:
+        qs = set(query_ids)
+        if qs:
+            cov = [len(qs & set(docs[j])) / len(qs) for j in range(n)]
+            rv = _rrf_of(cov)
+            for j in range(n):
+                out[j] += rv[j]
+    return out

@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+import os
 from typing import Iterable, Any, Optional
 import sys, os
 import argparse
@@ -359,9 +361,28 @@ class SparseClient:
         # query = tokenize(context_str)
         match self.kind:
             case SparseKind.TFIDF:
-                return tf_idf(query_ids, premise_docs)
+                base = tf_idf(query_ids, premise_docs)
             case SparseKind.BM25:
-                return bm25(query_ids, premise_docs)
+                base = bm25(query_ids, premise_docs)
+            case _:
+                base = tf_idf(query_ids, premise_docs)
+
+        # ★ 구조 재랭킹 (all_log/docs/retrieval/final.md)
+        #   RRF(tfidf, 결론구조 C', 질의 포함률) + 3.0×[결론 트리 완전일치]
+        #   실측 목표지표 ALL@50: TEST 86.4→95.6 · VAL 86.5→94.9 · TRAIN 87.8→97.2%
+        #   되돌리려면 RETRIEVAL_MODE=tfidf
+        if os.environ.get("RETRIEVAL_MODE", "eqcov") == "tfidf" or not premises:
+            return base
+        try:
+            from tactic_gen.tier_rank import eqcov_scores
+            texts = [getattr(p, "text", "") or "" for p in premises]
+            return eqcov_scores(
+                getattr(context, "goal", "") or "", getattr(context, "hyps", []) or [],
+                texts, base, query_ids=query_ids, docs=premise_docs,
+                stage1=int(os.environ.get("RETRIEVAL_STAGE1", "2000")))
+        except Exception:
+            # ★ 재랭킹이 어떤 이유로 실패해도 **검색 자체가 죽으면 안 된다** — tfidf 로 돌아간다
+            return base
 
     def get_ranked_premises(
         self,
