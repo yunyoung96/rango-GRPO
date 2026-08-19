@@ -185,6 +185,41 @@ FACTS_SEP = "\n[TYPE-FACTS]\n"
 #   ※ 같은 예제에 대해 collate_input → collate 가 연달아 불리므로 모듈 전역으로 충분하다
 #     (dataloader 워커는 프로세스가 분리되어 서로 간섭하지 않음).
 _LAST_INJECTED: dict = {}
+
+# ★ 추론 정규화용 — 마지막으로 적용한 매핑을 보관한다(역매핑에 필요).
+_LAST_INFER_MAPPING: dict = {}
+
+
+def last_inference_mapping() -> dict:
+    """직전 `collate_input` 이 적용한 정규화 매핑. 추론 후 역매핑에 쓴다."""
+    return dict(_LAST_INFER_MAPPING)
+
+
+def _maybe_normalize_input(text: str, example) -> str:
+    """추론 프롬프트 정규화. `NORMALIZE_INFERENCE=1` 일 때만 동작한다.
+
+    ★ 학습(`collate`)은 프롬프트와 **정답에 같은 매핑**을 적용한다. 추론에는 정답이
+      없으므로 프롬프트만 바꾸고, **매핑을 남겨** 생성 결과를 되돌린다.
+      되돌리지 않으면 모델이 만든 `apply L0.` 를 Coq 이 거부한다.
+    """
+    global _LAST_INFER_MAPPING
+    _LAST_INFER_MAPPING = {}
+    if os.environ.get("NORMALIZE_INFERENCE", "0") != "1":
+        return text
+    from tactic_gen.normalize_names import build_mapping, apply_mapping
+    key = (f"{getattr(example, 'file_name', '')}:"
+           f"{getattr(example, 'proof_idx', '')}:{getattr(example, 'step_idx', '')}")
+    try:
+        m = build_mapping(dict(_LAST_INJECTED), key, avoid_text=text,
+                          premises=list(getattr(example, "premises", None) or []),
+                          proof_script=getattr(example, "proof_script", "") or "")
+    except Exception:
+        return text
+    if not m:
+        return text
+    _LAST_INFER_MAPPING = m
+    return apply_mapping(text, m)
+
 # distractor 샘플링용 키 목록(1회만 생성 — 예제마다 만들면 8만 원소 리스트가 매번 생긴다)
 _DISTRACTOR_KEYS = None
 
@@ -727,7 +762,9 @@ class ProofPremiseCollator:
                 a_str, _ = allocate_tokens(tokenizer, str(att),
                                            int(os.environ.get("ATTEMPT_TOKENS", "64")))
                 base_str = base_str + ATTEMPT_SEP + a_str + ERROR_SEP + e_str
-            return base_str + augment_v2_section(tokenizer, example, base_str) + NEWLINE_RESPONSE_TEMPLATE
+            return _maybe_normalize_input(
+                base_str + augment_v2_section(tokenizer, example, base_str)
+                + NEWLINE_RESPONSE_TEMPLATE, example)
         types_str = types_section(tokenizer, example)   # INJECT_TYPES=0 이면 ""
         _tnames = {ln.split(" :=")[0].strip()            # [TYPES] 가 이미 보여준 타입명
                    for ln in types_str.split("\n") if " :=" in ln}
@@ -806,7 +843,16 @@ class ProofPremiseCollator:
             from tactic_gen.normalize_names import build_mapping, apply_mapping, should_normalize
             key = (f"{getattr(example, 'file_name', '')}:"
                    f"{getattr(example, 'proof_idx', '')}:{getattr(example, 'step_idx', '')}")
-            if should_normalize(key):
+            # ★ 가망 없는 스텝(how-to-learn §3 의 (3))은 **정규화를 끈다.**
+            #   정답이 프롬프트에 없는 이름을 쓰는데 정규화까지 하면 `L92` 같은
+            #   무의미 토큰을 외우게 된다. 진짜 이름이 그나마 낫다.
+            _skip_norm = False
+            if os.environ.get("CUTS_PATH", ""):
+                from tactic_gen import cut_lookup
+                _skip_norm = cut_lookup.is_hopeless(key)
+            if _skip_norm:
+                pass
+            elif should_normalize(key):
                 # v7: premises 를 넘겨 [PREMISES] lemma 이름도 정규화 대상에 포함
                 #     (NORMALIZE_PREMISES=1 일 때만 실제로 대상이 된다)
                 mapping = build_mapping(dict(_LAST_INJECTED), key,

@@ -261,6 +261,17 @@ class DecoderLocalWrapper:
         input_num_tokens = inputs["input_ids"].shape[1]
         generated_seqs = outputs.sequences[:, input_num_tokens:]
         tactics = self.tokenizer.batch_decode(generated_seqs, skip_special_tokens=True)
+        # ★ 추론 정규화(NORMALIZE_INFERENCE=1)를 켰다면 **반드시 되돌린다.**
+        #   모델은 프롬프트에서 본 `L0` 를 그대로 생성하는데 Coq 은 `L0` 를 모른다.
+        #   매핑에 없는 이름(모델이 지어낸 것)은 그대로 둔다 — Coq 에서 실패하는 것이
+        #   맞다. 조용히 다른 이름으로 바꾸면 환각을 숨기게 된다.
+        if os.environ.get("NORMALIZE_INFERENCE", "0") == "1":
+            from tactic_gen.tactic_data import last_inference_mapping
+            from tactic_gen.normalize_names import apply_inverse
+            _m = last_inference_mapping()
+            if _m:
+                tactics = [apply_inverse(t, _m) for t in tactics]
+
         if os.environ.get("TACTIC_LEADING_NL", "0") == "1":
             # STRIP_TARGET_NL=1 로 학습한 모델(Qwen 계열)은 선행 개행 없이 tactic 을 뱉는다.
             # 탐색기는 cur_proof_script + tactic 으로 이어붙이므로 개행이 없으면

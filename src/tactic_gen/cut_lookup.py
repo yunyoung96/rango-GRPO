@@ -82,5 +82,19 @@ def cut_for(sid: str) -> str | None:
     return d["cut"]
 
 
+def is_hopeless(sid: str) -> bool:
+    """그 스텝이 **어떻게 해도 프롬프트에서 읽을 수 없는 이름**을 쓰는가.
+
+    ★ how-to-learn.txt §3 의 (3): gold lemma 가 검색에도 없고 cut 으로도 못 건진 경우.
+      이때는 **정규화를 끄는 편이 낫다.** 정규화하면 정답이 `L92` 같은 프롬프트에 없는
+      무의미 토큰이 되어 모델이 **틀린 답을 외운다**. 진짜 이름은 최소한 의미 힌트
+      (`add_comm` → 교환법칙)라도 남아 goal 모양에서 유추할 여지가 있다.
+    """
+    if not load():
+        return False
+    d = _steps.get(sid)
+    return bool(d and d.get("hopeless"))
+
+
 def stats() -> dict:
     return dict(_stat, 스텝수=len(_steps), 명제수=len(_stmts))

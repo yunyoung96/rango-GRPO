@@ -91,7 +91,10 @@ fail_why = collections.Counter()
 stmts: dict[str, str] = {}
 need_coq: list[dict] = []
 t0 = time.time()
-fo = open(OUT, "w")
+# ★ 원자적 쓰기 — 도중에 읽히면 반쪽 파일을 학습에 쓰게 된다(실측으로 당했다).
+#   임시 이름으로 쓰고 **끝나면** 제자리로 옮긴다.
+TMP = OUT + ".building"
+fo = open(TMP, "w")
 
 for i in range(min(N, len(ds))):
     try:
@@ -119,8 +122,16 @@ for i in range(min(N, len(ds))):
     texts = [getattr(p, "text", "") or "" for p in pool]
     names = [declname(t) for t in texts]
     gset = {j for j, nm in enumerate(names) if nm and nm in golds}
+    _key0 = (f"{getattr(e, 'file_name', '')}:"
+             f"{getattr(e, 'proof_idx', '')}:{getattr(e, 'step_idx', '')}")
     if not gset:
+        # ★ gold 가 후보 풀에 아예 없다 → cut 도 못 만든다(how-to-learn §3 의 (3)).
+        #   이런 스텝은 **정규화를 끄고** 학습해야 한다: 정규화하면 정답이 `L92` 같은
+        #   프롬프트에 없는 무의미 토큰이 되어 모델이 **틀린 답을 외운다.**
+        #   진짜 이름은 최소한 의미 힌트(`add_comm` → 교환법칙)라도 남는다.
         st["gold 가 풀에 없음"] += 1
+        fo.write(json.dumps({"kind": "step", "sid": _key0, "hopeless": True,
+                             "why": "gold 가 풀에 없음"}, ensure_ascii=False) + "\n")
         continue
 
     docs = [get_ids_from_sentence(p) for p in pool]
@@ -212,6 +223,9 @@ for i in range(min(N, len(ds))):
            "tac": tac[:400]}
     if cut_tac:
         rec["cut"] = cut_tac[:800]
+    else:
+        # ★ cut 을 못 만들었거나 만들어도 재검색이 안 된다 → 가망 없음.
+        rec["hopeless"] = True
     fo.write(json.dumps(rec, ensure_ascii=False) + "\n")
     if bad_names:
         need_coq.append(rec)
@@ -222,6 +236,7 @@ for nm, ty in stmts.items():
     fo.write(json.dumps({"kind": "stmt", "name": nm, "ty": ty},
                         ensure_ascii=False) + "\n")
 fo.close()
+os.replace(TMP, OUT)
 
 print(f"\n■ {SPLIT} — cut 사전생성 ① Coq 없는 경로  ({time.time()-t0:.0f}s)")
 for k in ("gold 사용 스텝", "gold 가 풀에 없음", "검색 성공 → cut 불필요", "cut 필요 스텝",

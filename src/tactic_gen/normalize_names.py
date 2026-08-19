@@ -301,6 +301,34 @@ def apply_mapping(text: str, mapping: dict) -> str:
     return _IDENT.sub(lambda m: mapping.get(m.group(0), m.group(0)), text)
 
 
+def invert(mapping: dict) -> dict:
+    """정규화 매핑을 뒤집는다: {원래이름: L0} → {L0: 원래이름}.
+
+    ★ 매핑은 **단사**다(`fresh` 가 이미 쓰인 이름을 건너뛴다) → 역이 잘 정의된다.
+      혹시라도 값이 겹치면 **먼저 나온 것**을 남긴다(결정적 순서 유지).
+    """
+    out: dict = {}
+    for k, v in (mapping or {}).items():
+        out.setdefault(v, k)
+    return out
+
+
+def apply_inverse(text: str, mapping: dict) -> str:
+    """생성된 tactic 의 정규화 이름을 **원래 이름으로 되돌린다**.
+
+    ★ 왜 필요한가: 추론에서도 정규화를 켜면 모델은 `apply L0.` 를 생성한다. 그런데
+      Coq 은 `L0` 를 모른다 — 실행 전에 반드시 되돌려야 한다.
+      (지금 기본 경로는 추론에서 정규화를 하지 않으므로 이 함수가 안 불린다.)
+
+    ★ 매핑에 없는 `L99` 같은 것은 **그대로 둔다**. 모델이 지어낸 이름이고, Coq 에서
+      실패하는 것이 맞다 — 조용히 다른 이름으로 바꾸면 환각을 숨기게 된다.
+    """
+    inv = invert(mapping)
+    if not text or not inv:
+        return text
+    return _IDENT.sub(lambda m: inv.get(m.group(0), m.group(0)), text)
+
+
 def should_normalize(key: str) -> bool:
     """이 예제를 정규화할지 — NORMALIZE_RATE 비율만큼, key 해시로 결정적으로 고른다.
 
