@@ -69,7 +69,34 @@ from tactic_gen.applicable import decompose  # noqa: E402
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 5000
 SPLIT = (sys.argv[2] if len(sys.argv) > 2 else "train").upper()
 OUT = sys.argv[3] if len(sys.argv) > 3 else f"data/cuts_{SPLIT.lower()}.jsonl"
-TOPN = int(os.environ.get("TOPN", "100"))
+# ★ cut 대상 판정은 **검색 순위**가 아니라 **프롬프트에 실제로 들어가는가** 다.
+#   `whole_number_allocate` 는 앞에서부터 담다가 예산이 넘으면 break 한다.
+#   실측: 검색이 넘긴 100개 중 17~23개만 들어간다(길이 최소 16 · 중앙 147 · 최대 928 토큰).
+#   순위 기준으로 재면 "검색은 됐는데 프롬프트엔 없는" 스텝을 통째로 놓친다.
+BUDGET = int(os.environ.get("PREMISE_TOKENS", "896"))
+from transformers import AutoTokenizer  # noqa: E402
+_TOK = AutoTokenizer.from_pretrained(
+    yaml.safe_load(open("all_log/ft_qwen3b_v8_conf.yaml"))["model_name"])
+_TL: dict = {}
+
+
+def _tlen(t: str) -> int:
+    v = _TL.get(t)
+    if v is None:
+        v = len(_TOK.tokenize(t))
+        _TL[t] = v
+    return v
+
+
+def n_in_prompt(texts, order) -> int:
+    """랭킹 순서대로 담았을 때 프롬프트에 들어가는 개수."""
+    left, k = BUDGET, 0
+    for j in order:
+        left -= _tlen(texts[j])
+        if left < 0:
+            break
+        k += 1
+    return k
 
 cc = yaml.safe_load(open("all_log/ft_qwen3b_v8_conf.yaml"))
 tdc = copy.deepcopy(cc["tactic_data"])
@@ -144,11 +171,12 @@ for i in range(min(N, len(ds))):
     except Exception:
         sc = tf
     o = sorted(range(len(pool)), key=lambda j: -sc[j])
+    nfit = n_in_prompt(texts, o)          # ★ 프롬프트에 들어가는 개수
     pos = {j: r for r, j in enumerate(o)}
     per_name: dict = {}
     for j in gset:
         per_name.setdefault(names[j], []).append(j)
-    missing = [nm for nm, js in per_name.items() if min(pos[j] for j in js) >= TOPN]
+    missing = [nm for nm, js in per_name.items() if min(pos[j] for j in js) >= nfit]
     if not missing:
         st["검색 성공 → cut 불필요"] += 1
         continue
@@ -209,8 +237,9 @@ for i in range(min(N, len(ds))):
             except Exception:
                 sc2 = tf2
             o2 = sorted(range(len(pool)), key=lambda x: -sc2[x])
+            nfit2 = n_in_prompt(texts, o2)     # ★ cut 후에도 프롬프트 기준
             p2 = {x: r for r, x in enumerate(o2)}
-            if min(p2[x] for x in per_name[nm]) >= TOPN:
+            if min(p2[x] for x in per_name[nm]) >= nfit2:
                 cut_tac = None
                 st["cut 해도 재검색 실패 → gold 유지"] += 1
                 fail_why["재검색 실패(L' 로도 L 이 안 잡힘)"] += 1
@@ -239,6 +268,7 @@ fo.close()
 os.replace(TMP, OUT)
 
 print(f"\n■ {SPLIT} — cut 사전생성 ① Coq 없는 경로  ({time.time()-t0:.0f}s)")
+print(f"   ★ 판정 기준: 프롬프트 포함(예산 {BUDGET}토큰) — 검색 순위 아님")
 for k in ("gold 사용 스텝", "gold 가 풀에 없음", "검색 성공 → cut 불필요", "cut 필요 스텝",
           "① Coq 없이 명제 확보", "② Coq 필요", "cut tactic 조립 성공",
           "cut tactic 조립 실패"):

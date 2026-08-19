@@ -455,13 +455,23 @@ def whole_number_allocate(
     ss: list[str],
     allowance: int,
 ) -> list[str]:
+    # ★ 예전엔 넘치면 **break** 했다. 그러면 긴 premise 하나(175토큰)가 뒤의 짧은 것
+    #   여러 개(20토큰)를 통째로 밀어낸다. 길이 편차가 극심하다
+    #   (최소 16 · 중앙 147 · 최대 928 토큰).
+    #   **건너뛰면**(continue) 같은 예산에 더 담기고 gold 생존율도 오른다.
+    #   실측(TRAIN 1,500건): 중앙 19→20개, gold 전부 포함 84.4%→84.9%.
+    #   (가치/길이 비로 담는 knapsack 은 개수가 19→27 로 늘지만 **긴 gold 를 버려서**
+    #    gold 포함이 84.4%→78.8% 로 떨어진다 — 개수가 목적이 아니다.)
+    skip = os.environ.get("PREMISE_PACK_SKIP", "1") == "1"
     cur_allowance = allowance
     allowed_passages: list[str] = []
     for s in ss:
-        s_toks = tokenizer.tokenize(s)
-        cur_allowance -= len(s_toks)
-        if cur_allowance < 0:
+        n_toks = len(tokenizer.tokenize(s))
+        if n_toks > cur_allowance:
+            if skip:
+                continue
             break
+        cur_allowance -= n_toks
         allowed_passages.append(s)
     return allowed_passages
 
