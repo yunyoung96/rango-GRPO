@@ -86,6 +86,42 @@ def _index() -> dict:
     return _IDX
 
 
+# ★ 표준 라이브러리 이름은 익명화하지 않는다.
+#
+#   익명화의 목적은 "**그 프로젝트에만 통하는 이름**을 외워서 찍는 습관" 을 끊는 것이다.
+#   stdlib 이름은 어느 프로젝트에서나 통하므로 바꿀 이유가 없다.
+#   실측(TRAIN 800건): gold lemma 의 62.1% · 후보 풀의 92.7% 가 stdlib 이다.
+#
+#   ★ 주의: 프로브 실측으로 **모델이 stdlib lemma 진술을 아는 것은 아니다**
+#     (F1 stdlib 0.292 vs 가짜이름 0.291 — 사실상 동일). 그러므로 "stdlib 이니
+#     검색 없이도 된다" 는 성립하지 않는다. 여기서 제외하는 것은 **무해하기 때문**이지
+#     사전학습 지식을 쓸 수 있어서가 아니다.
+#
+#   판정은 `data/stdlib_names.json`(sentences.db 의 file_path 로 만든 이름 집합).
+#   양쪽에 있는 이름은 **프로젝트 우선** — 잘못 남기는 것보다 잘못 바꾸는 편이 위험하다.
+_STDLIB_NAMES: Optional[set] = None
+
+
+def _stdlib_names() -> set:
+    global _STDLIB_NAMES
+    if _STDLIB_NAMES is None:
+        p = os.environ.get("STDLIB_NAMES_PATH", "data/stdlib_names.json")
+        try:
+            with open(p) as f:
+                _STDLIB_NAMES = set(json.load(f))
+        except Exception:
+            _STDLIB_NAMES = set()
+    return _STDLIB_NAMES
+
+
+def is_stdlib_name(name: str) -> bool:
+    """표준 라이브러리 전용 이름인가 (익명화 제외 대상)."""
+    if os.environ.get("NORMALIZE_SKIP_STDLIB", "1") != "1":
+        return False
+    n = (name or "").split(".")[-1]
+    return n in _stdlib_names()
+
+
 def renameable(name: str) -> bool:
     """이 이름을 바꿔도 되나 — 프로젝트 정의이고 보호대상이 아닐 때만."""
     if name in _PROTECTED or len(name) <= 1:
@@ -234,7 +270,8 @@ def build_mapping(injected: dict, seed_key: str, avoid_text: str = "",
             #   걸려 하나도 치환되지 않았다). premise 이름은 `Lemma X :` 선언에서 직접 뽑은
             #   것이라 출처가 확실하므로 보호목록·길이만 확인하면 된다.
             if (pn not in names and pn not in ctors
-                    and pn not in _PROTECTED and pn not in _HEADERS and len(pn) > 1):
+                    and pn not in _PROTECTED and pn not in _HEADERS and len(pn) > 1
+                    and not is_stdlib_name(pn)):     # ★ stdlib 은 익명화 제외
                 prem_names.append(pn)
     # ★ v8: 증명 중인 정리 이름 (NORMALIZE_THEOREM=1 일 때만)
     #
@@ -254,8 +291,10 @@ def build_mapping(injected: dict, seed_key: str, avoid_text: str = "",
                 LAST_THM_DECL = t          # 충돌 — 선언부만 따로 처리
             else:
                 thm = t
-    names = list(dict.fromkeys(names))
-    ctors = [c for c in dict.fromkeys(ctors) if c not in names]
+    # ★ 주입 정의(T#/f#/C#)도 stdlib 이면 바꾸지 않는다 — lemma 와 같은 이유
+    names = [x for x in dict.fromkeys(names) if not is_stdlib_name(x)]
+    ctors = [c for c in dict.fromkeys(ctors)
+             if c not in names and not is_stdlib_name(c)]
     prem_names = [p for p in dict.fromkeys(prem_names) if p not in names and p not in ctors]
     if not names and not ctors and not prem_names and not thm:
         return {}

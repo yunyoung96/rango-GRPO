@@ -1,3 +1,4 @@
+import os
 """rango-augmented 구조컨텍스트 생성 — 학습·추론·스크립트가 공유하는 canonical 로직.
 train/infer 동일 규칙 보장(REVIEW.md R1). CPU only.
 
@@ -18,7 +19,30 @@ _KW = {'forall', 'exists', 'fun', 'match', 'if', 'then', 'else', 'let', 'in', 'w
 
 def _bad_head(h):
     s = (h or '').split('.')[-1]
-    return (s in _KW) or len(s) < 2
+    if (s in _KW) or len(s) < 2:
+        return True
+    # ★ 표준 라이브러리 타입은 [TYPES]/[DEFINITIONS] 에 넣지 않는다.
+    #   `Inductive list A := nil | cons` 를 프롬프트에 넣는 것은 토큰 낭비다 —
+    #   그 토큰으로 premise 를 더 넣는 편이 낫다.
+    #   실측: 후보 풀의 92.7% 가 stdlib. [PREMISES] 예산이 빡빡해
+    #   프롬프트에 10~22개만 들어가는 상황이라 이 절약이 직접적으로 도움이 된다.
+    #   끄려면 INJECT_SKIP_STDLIB=0.
+    if os.environ.get("INJECT_SKIP_STDLIB", "1") == "1":
+        try:
+            from tactic_gen.normalize_names import is_stdlib_name
+            import os as _os
+            _prev = _os.environ.get("NORMALIZE_SKIP_STDLIB")
+            _os.environ["NORMALIZE_SKIP_STDLIB"] = "1"   # 이 판정은 정규화 설정과 독립
+            r = is_stdlib_name(s)
+            if _prev is None:
+                _os.environ.pop("NORMALIZE_SKIP_STDLIB", None)
+            else:
+                _os.environ["NORMALIZE_SKIP_STDLIB"] = _prev
+            if r:
+                return True
+        except Exception:
+            pass
+    return False
 
 def _split_goal(goal):
     parts = (goal or '').split('\n\n', 1)

@@ -455,25 +455,63 @@ def whole_number_allocate(
     ss: list[str],
     allowance: int,
 ) -> list[str]:
-    # ★ 예전엔 넘치면 **break** 했다. 그러면 긴 premise 하나(175토큰)가 뒤의 짧은 것
-    #   여러 개(20토큰)를 통째로 밀어낸다. 길이 편차가 극심하다
-    #   (최소 16 · 중앙 147 · 최대 928 토큰).
-    #   **건너뛰면**(continue) 같은 예산에 더 담기고 gold 생존율도 오른다.
-    #   실측(TRAIN 1,500건): 중앙 19→20개, gold 전부 포함 84.4%→84.9%.
-    #   (가치/길이 비로 담는 knapsack 은 개수가 19→27 로 늘지만 **긴 gold 를 버려서**
-    #    gold 포함이 84.4%→78.8% 로 떨어진다 — 개수가 목적이 아니다.)
-    skip = os.environ.get("PREMISE_PACK_SKIP", "1") == "1"
-    cur_allowance = allowance
-    allowed_passages: list[str] = []
-    for s in ss:
-        n_toks = len(tokenizer.tokenize(s))
-        if n_toks > cur_allowance:
-            if skip:
-                continue
-            break
-        cur_allowance -= n_toks
-        allowed_passages.append(s)
-    return allowed_passages
+    # ★ 담기 방식 (`PREMISE_PACK`) — 자세한 근거는 docs/premise/packing.md
+    #
+    #   premise 길이 편차가 극심하다(최소 16 · 중앙 147 · 최대 928 토큰).
+    #   긴 것 하나(175토큰)가 뒤의 짧은 것(20토큰) 여러 개를 밀어낸다.
+    #
+    #     greedy   순위대로 담다가 넘치면 **중단**(원본). 긴 것 하나에 뒤가 다 막힌다
+    #     skip     넘치는 것만 **건너뛴다**. 세 스플릿 모두 양수(gold +0.6~3.9pp), 비용 0
+    #     knapsack 가치/무게 비로 담는다. 개수는 19→30 이지만 **긴 gold 를 버린다**
+    #              (TRAIN -5.6pp / TEST +7.7pp / VAL +15.1pp — 스플릿 의존)
+    #     hybrid ★ 상위 K 개는 **순위대로 무조건** 담고(긴 gold 를 지킨다),
+    #              남은 예산을 knapsack 으로 채운다(짧은 것을 더 건진다)
+    #
+    #   hybrid 의 근거(TRAIN gold 261건 진단):
+    #     · knapsack 이 버리는 gold = 순위 중앙 **3위**인데 길이 중앙 **64토큰** (36건 손해)
+    #     · knapsack 이 건지는 gold = 순위 중앙 **34위**인데 길이 중앙 22토큰 (21건 이득)
+    #     → 상위 K 를 지키면 손해를 막고 이득은 남는다.
+    mode = os.environ.get("PREMISE_PACK", "hybrid")
+    topk = int(os.environ.get("PREMISE_PACK_TOPK", "8"))
+    lens = [len(tokenizer.tokenize(x)) for x in ss]
+
+    def _greedy(idxs, left, skip):
+        out = []
+        for i in idxs:
+            n = lens[i]
+            if n > left:
+                if skip:
+                    continue
+                break
+            left -= n
+            out.append(i)
+        return out, left
+
+    def _knap(idxs, left):
+        """가치/무게 비 내림차순. 가치는 원래 순위(앞일수록 높다)."""
+        N = len(ss)
+        order = sorted(idxs, key=lambda i: -((N - i) / max(lens[i], 1)))
+        out = []
+        for i in order:
+            if lens[i] <= left:
+                left -= lens[i]
+                out.append(i)
+        return out, left
+
+    all_idx = list(range(len(ss)))
+    if mode == "greedy":
+        picked, _ = _greedy(all_idx, allowance, skip=False)
+    elif mode == "skip":
+        picked, _ = _greedy(all_idx, allowance, skip=True)
+    elif mode == "knapsack":
+        picked, _ = _knap(all_idx, allowance)
+    else:                                    # hybrid (기본)
+        head, left = _greedy(all_idx[:topk], allowance, skip=True)
+        tail, _ = _knap(all_idx[topk:], left)
+        picked = head + tail
+    # ★ 원래 순위 순서를 유지해 돌려준다 — 호출부가 reverse 로 뒤집어 상위를 goal 쪽에 둔다
+    picked.sort()
+    return [ss[i] for i in picked]
 
 
 def allocate_and_fmt(
