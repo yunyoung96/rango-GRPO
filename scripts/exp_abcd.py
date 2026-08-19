@@ -73,6 +73,14 @@ A = ap.parse_args()
 SPLIT = A.split.upper()
 CTR_TOP = A.ctr_top
 RANKERS = [x for x in A.rankers.split(",") if x]
+# ★ 랭커 이름 오타/구버전 이름을 **시작 전에** 잡는다. 예전엔 잘못된 이름이 매 스텝
+#   예외로 빠져 결과가 전부 0.0% 로 나왔고, 20분을 버린 뒤에야 알았다.
+_KNOWN = {"tfidf", "rrf", "struct", "eq", "cov", "eqcov",
+          "structural", "structural_mmr", "gbdt", "ctr"}
+_bad = [r for r in RANKERS if r not in _KNOWN]
+if _bad:
+    sys.stderr.write(f"알 수 없는 랭커: {_bad}\n사용 가능: {sorted(_KNOWN)}\n")
+    sys.exit(2)
 KS = (1, 20, 50)
 CTR_TOP = 200
 
@@ -167,14 +175,14 @@ def rank_all(state, texts, pool, tf, tr, kinds, docs=None, names=None, q_ids=Non
         elif k == "eqcov":
             eb, cv = eq_bonus(), cov_rrf()
             out[k] = [rrf[j] + cv[j] + 3.0 * eb[j] for j in range(n)]
-        elif k in ("final", "final_mmr"):
+        elif k in ("structural", "structural_mmr"):
             # ★ 파이프라인(SparseClient)이 쓰는 것과 **같은 함수**를 부른다 —
             #   하네스와 실제 경로가 갈라지면 측정이 의미를 잃는다.
             from tactic_gen.tier_rank import eqcov_scores
             gl = state.split("\n\n")[-1] if "\n\n" in state else state
             hy = state.split("\n\n")[0].split("\n") if "\n\n" in state else []
             out[k] = eqcov_scores(gl, hy, texts, tf, query_ids=q_ids, docs=docs,
-                                  stage1=len(cand), use_mmr=(k == "final_mmr"))
+                                  stage1=len(cand), use_mmr=(k == "structural_mmr"))
         elif k == "ctr":
             # ★ cross-encoder 는 후보마다 한 번씩 돌려야 해서 비싸다 → RRF 상위
             #   CTR_TOP 개만 재정렬하고 나머지는 RRF 순서를 유지한다(3단계 구조).
