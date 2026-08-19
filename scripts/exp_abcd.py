@@ -68,9 +68,13 @@ ap.add_argument("--stage1", type=int, default=2000)
 ap.add_argument("--selftest", action="store_true")
 ap.add_argument("--ctr_top", type=int, default=200,
                 help="contrastive 로 재정렬할 RRF 상위 개수")
+ap.add_argument("--budget", type=int, default=0,
+                help="premise 토큰 예산. 0 이면 conf 값(896). "
+                     "★ 이 값을 넘으면 프롬프트에서 잘린다")
 ap.add_argument("--out", default="")
 A = ap.parse_args()
 SPLIT = A.split.upper()
+BUDGET = A.budget or 896      # conf 의 premise_tokens
 CTR_TOP = A.ctr_top
 RANKERS = [x for x in A.rankers.split(",") if x]
 # ★ 랭커 이름 오타/구버전 이름을 **시작 전에** 잡는다. 예전엔 잘못된 이름이 매 스텝
@@ -209,6 +213,47 @@ def rank_all(state, texts, pool, tf, tr, kinds, docs=None, names=None, q_ids=Non
     return out
 
 
+# ★ 검색 순위가 아니라 **프롬프트에 실제로 들어가는가**로 판정한다.
+#   `whole_number_allocate` 는 앞에서부터 담다가 예산이 넘으면 **break** 한다
+#   → 순위 k 가 들어가려면 1..k 위 길이 합이 예산 이내여야 한다.
+#   실측: 검색이 넘긴 62개(중앙) 중 프롬프트엔 16개(중앙)만 들어간다.
+_TOKLEN: dict = {}
+
+
+def _tlen(t: str) -> int:
+    v = _TOKLEN.get(t)
+    if v is None:
+        v = len(_TOK.tokenize(t))
+        _TOKLEN[t] = v
+    return v
+
+
+def n_in_prompt(texts, order, budget: int) -> int:
+    """랭킹 순서대로 담았을 때 **프롬프트에 들어가는 개수**."""
+    left = budget
+    k = 0
+    for j in order:
+        left -= _tlen(texts[j])
+        if left < 0:
+            break
+        k += 1
+    return k
+
+
+def recall_prompt(sc, gset, names, texts, budget):
+    """프롬프트 포함 기준 (best, worst). 못 들어가면 큰 수를 준다."""
+    order = sorted(range(len(sc)), key=lambda j: -sc[j])
+    nfit = n_in_prompt(texts, order, budget)
+    pos = {j: r for r, j in enumerate(order)}
+    BIG = 10 ** 9
+    per = {}
+    for j in gset:
+        r = pos[j] if pos[j] < nfit else BIG
+        per[names[j]] = min(per.get(names[j], BIG), r)
+    vals = list(per.values())
+    return min(vals), max(vals), nfit
+
+
 def recall(sc, gset, names):
     o = sorted(range(len(sc)), key=lambda j: -sc[j])
     pos = {j: r for r, j in enumerate(o)}
@@ -305,7 +350,10 @@ if nbad:
     print(f"   ★ 자기검사 {nbad}건 실패 — 그래도 진행하되 결과를 의심할 것", flush=True)
 
 # ══ 데이터 ════════════════════════════════════════════════════════════════
+from transformers import AutoTokenizer  # noqa: E402
+
 cc = yaml.safe_load(open("all_log/ft_qwen3b_v8_conf.yaml"))
+_TOK = AutoTokenizer.from_pretrained(cc["model_name"])
 tdc = copy.deepcopy(cc["tactic_data"])
 tdc["formatter_conf"].pop("proof_ret", None)
 tdc["formatter_conf"].pop("num_proofs", None)
@@ -322,6 +370,7 @@ ALLC = {r: collections.Counter() for r in RANKERS}
 D = collections.Counter()
 TM = collections.Counter()
 nA = nC = nmulti = nCname = nCmulti = 0
+NFIT = []
 t0 = time.time()
 
 for i in range(200000):
@@ -380,32 +429,33 @@ for i in range(200000):
         if any(not math.isfinite(x) for x in v):
             D[f"불변식: {r} 에 NaN/Inf"] += 1
             continue
-        best, worst = recall(v, gset, names)
-        if not (0 <= best <= worst < len(pool)):
-            D[f"불변식: {r} 순위 범위 이상"] += 1
-            continue
+        best, worst, nfit = recall_prompt(v, gset, names, texts, BUDGET)
+        NFIT.append(nfit)
         for k in KS:
             RA[r][k] += (best < k)
             ALLA[r][k] += (worst < k)
+        # ★ 프롬프트 포함 여부 자체 (k 와 무관) — 실제로 중요한 값
+        RA[r]["P"] += (best < 10 ** 9)
+        ALLA[r]["P"] += (worst < 10 ** 9)
 
     # ── C: 못 찾은 gold **하나하나** 에 대해 L' 을 세우고 그 L 이 잡히나 ───
     #   ★ 예전엔 gold 중 첫 번째 하나로만 질의를 만들고 순위는 전체 중 최선을 봤다.
     #     tactic 이 lemma 를 2개 쓰면 assert 도 2개 만들어야 하므로, **각 gold 마다**
     #     따로 L' 을 세워 그 gold 자신이 잡히는지를 재야 맞다. ALL 도 그래야 의미가 있다.
+    # ★ cut 대상 판정은 **프롬프트에 들어가는가** 기준이다(검색 순위가 아니라).
+    #   검색이 62개를 넘겨도 프롬프트엔 16개만 들어간다 — 나머지는 모델이 못 읽는다.
     ref = "rrf" if "rrf" in sc else RANKERS[0]
-    rpos = {}
     o_ = sorted(range(len(pool)), key=lambda j: -sc[ref][j])
-    for r_, j in enumerate(o_):
-        rpos[j] = r_
-    # 이름 단위로 최선 순위 → top50 밖인 gold 이름만 assert 대상
+    nfit_ref = n_in_prompt(texts, o_, BUDGET)
+    rpos = {j: r_ for r_, j in enumerate(o_)}
     per_name = {}
     for j in gset:
         per_name.setdefault(names[j], []).append(j)
     missing = {nm: js for nm, js in per_name.items()
-               if min(rpos[j] for j in js) >= 50}
+               if min(rpos[j] for j in js) >= nfit_ref}
     if missing:
-        found = {r: {k: True for k in KS} for r in RANKERS}   # ALL 판정용
-        any_ok = {r: {k: False for k in KS} for r in RANKERS}
+        found = {r: {k: True for k in list(KS) + ["P"]} for r in RANKERS}
+        any_ok = {r: {k: False for k in list(KS) + ["P"]} for r in RANKERS}
         cnt = 0
         for nm, js in missing.items():
             g0 = js[0]
@@ -433,20 +483,27 @@ for i in range(200000):
             cnt += 1
             for r, v in sc2.items():
                 o2 = sorted(range(len(pool)), key=lambda j: -v[j])
+                nf2 = n_in_prompt(texts, o2, BUDGET)
                 p2 = {j: rr for rr, j in enumerate(o2)}
-                # ★ **그 gold 자신**의 순위를 본다 (전체 중 최선이 아니라)
+                # ★ **그 gold 자신**이 프롬프트에 들어가는가
                 b2 = min(p2[j] for j in js)
+                if b2 >= nf2:
+                    b2 = 10 ** 9              # 프롬프트에 못 들어감
                 for k in KS:
                     if b2 < k:
                         any_ok[r][k] = True
                     else:
                         found[r][k] = False
+                if b2 < 10 ** 9:
+                    any_ok[r]["P"] = True
+                else:
+                    found[r]["P"] = False
         if cnt:
             nC += 1
             nCname += len(missing)
             nCmulti += (len(missing) >= 2)
             for r in RANKERS:
-                for k in KS:
+                for k in list(KS) + ["P"]:
                     RC[r][k] += any_ok[r][k]      # R: 하나라도
                     ALLC[r][k] += found[r][k]     # ALL: 전부
     if nA % 100 == 0:
@@ -462,25 +519,30 @@ def row(lbl, cnt, n):
 print(f"\n{'='*76}")
 print(f"■ {SPLIT} · stage1 {A.stage1} · {time.time()-t0:.0f}s")
 print(f"{'='*76}")
-print(f"\n【A】 gold premise 가 검색 상위에 있는 비율")
+_nf = sorted(NFIT) if NFIT else [0]
+print(f"\n※ 프롬프트 예산 {BUDGET} 토큰 → 실제로 들어가는 premise "
+      f"중앙 {_nf[len(_nf)//2]}개 (p10 {_nf[len(_nf)//10]} · p90 {_nf[len(_nf)*9//10]})")
+print(f"   **P** 열 = 순위 무관 '프롬프트에 실제로 들어갔는가' — 이것이 실제 기준이다")
+
+print(f"\n【A】 gold premise 가 프롬프트에 들어가는 비율")
 print(f"      분모: gold lemma 를 쓰고 그 lemma 가 후보 풀에 있는 스텝 {nA}건")
 print(f"           (그중 lemma 2개 이상 필요 {nmulti}건 = {nmulti/max(nA,1)*100:.1f}%)")
-print(f"      {'':16s}" + " ".join(f"{'top'+str(k):>8s}" for k in KS))
+print(f"      {'':16s}" + " ".join(f"{'top'+str(k):>8s}" for k in KS) + f"{'★P':>9s}")
 for r in RANKERS:
-    print(row(f"{r} · R", RA[r], nA))
+    print(row(f"{r} · R", RA[r], nA) + f"{RA[r]['P']/max(nA,1)*100:8.1f}%")
 for r in RANKERS:
-    print(row(f"{r} · ALL", ALLA[r], nA))
+    print(row(f"{r} · ALL", ALLA[r], nA) + f"{ALLA[r]['P']/max(nA,1)*100:8.1f}%")
 
 print(f"\n【C】 못 찾은 gold **마다** L' 을 assert 하고 그 goal 로 재검색했을 때")
 print(f"      분모: 위 {nA}건 중 top50 밖 gold 가 있던 {nC}건")
 print(f"           (그 안에서 만든 L' 총 {nCname}개 · L' 을 2개 이상 만들어야 한 스텝 "
       f"{nCmulti}건 = {nCmulti/max(nC,1)*100:.1f}%)")
 if nC:
-    print(f"      {'':16s}" + " ".join(f"{'top'+str(k):>8s}" for k in KS))
+    print(f"      {'':16s}" + " ".join(f"{'top'+str(k):>8s}" for k in KS) + f"{'★P':>9s}")
     for r in RANKERS:
-        print(row(f"{r} · R", RC[r], nC))
+        print(row(f"{r} · R", RC[r], nC) + f"{RC[r]['P']/max(nC,1)*100:8.1f}%")
     for r in RANKERS:
-        print(row(f"{r} · ALL", ALLC[r], nC))
+        print(row(f"{r} · ALL", ALLC[r], nC) + f"{ALLC[r]['P']/max(nC,1)*100:8.1f}%")
 else:
     print("      (해당 사례 없음)")
 
@@ -503,6 +565,14 @@ for r in RANKERS:
             line += "   "
     print(line)
 print(f"      → ALL@50 기준 최선: {best[0]} {best[1]*100:.1f}%")
+print(f"\n      ★ 프롬프트 포함(P) 기준 — 실제 학습이 쓰는 값")
+print(f"      {'':16s}{'R·P':>10s}{'ALL·P':>10s}")
+for r in RANKERS:
+    a_ = RA[r]["P"] / max(nA, 1)
+    c_ = RC[r]["P"] / max(nC, 1)
+    aa = ALLA[r]["P"] / max(nA, 1)
+    cc_ = ALLC[r]["P"] / max(nC, 1)
+    print(f"      {r:16s}{(a_+(1-a_)*c_)*100:9.1f}%{(aa+(1-aa)*cc_)*100:9.1f}%")
 
 if D:
     print(f"\n【D】 그 밖에 걸린 것")
