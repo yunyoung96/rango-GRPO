@@ -45,11 +45,21 @@ from typing import Optional
 # ── 토큰화 ──────────────────────────────────────────────────────────────────
 #   qualified 이름(Int.max_signed)은 한 토큰. 여러 글자 기호는 **긴 것부터** 잡아야
 #   '<->' 가 '<' + '->' 로, '::' 가 ':' + ':' 로 쪼개지지 않는다.
+# 명제가 아닌 선언 — 구조 신호 대상에서 제외한다
+_NOT_PROP = re.compile(
+    r"^\s*(?:Notation|Infix|Reserved\s+Notation|Ltac|Ltac2|Tactic\s+Notation|"
+    r"Module|End|Section|Import|Export|Require|Open|Close|Hint|Arguments|"
+    r"Set|Unset|Add\s+\w+|Declare|Existing|Coercion|Canonical|Local\s+Notation|"
+    r"Global\s+Notation|Bind|Delimit|Register|Generalizable|Opaque|Transparent)\b")
+
 _TOK = re.compile(
     r"""[A-Za-z_][\w']*(?:\.[A-Za-z_][\w']*)*        # 식별자 (qualified 포함)
       | \d+                                           # 숫자
       | <->|<-|->                                     # 화살표 (긴 것 먼저!)
       | /\\|\\/                                       # 논리곱·논리합
+      | :=                                            # ★ 정의 대입 — `:` `=` 로 쪼개면
+                                                      #   `Definition f : bool := true` 의 결론이
+                                                      #   `bool : = true` 라는 쓰레기가 된다
       | <=\?|>=\?|=\?|<\?|>\?|\?=                     # bool 비교
       | <=|>=|<>|=|<|>                                # 비교
       | \+\+|\+|-|\*|/|\^                             # 산술
@@ -339,8 +349,39 @@ def _strip_foralls(toks: list[str]) -> tuple[set[str], list[str]]:
 def decompose(ptext: str) -> Optional[tuple[set[str], list[list[str]], list[str]]]:
     """premise 텍스트 → (메타변수, 가설 토큰들, 결론 토큰). 파싱 불가면 None."""
     t = re.sub(r"\(\*.*?\*\)", " ", (ptext or ""), flags=re.S).strip()
+    # ★ 속성 접두사 `#[global]` `#[export]` 는 선언의 일부가 아니다 — 떼지 않으면
+    #   `[ global ] Instance Op_eq_N : BinRel …` 처럼 결론에 섞인다(실측).
+    t = re.sub(r"^#\[[^\]]*\]\s*", "", t)
     toks = tokenize(t)
     if not toks:
+        return None
+
+    # ★ `Definition f : T := body` — **T 가 타입/명제**이고 body 는 항이다.
+    #   본문까지 결론에 넣으면 head 가 엉뚱해져 C' 를 오염시킨다
+    #   (실측: `Definition ptr64 : bool := true.` 의 결론이 `bool : = true` 였다).
+    #   `:=` 앞에서 자르되, **선언 헤더 처리보다 먼저** 해야 한다 — 거기서 `:` 가
+    #   소비되면 타입 표기 유무를 알 수 없게 된다.
+    _d = 0
+    _cut = False
+    for _i, _tk in enumerate(toks):
+        if _tk in "([{":
+            _d += 1
+        elif _tk in ")]}":
+            _d -= 1
+        elif _d == 0 and _tk == ":=":
+            _has_ty = any(x == ":" for x in toks[:_i])
+            toks = toks[:_i]
+            _cut = True
+            break
+    # 타입 표기가 없는 정의(`Definition f x := body`)는 명제 자체가 없다.
+    # 이런 것은 **정의 이름이 goal 에 나오는가**(tier_rank.sig_def_name)로 잡아야 한다.
+    if _cut and not _has_ty:
+        return None
+
+    # ★ 명제가 아닌 선언은 구조 신호 대상이 아니다. 파싱을 시도하면 쓰레기 결론이 나온다.
+    #   실측 파싱 성공률: Notation 4.5% · Ltac 0.0% · Infix 0.0% · Module 32.3%.
+    #   gold 로 쓰이는 종류(Lemma/Theorem/Definition/Fixpoint/Instance/Axiom…)에 없다.
+    if _NOT_PROP.match(t):
         return None
 
     mvars: set[str] = set()
@@ -376,6 +417,11 @@ def decompose(ptext: str) -> Optional[tuple[set[str], list[list[str]], list[str]
     v, concl = _strip_foralls(chain[-1])
     mvars |= v
     if not concl:
+        return None
+    # ★ `Definition P (x:R) : Prop := body` 의 결론은 `Prop` 이다 — 어떤 goal 과도
+    #   구조가 안 맞고 head 만 오염시킨다(실측 101건). 이런 것은 **정의 이름이 goal 에
+    #   나오는가**(tier_rank.sig_def_name)로 잡아야 한다.
+    if len(concl) == 1 and concl[0] in ("Prop", "Type", "Set", "SProp"):
         return None
     return mvars, hyps, concl
 

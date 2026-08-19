@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""★ 통합 실험 — `all_log/docs/retrieval/experiment.txt` 의 A/B/C/D.
+"""★ 통합 실험 — `all_log/docs/premise/experiment.txt` 의 A/B/C/D.
 
 방법론이 바뀔 때마다 이 스크립트를 다시 돌린다. 세 스플릿 · 랭커 여러 종을 **한 번의
 순회로** 잰다(데이터 로드와 tfidf·구조신호 계산을 공유한다 — 랭커마다 따로 돌리면
@@ -167,6 +167,14 @@ def rank_all(state, texts, pool, tf, tr, kinds, docs=None, names=None, q_ids=Non
         elif k == "eqcov":
             eb, cv = eq_bonus(), cov_rrf()
             out[k] = [rrf[j] + cv[j] + 3.0 * eb[j] for j in range(n)]
+        elif k in ("final", "final_mmr"):
+            # ★ 파이프라인(SparseClient)이 쓰는 것과 **같은 함수**를 부른다 —
+            #   하네스와 실제 경로가 갈라지면 측정이 의미를 잃는다.
+            from tactic_gen.tier_rank import eqcov_scores
+            gl = state.split("\n\n")[-1] if "\n\n" in state else state
+            hy = state.split("\n\n")[0].split("\n") if "\n\n" in state else []
+            out[k] = eqcov_scores(gl, hy, texts, tf, query_ids=q_ids, docs=docs,
+                                  stage1=len(cand), use_mmr=(k == "final_mmr"))
         elif k == "ctr":
             # ★ cross-encoder 는 후보마다 한 번씩 돌려야 해서 비싸다 → RRF 상위
             #   CTR_TOP 개만 재정렬하고 나머지는 RRF 순서를 유지한다(3단계 구조).

@@ -1,0 +1,21 @@
+<0.개요>
+기존 문제를 뛰어 넘은 새로운 학습 방식에 대해서 소개한다.
+
+<1.기존 문제 방식>
+기존에는 (state, retrieved state, retrived premise) -> gold tactic
+이렇게 학습을 시키고 있었다.
+하지만 문제가 있다. 
+이제 부터는 암기가 아니라 정말로 학습을 시킬 것이기 때문에 premise가 익명화 되어 있고
+그렇기 때문에 만약 lemma를 사용하는 gold tactic의 경우에는 
+없는 lemma를 사용하는 gold tactic을 학습하게 하고 있는 것이기 때문에
+Hallucination이 생길 여지가 있다.
+
+<2. 해결 방식 - 개선된 retrieval>
+이 문제는 retrieval을 잘 잡는다면 되는 문제지만 사실 이건 어려운 문제
+이기는 하다. 적용 가능한 lemma는 수많이 많다. 
+그 중에서 어떤 lemma 적용이 실제로 답으로 이어질지는 모르는 얘기다.
+그래도 일단 retireval을 개선해서 gold tactic이 후보군에 올라와야 
+gold tactic을 학습하는 것이 가능하다. 그래거 일단 retrieval을 개선했다.
+
+<3. 해결 방식 - cut 생성>
+아무리 그래고 gold lemma가 올라오지 않을 수 있따.

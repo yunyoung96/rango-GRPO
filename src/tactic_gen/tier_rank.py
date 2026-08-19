@@ -421,7 +421,10 @@ class TierRanker:
 #     (goal 이 곧 lemma 문장)에서는 정확히 그 질문이라 강력하다. 단방향 매칭까지 넣으면
 #     일반 goal 이 무너진다(ALL@50 45.4% → 18.2%) — 그래서 완전일치만 쓴다.
 
-STAGE1 = 2000            # 구조 판정을 걸 tfidf 상위 개수 (비용 제한)
+# ★ 2000 → 5000. 재랭킹은 **후보 안에 gold 가 있어야** 손댈 수 있다.
+#   실측(TEST 400건) gold 를 **전부** 담는 비율: 400→60.5% · 2000→80.0% · 5000→88.2%.
+#   상한이 +8.2pp 오르고 비용은 구조 판정 2.5배(스텝당 ~57ms → ~140ms).
+STAGE1 = 5000            # 구조 판정을 걸 tfidf 상위 개수
 EQ_W = 3.0               # 트리 완전일치 가산. RRF 한 항의 최대(1/60)보다 훨씬 커야 한다
 
 
@@ -434,9 +437,82 @@ def _rrf_of(vals) -> list[float]:
     return [1.0 / (RRF_K + r[j]) for j in range(n)]
 
 
+_DEF_DECL = re.compile(r"^\s*(?:Definition|Fixpoint|CoFixpoint|Let|Program\s+\w+)\s+"
+                      r"([A-Za-z_][\w']*)")
+
+
+def sig_def_name(goal_ids: set, text: str) -> float:
+    """정의(Definition/Fixpoint)의 **이름이 goal 에 나오는가**.
+
+    ★ 왜 필요한가: gold 의 **36%가 Definition** 인데(실측 TEST), 정의는 결론이 명제가
+      아니라 본문이라 구조 신호(C'·트리일치)가 원리적으로 안 통한다.
+      `Definition ulp x := match … end.` 의 "결론" 은 명제가 아니다.
+      정의는 `unfold f` · `rewrite f` 로 쓰이고, 그때 **f 가 goal 에 나타나 있다.**
+      그래서 이름 등장 여부가 정의에 대한 올바른 질문이다.
+
+    tfidf 도 이름 토큰을 세지만 다른 토큰에 희석된다. 별도 신호로 두면 선명해진다.
+    """
+    m = _DEF_DECL.match(text or "")
+    if not m:
+        return 0.0
+    return 1.0 if m.group(1) in goal_ids else 0.0
+
+
+def mmr_reorder(scores: list[float], texts: list[str], k: int = 50,
+                lam: float = 0.35) -> list[float]:
+    """**다중 lemma** 를 위한 다양성 재정렬 (MMR = Maximal Marginal Relevance).
+
+    ★ 용어: MMR 은 "관련도가 높으면서 **이미 뽑은 것과 다른**" 항목을 차례로 고르는 방법이다.
+      점수만으로 자르면 비슷한 것이 상위를 채운다.
+
+    ★ 왜 필요한가: 한 tactic 이 lemma 를 2개 이상 쓰는 스텝이 24% 이고, 거기서
+      R@50(하나라도) 54.6% 대비 ALL@50(전부) 45.4% 로 **9.2pp 를 잃는다**.
+      두 lemma 의 성격이 다르면(하나는 rewrite 용 등식, 하나는 apply 용 함의)
+      비슷한 것들이 상위를 채워 두 번째가 밀린다.
+
+    유사도는 **결론 head 다중집합의 코사인** — 이미 구조 파싱을 했으므로 추가 비용이 작다.
+    상위 k 개만 재정렬하고 나머지는 원래 순서를 유지한다.
+    """
+    n = len(scores)
+    if n <= 2 or k <= 1:
+        return scores
+    cand = sorted(range(n), key=lambda j: -scores[j])[:min(k * 3, n)]
+    hs = {}
+    for j in cand:
+        ps = prem_struct(texts[j])
+        hs[j] = ps[5] if ps is not None else collections.Counter()
+
+    def sim(a, b):
+        x, y = hs[a], hs[b]
+        if not x or not y:
+            return 0.0
+        num = sum(x[t] * y[t] for t in (x.keys() & y.keys()))
+        na = math.sqrt(sum(v * v for v in x.values()))
+        nb = math.sqrt(sum(v * v for v in y.values()))
+        return num / (na * nb) if na and nb else 0.0
+
+    picked, rest = [], list(cand)
+    while rest and len(picked) < k:
+        best, bv = None, -1e18
+        for j in rest:
+            pen = max((sim(j, q) for q in picked), default=0.0)
+            v = scores[j] - lam * pen
+            if v > bv:
+                best, bv = j, v
+        picked.append(best)
+        rest.remove(best)
+    out = list(scores)
+    top = max(scores) if scores else 0.0
+    for r, j in enumerate(picked):                    # 뽑힌 순서를 점수로 되돌린다
+        out[j] = top + (len(picked) - r)
+    return out
+
+
 def eqcov_scores(goal_text: str, hyps, texts: list[str], tfidf: list[float],
                  query_ids=None, docs=None, stage1: int = STAGE1,
-                 use_eq: bool = True, use_cov: bool = True) -> list[float]:
+                 use_eq: bool = True, use_cov: bool = True,
+                 use_def: bool = True, use_mmr: bool = False,
+                 mmr_k: int = 50, mmr_lam: float = 0.35) -> list[float]:
     """최종 랭킹 점수. 큰 값이 상위. `tfidf` 는 호출부가 이미 계산한 것을 넘긴다."""
     n = len(texts)
     if n == 0:
@@ -482,4 +558,13 @@ def eqcov_scores(goal_text: str, hyps, texts: list[str], tfidf: list[float],
             rv = _rrf_of(cov)
             for j in range(n):
                 out[j] += rv[j]
+    # def — 정의 이름이 goal 에 나오는가 (구조 신호가 안 통하는 36% 를 위한 것)
+    if use_def:
+        gids = set(query_ids or [])
+        if gids:
+            for j in cand:
+                out[j] += 0.5 * sig_def_name(gids, texts[j])
+    # mmr — 다중 lemma 를 위한 다양성 재정렬
+    if use_mmr:
+        out = mmr_reorder(out, texts, k=mmr_k, lam=mmr_lam)
     return out
