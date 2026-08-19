@@ -244,17 +244,29 @@ def n_in_prompt(texts, order, budget: int) -> int:
 
 
 def recall_prompt(sc, gset, names, texts, budget):
-    """프롬프트 포함 기준 (best, worst). 못 들어가면 큰 수를 준다."""
+    """**두 기준을 분리해서** 돌려준다.
+
+    ★ 표기 규칙 (혼동 방지):
+        [순위]     검색 점수 상위 k 안에 있는가 — **프롬프트 예산과 무관**
+        [프롬프트]  토큰 예산 안에 살아남아 **실제로 프롬프트에 들어가는가**
+
+      예전에는 `top20` 열이 "순위 20 안 **이면서** 프롬프트에도 있음" 이라
+      두 기준이 섞여 있었다. 프롬프트에 들어가는 것이 중앙 22개뿐이라
+      top50 과 프롬프트 기준이 같은 값이 되어 오해를 낳았다.
+
+    반환: (순위_best, 순위_worst, 프롬프트_best, 프롬프트_worst, nfit)
+    """
     order = sorted(range(len(sc)), key=lambda j: -sc[j])
     nfit = n_in_prompt(texts, order, budget)
     pos = {j: r for r, j in enumerate(order)}
     BIG = 10 ** 9
-    per = {}
+    per_rank, per_pr = {}, {}
     for j in gset:
-        r = pos[j] if pos[j] < nfit else BIG
-        per[names[j]] = min(per.get(names[j], BIG), r)
-    vals = list(per.values())
-    return min(vals), max(vals), nfit
+        nm = names[j]
+        per_rank[nm] = min(per_rank.get(nm, BIG), pos[j])
+        per_pr[nm] = min(per_pr.get(nm, BIG), pos[j] if pos[j] < nfit else BIG)
+    return (min(per_rank.values()), max(per_rank.values()),
+            min(per_pr.values()), max(per_pr.values()), nfit)
 
 
 def recall(sc, gset, names):
@@ -432,14 +444,13 @@ for i in range(200000):
         if any(not math.isfinite(x) for x in v):
             D[f"불변식: {r} 에 NaN/Inf"] += 1
             continue
-        best, worst, nfit = recall_prompt(v, gset, names, texts, BUDGET)
+        rb, rw, pb, pw, nfit = recall_prompt(v, gset, names, texts, BUDGET)
         NFIT.append(nfit)
         for k in KS:
-            RA[r][k] += (best < k)
-            ALLA[r][k] += (worst < k)
-        # ★ 프롬프트 포함 여부 자체 (k 와 무관) — 실제로 중요한 값
-        RA[r]["P"] += (best < 10 ** 9)
-        ALLA[r]["P"] += (worst < 10 ** 9)
+            RA[r][k] += (rb < k)          # [순위] 기준
+            ALLA[r][k] += (rw < k)
+        RA[r]["P"] += (pb < 10 ** 9)      # [프롬프트] 기준
+        ALLA[r]["P"] += (pw < 10 ** 9)
 
     # ── C: 못 찾은 gold **하나하나** 에 대해 L' 을 세우고 그 L 이 잡히나 ───
     #   ★ 예전엔 gold 중 첫 번째 하나로만 질의를 만들고 순위는 전체 중 최선을 봤다.
@@ -489,15 +500,13 @@ for i in range(200000):
                 nf2 = n_in_prompt(texts, o2, BUDGET)
                 p2 = {j: rr for rr, j in enumerate(o2)}
                 # ★ **그 gold 자신**이 프롬프트에 들어가는가
-                b2 = min(p2[j] for j in js)
-                if b2 >= nf2:
-                    b2 = 10 ** 9              # 프롬프트에 못 들어감
+                b2 = min(p2[j] for j in js)           # [순위] 기준
                 for k in KS:
                     if b2 < k:
                         any_ok[r][k] = True
                     else:
                         found[r][k] = False
-                if b2 < 10 ** 9:
+                if b2 < nf2:                          # [프롬프트] 기준
                     any_ok[r]["P"] = True
                 else:
                     found[r]["P"] = False
@@ -525,27 +534,39 @@ print(f"{'='*76}")
 _nf = sorted(NFIT) if NFIT else [0]
 print(f"\n※ 프롬프트 예산 {BUDGET} 토큰 → 실제로 들어가는 premise "
       f"중앙 {_nf[len(_nf)//2]}개 (p10 {_nf[len(_nf)//10]} · p90 {_nf[len(_nf)*9//10]})")
-print(f"   **P** 열 = 순위 무관 '프롬프트에 실제로 들어갔는가' — 이것이 실제 기준이다")
+print(f"   ★ 열 표기:  @k[순위] = 검색 상위 k 안 (프롬프트 예산 무관)")
+print(f"              [프롬프트] = 토큰 예산 안에 살아남아 실제로 들어감 ← **실제 기준**")
+print(f"      행 표기:  · R = 필요한 gold 중 하나라도 / · ALL = 전부")
 
 print(f"\n【A】 gold premise 가 프롬프트에 들어가는 비율")
 print(f"      분모: gold lemma 를 쓰고 그 lemma 가 후보 풀에 있는 스텝 {nA}건")
 print(f"           (그중 lemma 2개 이상 필요 {nmulti}건 = {nmulti/max(nA,1)*100:.1f}%)")
-print(f"      {'':16s}" + " ".join(f"{'top'+str(k):>8s}" for k in KS) + f"{'★P':>9s}")
+print(f"      {'':16s}" + " ".join(f"{'@'+str(k)+'[순위]':>10s}" for k in KS)
+      + f" |{'[프롬프트]':>12s}")
 for r in RANKERS:
-    print(row(f"{r} · R", RA[r], nA) + f"{RA[r]['P']/max(nA,1)*100:8.1f}%")
+    print(f"      {r+' · R':16s}"
+          + " ".join(f"{RA[r][k]/max(nA,1)*100:9.1f}%" for k in KS)
+          + f" |{RA[r]['P']/max(nA,1)*100:11.1f}%")
 for r in RANKERS:
-    print(row(f"{r} · ALL", ALLA[r], nA) + f"{ALLA[r]['P']/max(nA,1)*100:8.1f}%")
+    print(f"      {r+' · ALL':16s}"
+          + " ".join(f"{ALLA[r][k]/max(nA,1)*100:9.1f}%" for k in KS)
+          + f" |{ALLA[r]['P']/max(nA,1)*100:11.1f}%")
 
 print(f"\n【C】 못 찾은 gold **마다** L' 을 assert 하고 그 goal 로 재검색했을 때")
 print(f"      분모: 위 {nA}건 중 top50 밖 gold 가 있던 {nC}건")
 print(f"           (그 안에서 만든 L' 총 {nCname}개 · L' 을 2개 이상 만들어야 한 스텝 "
       f"{nCmulti}건 = {nCmulti/max(nC,1)*100:.1f}%)")
 if nC:
-    print(f"      {'':16s}" + " ".join(f"{'top'+str(k):>8s}" for k in KS) + f"{'★P':>9s}")
+    print(f"      {'':16s}" + " ".join(f"{'@'+str(k)+'[순위]':>10s}" for k in KS)
+          + f" |{'[프롬프트]':>12s}")
     for r in RANKERS:
-        print(row(f"{r} · R", RC[r], nC) + f"{RC[r]['P']/max(nC,1)*100:8.1f}%")
+        print(f"      {r+' · R':16s}"
+              + " ".join(f"{RC[r][k]/max(nC,1)*100:9.1f}%" for k in KS)
+              + f" |{RC[r]['P']/max(nC,1)*100:11.1f}%")
     for r in RANKERS:
-        print(row(f"{r} · ALL", ALLC[r], nC) + f"{ALLC[r]['P']/max(nC,1)*100:8.1f}%")
+        print(f"      {r+' · ALL':16s}"
+              + " ".join(f"{ALLC[r][k]/max(nC,1)*100:9.1f}%" for k in KS)
+              + f" |{ALLC[r]['P']/max(nC,1)*100:11.1f}%")
 else:
     print("      (해당 사례 없음)")
 
@@ -575,7 +596,7 @@ for r in RANKERS:
     c_ = RC[r]["P"] / max(nC, 1)
     aa = ALLA[r]["P"] / max(nA, 1)
     cc_ = ALLC[r]["P"] / max(nC, 1)
-    print(f"      {r:16s}{(a_+(1-a_)*c_)*100:9.1f}%{(aa+(1-aa)*cc_)*100:9.1f}%")
+    print(f"      {r:16s}{(a_+(1-a_)*c_)*100:12.1f}%{(aa+(1-aa)*cc_)*100:14.1f}%")
 
 if D:
     print(f"\n【D】 그 밖에 걸린 것")

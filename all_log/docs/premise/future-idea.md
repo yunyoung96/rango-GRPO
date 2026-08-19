@@ -23,6 +23,7 @@
 | ⑧ | contrastive 재시도 | — | **낮음** (아래) |
 | ⑨ | `NORMALIZE_RATE` ablation | 암기 vs 읽기 | 근거 없이 0.5 |
 | ⑩ | 추론 정규화 시 역매핑 | **켜면 즉시 깨짐** | 안전장치 |
+| ⑪ | **built-in 은 익명화·주입 제외** | 사전학습 지식을 막고 있다 | **구현 예정** |
 
 ---
 
@@ -223,6 +224,79 @@ TRAIN 400건)에서 읽기 가능성이 **소수점까지 동일**했다.
 **★ 위험**: 학습과 형태를 맞추려고 추론 정규화를 켜면, 모델이 `apply L0.` 를 생성하고
 Coq 은 `L0` 를 모른다. 켜기 전에 **반드시 역매핑을 구현**해야 한다
 (`mapping` 을 저장해 두고 생성된 tactic 에 역방향 치환).
+
+---
+
+## ⑪ ★ built-in(stdlib)은 익명화도 [TYPES] 주입도 하지 말 것 — **구현 예정**
+
+### 왜
+
+익명화의 목적은 "**그 프로젝트에만 통하는 이름**을 외워서 찍는 습관"을 끊는 것이다.
+
+| lemma | 외우면 | 익명화하면 |
+|---|---|---|
+| `gpaco5_unfold` (프로젝트 전용) | 그 프로젝트에만 통함 | **이득** — 끊는 게 맞다 |
+| `Nat.add_comm` (stdlib) | **어느 프로젝트에서나 통함 = 진짜 지식** | **손해** |
+
+사전학습 모델은 이미 `Nat.add_comm : forall n m, n+m = m+n` 을 안다.
+`L0` 으로 바꾸면 **그 지식을 못 쓰게 막는 셈**이다.
+
+`[TYPES]` 주입도 마찬가지다. `Inductive list A := nil | cons` 를 프롬프트에 넣는 것은
+토큰 낭비다 — 모델이 이미 안다. 그 토큰으로 premise 를 더 넣는 편이 낫다.
+
+### 지금 코드는 어떻게 되어 있나
+
+`normalize_names.renameable()` 에 **원칙은 이미 있다**.
+
+```python
+def renameable(name):
+    if name in _PROTECTED: return False          # nat, bool, list, S, O, nil, cons ...
+    slot = _index().get(name)
+    return any(k != "stdlib" for k in slot)      # ★ stdlib 전용 이름은 제외
+```
+
+**그런데 premise lemma 이름에는 이 검사가 안 걸린다.**
+
+```python
+# build_mapping 안
+# ★ renameable() 을 쓰면 안 된다 — 정의 인덱스(func_defs)에 있는 이름만 허용하는데
+#   premise 는 lemma 라 인덱스에 없다(실측 235건 중 134건이 걸려 치환 0).
+if pn not in _PROTECTED and pn not in _HEADERS and len(pn) > 1:
+    prem_names.append(pn)
+```
+
+`_PROTECTED` 에는 `nat`·`S`·`nil` 같은 **타입·생성자**만 있고 `Nat.add_comm`·`app_assoc`
+같은 **lemma 이름**은 없다 → **stdlib lemma 도 `L0` 이 된다.**
+
+### 어떻게 고치나
+
+premise 는 `Sentence` 객체라 **출처 파일 경로**를 안다. 이름 인덱스가 아니라 **경로로**
+판정하면 위 문제가 없다.
+
+```python
+_STD_PATH = re.compile(r"(coq/theories|/stdlib/|/Coq/|theories/(Init|Lists|Arith|ZArith|"
+                       r"NArith|Bool|Logic|Reals|QArith|Sets|Relations|Classes|Numbers|"
+                       r"Strings|Sorting|Structures|Program|Wellfounded|FSets|MSets)/)", re.I)
+
+def is_stdlib(premise) -> bool:
+    return bool(_STD_PATH.search(getattr(premise, "file_path", "") or ""))
+```
+
+  1. `build_mapping(premises=...)` 이 `Sentence` 를 받아 `is_stdlib` 인 것은 `prem_names`
+     에서 제외 (지금은 텍스트만 받아 경로를 모른다 — 시그니처 변경 필요)
+  2. `augment.selective_types` 가 stdlib 타입을 `[TYPES]` 에서 제외
+  3. 환경변수로 켜고 끌 수 있게: `NORMALIZE_SKIP_STDLIB=1` · `INJECT_SKIP_STDLIB=1`
+
+### 기대 효과
+
+  · stdlib gold 는 이름이 살아남아 **사전학습 지식을 쓸 수 있다**
+  · `[TYPES]` 에서 stdlib 타입이 빠져 **토큰이 절약**된다 → premise 를 더 넣는다
+  · 프로젝트 전용 이름은 그대로 익명화 → 암기 차단 목적은 유지
+
+### 측정
+
+`scripts/stdlib_share.py` — 후보 풀·gold 중 stdlib 비중.
+비중이 크면 효과가 크고, 작아도 **해가 없는 변경**이다(진짜 지식을 막지 않는 것뿐).
 
 ---
 
