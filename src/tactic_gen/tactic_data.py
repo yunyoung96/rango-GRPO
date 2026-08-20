@@ -1293,11 +1293,59 @@ class ExamplePage:
         self.page = page
 
 
+# ★ 캐시에 **구워지는** 설정들.  `formatter.example_from_step` 이 만드는 LmExample 에
+#   이 값들이 그대로 들어간다(검색 결과·주입 정의·유사 증명). 값이 바뀌면 옛 캐시는
+#   **다른 실험의 데이터**다. 그런데 캐시 키는 step_id 뿐이라 그냥 쓰면 조용히 섞인다.
+#   → 지문(stamp)을 남기고 다르면 **큰 소리로 멈춘다**(자동 삭제는 하지 않는다 —
+#     몇 시간치 워밍을 말없이 버리는 쪽이 더 위험하다. 사람이 판단하게 한다).
+#
+#   ※ collate 단계에서 적용되는 것(PREMISE_PACK, NORMALIZE_*, CUTS_PATH 등)은
+#     캐시에 안 구워지므로 여기 넣지 않는다.
+_CACHE_STAMP_KEYS = (
+    "RETRIEVAL_MODE", "RETRIEVAL_STAGE1", "RERANK_PREMISES",
+    "INJECT_TYPES", "INJECT_DEFS", "TYPES_TOKENS", "DEFS_TOKENS",
+    "FUNC_DEFS_PATH", "AUGMENT_V2", "CACHE_MAX_PAGE",
+)
+
+
+def _cache_stamp(formatter) -> str:
+    import hashlib
+    parts = [f"{k}={os.environ.get(k, '')}" for k in _CACHE_STAMP_KEYS]
+    parts.append(f"formatter={type(formatter).__name__}")
+    for attr in ("num_premises", "num_proofs"):
+        parts.append(f"{attr}={getattr(formatter, attr, None)}")
+    return hashlib.sha1("|".join(parts).encode()).hexdigest()[:16] + "  " + " ".join(parts)
+
+
 class ExampleCache:
     def __init__(self, cache_loc: Path):
         self.cache_loc = cache_loc
         os.makedirs(self.cache_loc, exist_ok=True)
         self.num_cached = 0
+        self.__stamp_checked = False
+
+    def _check_stamp(self, formatter) -> None:
+        """캐시가 **지금 설정으로 만들어진 것**인지 확인한다."""
+        if self.__stamp_checked:
+            return
+        self.__stamp_checked = True
+        want = _cache_stamp(formatter)
+        loc = self.cache_loc / "CACHE_STAMP.txt"
+        if loc.exists():
+            have = loc.read_text().strip()
+            if have.split()[0] != want.split()[0]:
+                raise RuntimeError(
+                    "\n★ 예제 캐시가 **다른 설정**으로 만들어졌다 — 그대로 쓰면 조용히 다른 실험이 된다.\n"
+                    f"   캐시: {self.cache_loc}\n"
+                    f"   저장된 설정: {have}\n"
+                    f"   지금  설정: {want}\n"
+                    "   설정을 되돌리거나, 의도한 변경이면 캐시를 지우고 다시 시작하라:\n"
+                    f"     rm -rf {self.cache_loc}\n")
+        else:
+            try:
+                loc.write_text(want + "\n")
+            except Exception:
+                pass
 
     def get(
         self,
@@ -1306,6 +1354,7 @@ class ExampleCache:
         data_loc: Path,
         sentence_db: SentenceDB,
     ) -> Optional[LmExample]:
+        self._check_stamp(formatter)
         file_loc = self.cache_loc / step_id.file
         if file_loc.exists():
             with file_loc.open("rb") as f:

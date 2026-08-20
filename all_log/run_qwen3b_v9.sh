@@ -84,6 +84,23 @@ n_cut=$(grep -c '"cut"' "$CUTS")
 echo "[$(TZ=Asia/Seoul date '+%m-%d %H:%M')]   cut 파일 확인: $(wc -l < "$CUTS") 줄 · cut $n_cut 개" | tee -a "$LOG"
 [ "$n_cut" -lt 1000 ] && { echo "★ 중단: cut 이 너무 적다($n_cut)" | tee -a "$LOG"; exit 1; }
 
+# ── 사전점검 3: 예제 캐시 ──
+# ★★ **캐시를 지우지 마라.**
+#   ExampleCache 는 캐시 미스 때 그 파일의 예제를 **전부**(모든 proof × step) 만들어
+#   pickle 로 저장한다. 파일 하나에 600쌍이면 한 번에 600개 예제 분량의 검색이다
+#   (실측: step 하나가 376초). 지우면 그 비용을 처음부터 다시 낸다.
+#   실측 워밍 속도 약 19.5 파일/분 · 전체 13,896 파일 → 약 12시간.
+#   캐시가 차면 검색이 사라지고 pickle 읽기만 남아 GPU 바운드가 된다.
+#
+#   설정을 바꿨을 때만 지운다. 그 판단은 CACHE_STAMP.txt 가 대신 해 준다 —
+#   검색에 영향을 주는 설정이 달라지면 학습이 **큰 소리로 멈춘다**(조용히 섞이지 않게).
+CACHE_LOC=$(python3 -c "import yaml;print(yaml.safe_load(open('$CONF'))['tactic_data']['cache_loc'])")
+if [ -d "$CACHE_LOC" ]; then
+  echo "[$(TZ=Asia/Seoul date '+%m-%d %H:%M')]   예제 캐시: $(ls "$CACHE_LOC" | wc -l) 파일 · $(du -sh "$CACHE_LOC" 2>/dev/null | cut -f1)" | tee -a "$LOG"
+else
+  echo "[$(TZ=Asia/Seoul date '+%m-%d %H:%M')]   예제 캐시 없음 — 처음부터 워밍한다(약 12시간)" | tee -a "$LOG"
+fi
+
 USE=$(mkconf_resume | tail -1)
 echo "[$(TZ=Asia/Seoul date '+%m-%d %H:%M')] ===== v9 학습 시작 (Qwen3B, ${NPROC}GPU, conf=$(basename "$USE")) =====" | tee -a "$LOG"
 # ★ 환경변수는 all_log/v9_env.sh 한 곳에만 둔다 — 검증 스크립트도 같은 파일을 쓴다.
