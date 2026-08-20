@@ -15,7 +15,12 @@ export TOKENIZERS_PARALLELISM=false
 export AUGMENT_V2=1 RERANK_PREMISES=1 INJECT_TYPES=1 INJECT_DEFS=1 DYNAMIC_PADDING=1
 export HARD_SEQ_LEN=2048 TYPES_TOKENS=300 DEFS_TOKENS=300
 export FUNC_DEFS_PATH=data/func_defs_v3.json
-export NORMALIZE_NAMES=1 NORMALIZE_RATE=0.5 NORMALIZE_PREMISES=1 NORMALIZE_THEOREM=1
+# ★ NORMALIZE_RATE=1.0 — 예제를 **전부** 정규화한다.
+#   목적이 "이름 암기 차단 → 미지 프로젝트로 전이"이므로 절반만 정규화하면
+#   나머지 절반에서 여전히 이름을 외울 수 있다. 근거 없이 0.5 를 쓰고 있었다.
+#   ※ 일관성: 추론에서도 정규화해야 train/test 가 어긋나지 않는다.
+#     역매핑은 구현돼 있다 — 평가 때 NORMALIZE_INFERENCE=1 을 켤 것.
+export NORMALIZE_NAMES=1 NORMALIZE_RATE=1.0 NORMALIZE_PREMISES=1 NORMALIZE_THEOREM=1
 export STRIP_TARGET_NL=1
 export PYTORCH_ALLOC_CONF=expandable_segments:True
 

@@ -124,9 +124,37 @@ for i in range(N * 3):
             if STRIP := os.environ.get("STRIP_TARGET_NL", "0") == "1":
                 tgt = tgt.lstrip("\n")
             same = txt.replace(" ", "")[:60] == tgt.replace(" ", "")[:60]
-            st["C 라벨==정답"] += same
-            if not same:
+            # ★ 정규화가 켜져 있으면 라벨은 **의도적으로** 다르다
+            #   (`ord_below` → `f2`).  원본과 글자로 비교하면 정규화가 잘 될수록
+            #   실패로 잡힌다 — NORMALIZE_RATE=1.0 에서 93% 로 떨어졌다.
+            #   그래서 다르면 **정규화 때문인지**를 따로 판정한다:
+            #     ① 정규화를 끄고 같은 예제를 다시 만들어 정답과 맞는가  (진짜 정합성)
+            #     ② 정규화 ON/OFF 두 타깃이 **식별자만 다르고 뼈대는 같은가** (이름 치환뿐인가)
+            #   ①②를 모두 통과하면 정상이다.
+            if not same and os.environ.get("NORMALIZE_NAMES", "0") == "1":
+                _sv = os.environ["NORMALIZE_NAMES"]
+                os.environ["NORMALIZE_NAMES"] = "0"
+                try:
+                    _s0 = coll.collate(tok, e)
+                    _t0 = _s0.rsplit("[TACTIC]", 1)[1].strip() if "[TACTIC]" in _s0 else ""
+                finally:
+                    os.environ["NORMALIZE_NAMES"] = _sv
+                if STRIP:
+                    _t0 = _t0.lstrip("\n")
+                ok1 = _t0.replace(" ", "")[:60] == tgt.replace(" ", "")[:60]
+                # 뼈대 = 식별자를 모두 같은 기호로 치환한 문자열
+                _sk = lambda x: re.sub(r"[A-Za-z_][\w']*", "\u25a1", x).replace(" ", "")
+                ok2 = _sk(txt)[:80] == _sk(_t0)[:80]
+                if ok1 and ok2:
+                    same = True
+                    st["C 정규화로 인한 차이(정상)"] += 1
+                else:
+                    bad["라벨≠정답"].append(
+                        f'라벨="{txt[:44]}" 정규화OFF="{_t0[:44]}" 정답={tgt[:44]!r} '
+                        f'(정합 {ok1} · 뼈대 {ok2})')
+            elif not same:
                 bad["라벨≠정답"].append(f'라벨="{txt[:50]}" 정답={tgt[:50]!r}')
+            st["C 라벨==정답"] += same
     except Exception as ex:
         st["B 마스킹 예외"] += 1
         bad["마스킹 예외"].append(str(ex)[:70])
