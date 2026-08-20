@@ -128,8 +128,12 @@ def check(mode: str):
             bad["형태"].append(target.strip()[:80])
 
         # ③ 읽기 가능성 — cut 의 `exact X` 에서 X 가 프롬프트에 있는가
+        #   ★ 옛 정규식 `[A-Za-z_][\w'.]*` 는 **문장 끝 마침표까지 삼켰다**
+        #     ("gupaco5_mon." ). 그러면 base = split(".")[-1] = "" 가 되고
+        #     `"" in pset` 은 항상 False → 전부 "없음"으로 잡혔다(실측 189건 전부 오탐).
+        #     한정이름(Nat.add_comm)은 살리고 종결 마침표만 빼도록 고쳤다.
         pset = set(_ID.findall(prompt))
-        for m in re.finditer(r"exact\s+@?([A-Za-z_][\w'.]*)", target):
+        for m in re.finditer(r"exact\s+@?([A-Za-z_][\w']*(?:\.[A-Za-z_][\w']*)*)", target):
             nm = m.group(1)
             base = nm.split(".")[-1]
             if nm in pset or base in pset:

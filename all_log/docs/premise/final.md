@@ -434,6 +434,20 @@ source all_log/v9_env.sh      # 학습 런처도, 검증 스크립트도 이 파
 NPROC=2 bash all_log/run_qwen3b_v9.sh
 ```
 
+### 10-1-b. v9 에서 v8 과 달라진 것 (요약)
+
+| 항목 | v8 | **v9** | 근거 |
+|---|---|---|---|
+| 랭커 | tfidf | **structural** | §10-2 |
+| 담기 | greedy | **hybrid K=4** | [packing.md](packing.md) |
+| cut | 없음 | **`cuts_train.jsonl`** | §10-3 |
+| 가망없는 예제 | 정규화만 끔 | **학습에서 제외** | [repair.md §2](repair.md) |
+| `proof_ret` | `num_proofs 12` | **제거** | [repair.md §9](repair.md) — 25배 느렸다 |
+| `proof_tokens` | 640 | **256** | 위와 함께 |
+
+★ `proof_ret` 제거는 **방법론 변경**이다(`[PROOFS]` 가 빈다). 성능이 기대에 못 미치면
+**가장 먼저 되돌릴 후보**다 — 되돌리려면 속도 문제를 먼저 풀어야 한다(repair.md §9-5).
+
 ### 10-2. 성능 — 목표지표 `A + (1-A)×C`, **프롬프트 기준 · ALL**
 
 각 스플릿 1,000건. `experiment.txt` 목표는 90~95%.

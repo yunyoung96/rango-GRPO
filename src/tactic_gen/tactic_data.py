@@ -1413,8 +1413,45 @@ class LmDataset(Dataset):
             step_id.step_idx, step_id.proof_idx, dp, training=True
         )
 
-    def __getitem__(self, index: int) -> Any:
+    def _hopeless(self, example) -> bool:
+        """이 스텝이 '가망 없음'(how-to-learn §3 의 ③)인가.
+
+        gold lemma 가 후보 풀에도 없고 cut 도 못 세운 스텝이다. 정답이 **프롬프트에
+        없는 이름**을 쓰므로, 이걸로 학습하면 모델에게 *볼 수 없는 이름을 지어내라*고
+        가르치는 셈이다. `CUT_DROP_HOPELESS=1` 이면 학습에서 제외한다.
+        """
+        if not os.environ.get("CUTS_PATH", ""):
+            return False
+        from tactic_gen import cut_lookup
+        return cut_lookup.is_hopeless(
+            f"{getattr(example, 'file_name', '')}:"
+            f"{getattr(example, 'proof_idx', '')}:{getattr(example, 'step_idx', '')}")
+
+    def resolved_example(self, index: int):
+        """학습이 **실제로 쓰는** 예제. 가망 없는 스텝은 다음 인덱스로 치환한다.
+
+        ★ 가망 없는 스텝으로 학습하면 *볼 수 없는 이름을 지어내라*고 가르치는 셈이다.
+          길이(`__len__`)를 바꾸면 스케줄러·재개가 어긋나므로 **인덱스를 치환**한다.
+          실측 제외율 6.7% 라 같은 예제를 두 번 보는 일은 드물다.
+
+        사전점검 스크립트도 이걸 써야 학습과 같은 예제를 본다.
+        """
         example = self.raw_example(index)
+        if os.environ.get("CUT_DROP_HOPELESS", "0") != "1":
+            return example
+        n = len(self)
+        for _ in range(32):
+            if not self._hopeless(example):
+                return example
+            index = (index + 1) % n
+            try:
+                example = self.raw_example(index)
+            except Exception:
+                return example
+        return example
+
+    def __getitem__(self, index: int) -> Any:
+        example = self.resolved_example(index)
         clean_example = self.example_collator.collate(self.tokenizer, example)
         return self.tokenizer(
             clean_example,

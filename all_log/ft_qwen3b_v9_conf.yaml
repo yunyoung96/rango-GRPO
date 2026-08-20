@@ -8,7 +8,7 @@ example_collator:
   alias: proof-premise
   out_tokens: 128
   premise_tokens: 896
-  proof_tokens: 640
+  proof_tokens: 256
   script_tokens: 512
   state_tokens: 1024
 gradient_accumulation_steps: 4
@@ -39,7 +39,7 @@ tactic_data:
     alias: proof-premise
     out_tokens: 128
     premise_tokens: 896
-    proof_tokens: 640
+    proof_tokens: 256
     script_tokens: 512
     state_tokens: 1024
   data_loc: /tmp/coq-dataset
@@ -48,7 +48,6 @@ tactic_data:
     n_step_conf:
       alias: one
     num_premises: 100
-    num_proofs: 12
     premise:
       alias: sparse
       context_format_alias: basic
@@ -56,12 +55,6 @@ tactic_data:
       premise_filter:
         known_filter: proj-thm
       premise_format_alias: basic
-      sentence_db_loc: /tmp/coq-dataset/sentences.db
-    proof_ret:
-      alias: sparse
-      data_loc: /tmp/coq-dataset
-      kind: bm25
-      max_examples: 20
       sentence_db_loc: /tmp/coq-dataset/sentences.db
   hard_seq_len: 2048
   model_name: Qwen/Qwen2.5-Coder-3B-Instruct

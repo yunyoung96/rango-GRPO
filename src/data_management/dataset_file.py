@@ -761,24 +761,41 @@ st.register_type_strategy(
 
 
 class DPCache:
-    def __init__(self, cache_size: int = 128):
-        self.__cached_dps: dict[str, DatasetFile] = {}
-        self.__cached_keys: list[str] = []
+    """data_point 를 메모리에 들고 있는 LRU 캐시.
+
+    ★ 왜 중요한가.  `proof_retriever.get_available_proofs` 는 한 예제를 만들 때
+      **그 파일의 모든 의존 파일**을 읽는다.  data_point 하나가 평균 470KB JSON 이라
+      의존이 100개면 47MB 를 파싱한다.  학습은 셔플된 순서로 도므로 캐시가 작으면
+      같은 파일을 계속 다시 읽는다 — 실측으로 step 시간이 5초와 4분 사이에서 널뛰었다.
+
+    ★ 두 가지를 고쳤다.
+      ① 크기를 `DP_CACHE_SIZE` 로 조절할 수 있게 했다(기본 128 유지).
+         메모리는 대략 `크기 × 470KB × 워커수` 다.
+      ② LRU 갱신을 `list.index()/insert(0)` (O(n)) 에서 `OrderedDict` (O(1)) 로 바꿨다.
+         캐시를 키우면 옛 구현은 적중할 때마다 리스트를 훑어 **키울수록 느려졌다.**
+    """
+
+    def __init__(self, cache_size: int | None = None):
+        import collections as _c
+        if cache_size is None:
+            cache_size = int(os.environ.get("DP_CACHE_SIZE", "128"))
+        else:
+            # 명시 크기를 줬어도 환경변수로 키울 수 있게 한다(학습에서 일괄 조절)
+            cache_size = max(cache_size, int(os.environ.get("DP_CACHE_SIZE", "0")))
+        self.__cached_dps: "_c.OrderedDict[str, DatasetFile]" = _c.OrderedDict()
         self.__cache_size = cache_size
 
     def get_dp(
         self, dp_name: str, data_loc: Path, sentence_db: SentenceDB
     ) -> DatasetFile:
-        assert len(self.__cached_keys) == len(self.__cached_dps)
-        if dp_name in self.__cached_dps:
-            cur_idx = self.__cached_keys.index(dp_name)
-            self.__cached_keys.pop(cur_idx)
-            self.__cached_keys.insert(0, dp_name)
-            return self.__cached_dps[dp_name]
+        hit = self.__cached_dps.get(dp_name)
+        if hit is not None:
+            self.__cached_dps.move_to_end(dp_name, last=False)
+            return hit
         dp_loc = data_loc / DATA_POINTS_NAME / dp_name
         dp_obj = DatasetFile.load(dp_loc, sentence_db)
         self.__cached_dps[dp_name] = dp_obj
-        self.__cached_keys.insert(0, dp_name)
-        if self.__cache_size < len(self.__cached_keys):
-            del self.__cached_dps[self.__cached_keys.pop()]
+        self.__cached_dps.move_to_end(dp_name, last=False)
+        while self.__cache_size < len(self.__cached_dps):
+            self.__cached_dps.popitem(last=True)
         return dp_obj

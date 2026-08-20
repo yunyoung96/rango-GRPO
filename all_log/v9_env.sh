@@ -27,3 +27,11 @@ export PREMISE_PACK_TOPK=4             # 상위 K 는 무조건
 export NORMALIZE_SKIP_STDLIB=1         # stdlib 이름은 정규화 안 함
 export INJECT_SKIP_STDLIB=1            # stdlib 정의는 주입 안 함
 export CUTS_PATH=data/cuts_train.jsonl # 미리 만든 cut
+
+# ── ★ 환각 제거 ──────────────────────────────────────────
+#  가망 없는 스텝(gold 가 풀에도 없고 cut 도 못 세움)은 **학습에서 뺀다.**
+#  그런 스텝의 정답은 프롬프트에 없는 이름을 쓰므로, 학습에 넣으면 모델에게
+#  "볼 수 없는 이름을 지어내라"고 가르치는 셈이다. 정규화만 끄는 것으로는
+#  부족하다 — 이름을 외우게 하는 것 자체가 문제다.
+#  실측 제외율: gold lemma 사용 스텝의 28.3% = 전체 예제의 6.7%
+export CUT_DROP_HOPELESS=1

@@ -43,7 +43,7 @@ import tactic_gen.tactic_data as TD  # noqa: E402
 from premise_selection import premise_client as PC  # noqa: E402
 
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 300
-CONF = os.environ.get("CONF", "all_log/ft_qwen3b_v8_conf.yaml")
+CONF = os.environ.get("CONF", "all_log/ft_qwen3b_v9_conf.yaml")
 fails = []
 
 
@@ -83,9 +83,14 @@ for i in range(N * 3):
     if n >= N:
         break
     try:
-        e = ds.raw_example(i)
+        # ★ 학습이 실제로 쓰는 예제(가망없는 것은 치환됨)를 봐야 한다
+        e = ds.resolved_example(i)
     except Exception:
         continue
+    if os.environ.get("CUT_DROP_HOPELESS", "0") == "1":
+        from tactic_gen import cut_lookup
+        if cut_lookup.is_hopeless(f"{e.file_name}:{e.proof_idx}:{e.step_idx}"):
+            st["J 학습에 들어간 hopeless"] += 1
     try:
         s = coll.collate(tok, e)
     except Exception as ex:
@@ -146,8 +151,28 @@ for i in range(N * 3):
     if n <= 40:
         st["H 재현성 일치"] += (coll.collate(tok, e) == s)
 
+# ★ 가망없는 예제 제외가 실제로 먹는지
+if os.environ.get("CUT_DROP_HOPELESS", "0") == "1":
+    from tactic_gen import cut_lookup
+    _hope = 0
+    for i in range(min(N * 3, 900)):
+        try:
+            e2 = ds.raw_example(i)
+        except Exception:
+            continue
+        if cut_lookup.is_hopeless(f"{e2.file_name}:{e2.proof_idx}:{e2.step_idx}"):
+            _hope += 1
+    st["J 원본 hopeless"] = _hope
+
 print(f"\n   검사한 예제 {n}건")
 chk(st["I 예외"] == 0, "I. collate 예외 0", f"{st['I 예외']}건")
+if os.environ.get("CUT_DROP_HOPELESS", "0") == "1":
+    # __getitem__ 이 hopeless 를 건너뛰므로, 실제로 만들어진 예제에는 하나도 없어야 한다
+    chk(st["J 학습에 들어간 hopeless"] == 0,
+        "J. 가망없는 예제가 학습에서 제외됨",
+        f"통과한 hopeless {st['J 학습에 들어간 hopeless']}건 "
+        f"(원본 {min(N*3,900)}건 중 {st.get('J 원본 hopeless',0)}건이 hopeless)"
+        "  ★ 0 이 아니면 환각을 계속 가르친다")
 chk(st["B 라벨0"] == 0, "B. 라벨이 0개인 예제 없음",
     f"{st['B 라벨0']}건  ★ 있으면 학습이 아무것도 못 배운다")
 chk(st["B 마스킹 예외"] == 0, "B. 마스킹 예외 0", f"{st['B 마스킹 예외']}건")

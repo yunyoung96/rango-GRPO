@@ -9,6 +9,8 @@
 | 목적 | 문서 |
 |---|---|
 | **본학습 설정만 알고 싶다** | [final.md §10](final.md) — 환경변수·성능·판정규칙 |
+| **환각을 어떻게 없앴나** | [repair.md](repair.md) — 가망없는 예제 제외 + 판정 수정 |
+| **학습이 왜 느렸나** | [repair.md §9](repair.md) — `proof_ret` 이 25배 느리게 했다 |
 | 왜 이렇게 됐나 (처음부터) | [diagnose.md](diagnose.md) — 진단·시도·실패 |
 | 학습에 어떻게 반영되나 | [details.md](details.md) — 정규화·collate 구현 디테일 |
 | 프롬프트에 뭘 담나 | [packing.md](packing.md) — greedy/skip/knapsack/**hybrid** |

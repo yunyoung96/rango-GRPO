@@ -37,6 +37,7 @@ opam 환경을 새로 만드는 것은 느리고 불안정하다. → **여기�
 import collections
 import copy
 import json
+import re
 import os
 import sys
 import time
@@ -115,6 +116,87 @@ def _cut_ok(c: str) -> bool:
     return True
 
 
+
+# ── 선언 종류 사전 — cut 대상인 이름과 아닌 이름을 가른다 ────────────────────
+#  ★ 왜 필요한가.  `gold_lemmas` 는 tactic 에서 **전역 이름**을 뽑는데, 그중에는
+#    lemma 가 아니라 **함수·타입**이 섞인다(`unfold closure2`, `destruct (eq_dec a b)`,
+#    `rewrite -/(app [a] _)`).  실측: need_coq 1,149개 중 1,054개(91.7%)가
+#    Definition/Fixpoint 였다.
+#
+#    함수는 **명제가 아니라 assert 할 수 없다.**  게다가 후보 풀은 설계상
+#    `PROJ_THM_FILTER_CONF` 가 DEFINITION·FIXPOINT·INDUCTIVE·RECORD·CLASS 를 전부
+#    제외하므로 **함수 이름은 애초에 풀에 없다.**  그걸 "검색 실패"로 세면
+#    고칠 수 없는 것을 고치려 드는 셈이다.
+#
+#    함수 이름은 검색이 아니라 goal 본문 · [TYPES] · [DEFS] 주입으로 모델에 도달한다.
+#    그래서 여기서는 **명제인 이름만** cut 판정에 쓰고, 함수 이름은 goal 에 보이는지만
+#    확인한다(안 보이면 그때는 진짜 가망 없음).
+_PROVABLE = {
+    "Lemma", "Theorem", "Corollary", "Proposition", "Fact", "Remark", "Property",
+    "Axiom", "Parameter", "Hypothesis", "Variable", "Instance",
+}
+_DECL_HEAD = re.compile(
+    r"^\s*(?:#\[[^\]]*\]\s*)?"
+    r"(?:Global\s+|Local\s+|Program\s+|Polymorphic\s+|Monomorphic\s+|#\[global\]\s*)*"
+    r"(Lemma|Theorem|Corollary|Proposition|Fact|Remark|Property|Definition|Fixpoint|"
+    r"CoFixpoint|Inductive|CoInductive|Record|Class|Instance|Structure|Variant|"
+    r"Axiom|Parameter|Hypothesis|Variable|Notation|Ltac|Let|Scheme)\b")
+_KIND: dict = {}
+_CTOR_PARENT: dict = {}   # 생성자 → 그것을 정의한 타입 (예: S → nat)
+
+
+_CTOR_HEAD = re.compile(r"\b(Inductive|CoInductive|Variant|Record|Structure|Class)\b")
+
+
+def _load_kinds(db_path) -> None:
+    """`sentences.db` 전체를 훑어 이름 → 선언 종류 사전을 만든다(약 30초).
+
+    ★ 선언 이름뿐 아니라 **생성자**도 넣는다.  `S`(nat) · `I`(True) · `eq_refl`(eq) ·
+      `Zpos`(Z) · `Acc_intro`(Acc) 같은 것들이다.  이들은 lemma 가 아니고 후보 풀에도
+      없다(풀은 정리만 담는다) — `[TYPES]` 로 Inductive 선언 전체가 주입되어 도달한다.
+      생성자를 lemma 로 오인하면 "검색 실패"로 세어 고칠 수 없는 것을 고치려 든다.
+    """
+    import sqlite3
+    con = sqlite3.connect(str(db_path))
+    for (txt,) in con.execute("select text from sentence"):
+        t = txt or ""
+        m = _DECL_HEAD.match(t)
+        if not m:
+            continue
+        d = declname(t)
+        if d and d not in _KIND:
+            _KIND[d] = m.group(1)
+        # 생성자 추출 — `Inductive T := A | B : … | C : …`
+        if ":=" in t and _CTOR_HEAD.search(t.split(":=", 1)[0]):
+            for part in t.split(":=", 1)[1].split("|"):
+                mc = re.match(r"\s*([A-Za-z_][\w']*)", part)
+                if mc:
+                    _KIND.setdefault(mc.group(1), "Constructor")
+                    if d:
+                        _CTOR_PARENT.setdefault(mc.group(1), d)
+        # Record/Class 필드도 사영함수라 lemma 가 아니다 — `{ f1 : T; f2 : T }`
+        if _CTOR_HEAD.search(t[:40]) and "{" in t:
+            body = t[t.index("{") + 1:]
+            for fld in re.finditer(r"([A-Za-z_][\w']*)\s*:(?!=)", body):
+                _KIND.setdefault(fld.group(1), "Field")
+    con.close()
+
+
+def _is_provable(name: str) -> bool:
+    """이 이름이 **명제**인가(= assert 대상이 될 수 있는가).
+
+    ★ 사전에 **없으면 명제가 아니라고 본다.**  `sentences.db` 는 전 파일의 모든 문장을
+      담으므로, 거기 선언이 없는 이름은 전역 이름이 아니다 — 지역 가설(`HH`)이거나
+      `gold_lemmas` 의 오추출이다.  그런 이름을 "검색 실패"로 세면 고칠 수 없는 것을
+      고치려 든다.  대신 **프롬프트에 보이는지**를 따로 확인하므로(아래 fn_unseen),
+      정말 못 읽는 이름은 그때 가망 없음으로 잡힌다 — 놓치지 않는다.
+    """
+    k = _KIND.get(name)
+    if k is None:
+        k = _KIND.get(name.split(".")[-1])
+    return k in _PROVABLE
+
+
 def _tlen(t: str) -> int:
     v = _TL.get(t)
     if v is None:
@@ -152,6 +234,11 @@ st = collections.Counter()
 fail_why = collections.Counter()
 stmts: dict[str, str] = {}
 need_coq: list[dict] = []
+# ★ 선언 종류 사전을 먼저 만든다(약 20초). 이게 없으면 함수 이름을 lemma 로 오인한다.
+print("   선언 종류 사전 로딩…", flush=True)
+_load_kinds(conf.sentence_db_loc)
+print(f"   선언 종류 사전 {len(_KIND):,}개", flush=True)
+
 t0 = time.time()
 # ★ 원자적 쓰기 — 도중에 읽히면 반쪽 파일을 학습에 쓰게 된다(실측으로 당했다).
 #   임시 이름으로 쓰고 **끝나면** 제자리로 옮긴다.
@@ -165,10 +252,44 @@ for i in range(min(N, len(ds))):
         continue
     state = getattr(e, "proof_state", "") or ""
     tac = (e.next_steps[0] if getattr(e, "next_steps", None) else "").strip()
-    golds = gold_lemmas(tac, local_names(state))
-    if not golds:
+    golds_all = gold_lemmas(tac, local_names(state))
+    if not golds_all:
         continue
-    st["gold 사용 스텝"] += 1
+    # ★ 명제인 이름만 cut 판정에 쓴다(§ _is_provable).  함수·타입 이름은 검색 대상이
+    #   아니라 goal/[TYPES]/[DEFS] 로 도달한다 — goal 에 보이는지만 확인한다.
+    golds = [g for g in golds_all if _is_provable(g)]
+    fn_names = [g for g in golds_all if g not in golds]
+    # 함수·타입·생성자가 **프롬프트에서 읽히는가**.
+    #   ★ goal 만 보면 너무 엄격하다 — 프롬프트에는 [SCRIPT](지금까지의 증명)와
+    #     [PREMISES] 도 들어간다.  실측: goal 만 볼 때 '안 보임' 170건이 대부분
+    #     [SCRIPT] 나 premise 본문에서 읽혔다.
+    #   · 이름 자체가 goal/가설/증명스크립트에 나오면 읽힌다
+    #   · 생성자는 **부모 타입**이 나오면 [TYPES] 주입으로 선언 전체가 따라온다
+    #     (`S` 는 안 보여도 `nat` 이 보이면 `Inductive nat := O | S …` 가 주입된다)
+    #   · 프롬프트에 실제로 들어가는 premise 본문(아래 `_fit_text`)에 나와도 읽힌다
+    _script = getattr(e, "proof_script", "") or ""
+    _seen_txt = state + "\n" + _script
+
+    def _visible(g: str, extra: str = "") -> bool:
+        b = g.split(".")[-1]
+        hay = _seen_txt + extra
+        if re.search(r"(?<![\w'])" + re.escape(b) + r"(?![\w'])", hay):
+            return True
+        par = _CTOR_PARENT.get(g) or _CTOR_PARENT.get(b)
+        return bool(par and re.search(r"(?<![\w'])" + re.escape(par) + r"(?![\w'])", hay))
+
+    fn_unseen0 = [g for g in fn_names if not _visible(g)]
+    if fn_names:
+        st["함수·타입 이름 (cut 대상 아님)"] += len(fn_names)
+    # ★ 여기서 끝내지 않는다. 프롬프트에 실제로 들어가는 premise 본문에도 이름이 나올 수
+    #   있으므로, 랭킹까지 계산한 뒤(_fit_text) 다시 본다. 아래 `_finish_fn()` 참조.
+    _fn_only = not golds
+    if _fn_only and not fn_unseen0:
+        # 명제도 없고 함수 이름도 전부 읽힌다 → 아무 문제 없다.
+        st["명제 없음(함수 이름뿐) → cut 무관"] += 1
+        continue
+    if not _fn_only:
+        st["gold 사용 스텝"] += 1
     sid = ds.shuffled_idx.get_idx(ds.split, i)
     try:
         dp = DatasetFile.load(conf.data_loc / "data_points" / sid.file, sdb)
@@ -186,14 +307,14 @@ for i in range(min(N, len(ds))):
     gset = {j for j, nm in enumerate(names) if nm and nm in golds}
     _key0 = (f"{getattr(e, 'file_name', '')}:"
              f"{getattr(e, 'proof_idx', '')}:{getattr(e, 'step_idx', '')}")
-    if not gset:
+    if not gset and not _fn_only:
         # ★ gold 가 후보 풀에 아예 없다 → cut 도 못 만든다(how-to-learn §3 의 (3)).
-        #   이런 스텝은 **정규화를 끄고** 학습해야 한다: 정규화하면 정답이 `L92` 같은
-        #   프롬프트에 없는 무의미 토큰이 되어 모델이 **틀린 답을 외운다.**
-        #   진짜 이름은 최소한 의미 힌트(`add_comm` → 교환법칙)라도 남는다.
+        #   이런 스텝은 학습에서 뺀다(CUT_DROP_HOPELESS) — 정답이 프롬프트에 없는
+        #   이름을 쓰므로, 넣으면 *볼 수 없는 이름을 지어내라*고 가르치는 셈이다.
         st["gold 가 풀에 없음"] += 1
         fo.write(json.dumps({"kind": "step", "sid": _key0, "hopeless": True,
-                             "why": "gold 가 풀에 없음"}, ensure_ascii=False) + "\n")
+                             "why": "gold 가 풀에 없음",
+                             "miss": list(golds)}, ensure_ascii=False) + "\n")
         continue
 
     docs = [get_ids_from_sentence(p) for p in pool]
@@ -208,6 +329,29 @@ for i in range(min(N, len(ds))):
     o = sorted(range(len(pool)), key=lambda j: -sc[j])
     nfit = n_in_prompt(texts, o)          # ★ 프롬프트에 들어가는 개수
     pos = {j: r for r, j in enumerate(o)}
+
+    # ★ 프롬프트에 실제로 들어가는 premise 본문 — 함수 이름이 여기 나오면 읽힌다.
+    _fit_text = "\n".join(texts[j] for j in o[:nfit])
+    fn_unseen = [g for g in fn_names if not _visible(g, _fit_text)]
+    if fn_unseen:
+        st["  └ 그중 프롬프트에 안 보임"] += len(fn_unseen)
+    if _fn_only:
+        # 명제는 없고 함수 이름뿐인 스텝. 여기서 결론 낸다.
+        st["명제 없음(함수 이름뿐) → cut 무관"] += 1
+        if fn_unseen:
+            st["  └ ★ 가망 없음(함수 이름이 안 보임)"] += 1
+            fo.write(json.dumps({"kind": "step", "sid": _key0, "hopeless": True,
+                                 "why": "함수·타입 이름이 프롬프트에 없음",
+                                 "miss": fn_unseen}, ensure_ascii=False) + "\n")
+        continue
+    if fn_unseen:
+        # 명제는 있는데 **함수 이름**이 안 보인다 → cut 을 만들어도 그 이름은 못 읽는다.
+        st["명제는 되지만 함수 이름이 안 보임 → 가망 없음"] += 1
+        fo.write(json.dumps({"kind": "step", "sid": _key0, "hopeless": True,
+                             "why": "함수·타입 이름이 프롬프트에 없음",
+                             "miss": fn_unseen}, ensure_ascii=False) + "\n")
+        continue
+
     per_name: dict = {}
     for j in gset:
         per_name.setdefault(names[j], []).append(j)
@@ -305,6 +449,9 @@ os.replace(TMP, OUT)
 print(f"\n■ {SPLIT} — cut 사전생성 ① Coq 없는 경로  ({time.time()-t0:.0f}s)")
 print(f"   ★ 판정 기준: 프롬프트 포함(예산 {BUDGET}토큰) — 검색 순위 아님")
 for k in ("gold 사용 스텝", "gold 가 풀에 없음", "검색 성공 → cut 불필요", "cut 필요 스텝",
+          "함수·타입 이름 (cut 대상 아님)", "  └ 그중 프롬프트에 안 보임",
+          "명제는 되지만 함수 이름이 안 보임 → 가망 없음",
+          "명제 없음(함수 이름뿐) → cut 무관", "  └ ★ 가망 없음(함수 이름이 안 보임)",
           "① Coq 없이 명제 확보", "② Coq 필요", "cut tactic 조립 성공",
           "cut tactic 조립 실패"):
     print(f"   {k:26s} {st[k]:7d}")
