@@ -1,6 +1,7 @@
 from typing import Optional
 import functools
 import math
+import os
 import functools
 
 from proof_retrieval.bm25 import (
@@ -23,7 +24,10 @@ def compute_idfs(corpus: list[list[str]]) -> dict[str, float]:
     return idfs
 
 
-@functools.lru_cache(10000)
+# ★ 캐시 크기가 후보 문서 수보다 작으면 **매 예제마다 통째로 밀려** 적중률이 0 이 된다.
+#   의존이 많은 파일은 후보 문서가 수만 개다(실측 최대 예제 하나에 280초).
+#   `TFIDF_DOC_CACHE` 로 조절한다. 항목 하나는 작은 dict 라 10만개도 수백 MB 수준이다.
+@functools.lru_cache(int(os.environ.get("TFIDF_DOC_CACHE", "200000")))
 def compute_doc_tf(doc_str: str) -> dict[str, float]:
     doc = doc_from_hashable(doc_str)
     # doc = tokenize(premise)

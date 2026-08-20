@@ -35,3 +35,10 @@ export CUTS_PATH=data/cuts_train.jsonl # 미리 만든 cut
 #  부족하다 — 이름을 외우게 하는 것 자체가 문제다.
 #  실측 제외율: gold lemma 사용 스텝의 28.3% = 전체 예제의 6.7%
 export CUT_DROP_HOPELESS=1
+
+# ── 유사 증명 검색 속도 (speed.md) ────────────────────────
+#  비용이 극단적으로 치우쳐 있다 — 예제 중앙값 0.54초인데 최대 280초였고,
+#  그 한 건이 표본 전체 시간의 85% 였다. 의존이 많은 파일은 후보 문서가 수만 개다.
+#  원래 캐시(10,000)가 문서 수보다 작아 매 예제마다 통째로 밀렸다(적중률 0).
+export TFIDF_DOC_CACHE=200000    # tf/idf 문서 캐시 (항목이 작은 dict 라 수백 MB 수준)
+export DP_CACHE_SIZE=2048        # data_point LRU (의존 파일을 오래 들고 있는다)

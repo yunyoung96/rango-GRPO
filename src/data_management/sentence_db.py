@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+import os
 from typing import Optional
 import sys, os
 import time
@@ -25,11 +27,51 @@ class DBSentence:
 class SentenceDB:
     TABLE_NAME = "sentence"
 
-    def __init__(self, connection: Connection, cursor: Cursor) -> None:
-        self.connection = connection
-        self.cursor = cursor
+    def __init__(self, connection: Connection, cursor: Cursor,
+                 db_path: "Path | None" = None) -> None:
+        self.__connection = connection
+        self.__cursor = cursor
+        self.__db_path = db_path
+        self.__owner_pid = os.getpid()
         self.__found_cache: dict[DBSentence, int] = {}
         self.__contains_cache: dict[int, bool] = {}
+
+    # ── ★ fork 안전성 ────────────────────────────────────────────────────────
+    #  SQLite 연결은 **fork() 를 넘어 공유하면 안 된다**(공식 문서 명시). 그런데
+    #  `SentenceDB.load` 는 연결 하나를 만들고, 그게 dataloader 워커가 fork 되기
+    #  **전**에 생성된다. 워커 12개가 커서 하나를 함께 쓰면 조회가 **직렬화**되고
+    #  락 경합이 난다.
+    #
+    #  실측: 같은 코드가 단일 프로세스 벤치마크로는 예제당 0.38초인데, 워커 12개인
+    #  실제 학습에서는 step(32예제) 당 80초였다 — 병렬이 전혀 안 되고 있었다.
+    #
+    #  고치는 법은 간단하다. **프로세스가 바뀌면 자기 연결을 새로 연다.**
+    #  쿼리도 결과도 그대로이고, 달라지는 것은 어느 연결로 읽느냐뿐이다.
+    def __ensure_own_conn(self) -> None:
+        pid = os.getpid()
+        if pid == self.__owner_pid:
+            return
+        if self.__db_path is None:
+            # 경로를 모르면 재연결할 수 없다 — 기존 동작을 유지한다(안전한 쪽).
+            self.__owner_pid = pid
+            return
+        con = connect(self.__db_path)
+        self.__connection = con
+        self.__cursor = con.cursor()
+        self.__owner_pid = pid
+        # 캐시는 프로세스마다 새로 채운다(값은 같지만 메모리를 공유하지 않게)
+        self.__found_cache = {}
+        self.__contains_cache = {}
+
+    @property
+    def connection(self) -> Connection:
+        self.__ensure_own_conn()
+        return self.__connection
+
+    @property
+    def cursor(self) -> Cursor:
+        self.__ensure_own_conn()
+        return self.__cursor
 
     def contains_id(self, id: int) -> bool:
         if id in self.__contains_cache:
@@ -151,7 +193,8 @@ class SentenceDB:
             db_path,
         )
         cur = con.cursor()
-        return cls(con, cur)
+        # ★ 경로를 함께 넘긴다 — 워커에서 자기 연결을 새로 열 때 필요하다.
+        return cls(con, cur, db_path)
 
     @classmethod
     def create(cls, db_path: Path) -> SentenceDB:

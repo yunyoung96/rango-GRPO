@@ -1,6 +1,7 @@
 from typing import Optional
 import functools
 import math
+import os
 from data_management.dataset_file import get_ids_from_goal, get_ids_from_sentence
 
 
@@ -12,7 +13,9 @@ def doc_from_hashable(s: str) -> list[str]:
     return s.split("<DOCSEP>")
 
 
-@functools.lru_cache(10000)
+# ★ 후보 문서가 수만 개인 예제가 있어서 10,000 캐시는 매번 통째로 밀린다(적중률 0).
+#   `TFIDF_DOC_CACHE` 로 함께 조절한다.
+@functools.lru_cache(int(os.environ.get("TFIDF_DOC_CACHE", "200000")))
 def bm_compute_term_freqs(doc_str: str) -> dict[str, int]:
     doc = doc_from_hashable(doc_str)
     return compute_term_freqs(doc)

@@ -442,11 +442,10 @@ NPROC=2 bash all_log/run_qwen3b_v9.sh
 | 담기 | greedy | **hybrid K=4** | [packing.md](packing.md) |
 | cut | 없음 | **`cuts_train.jsonl`** | §10-3 |
 | 가망없는 예제 | 정규화만 끔 | **학습에서 제외** | [repair.md §2](repair.md) |
-| `proof_ret` | `num_proofs 12` | **제거** | [repair.md §9](repair.md) — 25배 느렸다 |
-| `proof_tokens` | 640 | **256** | 위와 함께 |
+| `proof_ret` | `num_proofs 12` | **동일** (의존 로드만 132배 최적화) | [speed.md](speed.md) |
 
-★ `proof_ret` 제거는 **방법론 변경**이다(`[PROOFS]` 가 빈다). 성능이 기대에 못 미치면
-**가장 먼저 되돌릴 후보**다 — 되돌리려면 속도 문제를 먼저 풀어야 한다(repair.md §9-5).
+★ `[PROOFS]` 는 v8 과 **똑같이** 들어간다. 속도 문제는 `metadata_only` 로 풀었고
+프롬프트가 바이트 단위로 동일함을 검증했다([speed.md §3-1](speed.md)).
 
 ### 10-2. 성능 — 목표지표 `A + (1-A)×C`, **프롬프트 기준 · ALL**
 

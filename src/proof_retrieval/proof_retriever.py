@@ -116,7 +116,10 @@ def get_available_proofs(
     # print("Dependencies", dp_obj.dependencies)
     for dep in dp_obj.dependencies:
         try:
-            dep_obj = dp_cache.get_dp(dep, data_loc, sentence_db)
+            # ★ 여기서 필요한 것은 `dep_obj.proofs` 와 `dep_obj.dp_name` 뿐이다.
+            #   premise 를 해석하면 파일당 1,000개 넘는 문장을 DB 에서 꺼내느라
+            #   로드가 132배 느려진다(2.772s → 0.021s). 그게 학습을 굶기고 있었다.
+            dep_obj = dp_cache.get_dp(dep, data_loc, sentence_db, metadata_only=True)
         except FileNotFoundError:
             if dep not in __logged_deps:
                 _logger.warning(f"Could not find dependency: {dep}")
@@ -187,11 +190,26 @@ class SparseProofRetriever:
         reference_step_idxs: list[int] = []
         docs: list[list[str]] = []
         for ref_proof, ref_dp in available_proofs:
+            # ★ 문서(goal 토큰)를 **증명 객체에 메모이즈**한다.
+            #   같은 의존 파일이 다음 예제에서 또 나오면 DPCache 가 같은 객체를 주므로
+            #   여기서 다시 계산할 필요가 없다. 계산식은 그대로라 결과가 동일하다.
+            #
+            #   왜 필요한가: 비용이 극단적으로 치우쳐 있다. 실측 예제 25건 중
+            #   중앙값 0.54초인데 **한 건이 280초**였고, 그 한 건이 전체의 85% 였다.
+            #   의존이 많은 파일은 후보 문서가 수만~수십만 개가 되고, 그걸 예제마다
+            #   처음부터 다시 만든다(O(문서수 x 토큰수)).
+            ids_list = getattr(ref_proof, "_rango_doc_ids", None)
+            if ids_list is None or len(ids_list) != len(ref_proof.steps):
+                ids_list = [self.get_goal_ids(s.goals) for s in ref_proof.steps]
+                try:
+                    ref_proof._rango_doc_ids = ids_list
+                except Exception:
+                    pass
             for s_idx, step in enumerate(ref_proof.steps):
                 reference_dp_files.append(ref_dp)
                 reference_proofs.append(ref_proof)
                 reference_step_idxs.append(s_idx)
-                docs.append(self.get_goal_ids(step.goals))
+                docs.append(ids_list[s_idx])
         assert len(docs) == len(reference_proofs)
         match self.kind:
             case SparseKind.TFIDF:
