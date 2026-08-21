@@ -23,13 +23,13 @@ unset CUTS_PATH
 
 say "3차 시작 — TEST n=1500 · rrf,eq,eqa,structural (질의 충실화 후 재측정)"
 nice -n 19 python3 -u scripts/exp_abcd.py --split test --n 1500 \
-    --rankers rrf,eq,eqa,structural > "$OUT/round3_test.log" 2>&1
+    --rankers rrf,eq,eqa,eqx,structural > "$OUT/round3_test.log" 2>&1
 say "3차 완료 → $OUT/round3_test.log"
 
 wait_free
 say "4차 시작 — VAL n=1500 · rrf,eq,eqa,structural"
 nice -n 19 python3 -u scripts/exp_abcd.py --split val --n 1500 \
-    --rankers rrf,eq,eqa,structural > "$OUT/round4_val.log" 2>&1
+    --rankers rrf,eq,eqa,eqx,structural > "$OUT/round4_val.log" 2>&1
 say "4차 완료 → $OUT/round4_val.log"
 
 touch "$OUT/chain.done"

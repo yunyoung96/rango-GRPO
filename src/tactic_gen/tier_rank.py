@@ -303,6 +303,66 @@ def prem_alpha(ps):
     return alpha_canon(ps[1], ps[0])
 
 
+# ══ 전체 명제의 α-정규형 — `exact` 를 정확히 특징짓는다 ═════════════════
+#
+#   위의 `goal_alpha`/`prem_alpha` 는 **결론만** 비교한다. 그래서
+#   `∀x, P x → Q x` 와 goal `Q a` 가 매치되는데 `exact` 는 실패한다 — 가설을
+#   버렸기 때문이다. 그리고 goal 쪽 메타변수를 정규식(`goal_locals`)으로 추측한다.
+#
+#   두 흠을 한 번에 없애는 방법: **전체 명제**를 비교하고, goal 문맥은 건드리지 않는다.
+#
+#       ⟦d⟧ = α( ∀mv. h₁ → … → hₖ → c )      d = (mv, [h…], c) = decompose 결과
+#
+#   premise 와 goal 이 **같은 함수**를 통과하므로 비교가 완전히 대칭이고,
+#   `goal_locals` 가 아예 필요 없어진다(휴리스틱 제거).
+#
+#   ★ 정리 (건전성).  ⟦p⟧ = ⟦g⟧  ⟹  `exact p` 가 goal g 를 닫는다.
+#     Coq 은 항을 de Bruijn 으로 표현하므로 α-동치는 항의 **동일성**이다.
+#   ★ 역은 변환(conversion, δβιζη)만큼 약하다 — `≡α` 는 변환의 **판정 가능한
+#     구문적 핵**이고 O(n) 이다. 변환 전체는 커널 호출이 필요하다.
+#
+#   ★ 받침(성질 S)이 정리로 강해진다: goal 이 **닫힌 명제**일 때만 발화한다.
+#     assert 직후의 subgoal 이 정확히 그것이고, 일반 goal(문맥 변수를 가진)에는
+#     구조적으로 발화하지 않는다. 게이트가 필요 없는 이유가 여기서 완결된다.
+
+
+def _mk_impl(hyps, concl):
+    """가설을 화살표로 되감는다: h₁ → … → hₖ → c. `canon` 의 `impl` 표기를 쓴다."""
+    t = concl
+    for h in reversed(hyps):
+        t = ("app", ("app", ("id", "impl"), h), t)
+    return t
+
+
+def alpha_stmt(d):
+    """`decompose` 결과 → **전체 명제**의 α-정규형. 파싱 실패면 None."""
+    if d is None:
+        return None
+    c = parse_toks(d[2])
+    if c is None:
+        return None
+    hs = []
+    for h in d[1]:
+        ht = parse_toks(h)
+        if ht is None:
+            return None                       # 가설을 못 읽으면 비교를 포기한다
+        hs.append(canon(ht))                  # ★ 버리지 않는다 — 버리면 건전성이 깨진다
+    return alpha_canon(_mk_impl(hs, canon(c)), set(d[0]))
+
+
+def prem_stmt(text: str):
+    """premise 선언 → 전체 명제의 α-정규형."""
+    return alpha_stmt(decompose(text or ""))
+
+
+def goal_stmt(state: str):
+    """goal → 전체 명제의 α-정규형. **premise 와 같은 경로**를 탄다."""
+    c = goal_conclusion(state)
+    if not c:
+        return None
+    return alpha_stmt(decompose("Lemma _g : " + c.rstrip(". ") + "."))
+
+
 def alpha_eq(ga, ps) -> bool:
     """premise 결론과 goal 이 α-동치인가  (⟺ 서로 포섭한다: L ⊑ g ∧ g ⊑ L)."""
     if ga is None:

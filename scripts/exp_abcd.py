@@ -62,7 +62,8 @@ from tactic_gen.applicable import (canon, decompose, match, parse,  # noqa: E402
 from tactic_gen.assert_split import statement_of  # noqa: E402
 from tactic_gen.tier_rank import (TierRanker, declname, prem_struct,  # noqa: E402
                                   goal_struct, sig_hyp_match, head_of, sig_au_dist,
-                                  au_res_gen, sig_au_f, goal_alpha, prem_alpha)
+                                  au_res_gen, sig_au_f, goal_alpha, prem_alpha,
+                                  goal_stmt, prem_stmt)
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--split", default="test",
@@ -84,7 +85,7 @@ CTR_TOP = A.ctr_top
 RANKERS = [x for x in A.rankers.split(",") if x]
 # ★ 랭커 이름 오타/구버전 이름을 **시작 전에** 잡는다. 예전엔 잘못된 이름이 매 스텝
 #   예외로 빠져 결과가 전부 0.0% 로 나왔고, 20분을 버린 뒤에야 알았다.
-_KNOWN = {"tfidf", "rrf", "struct", "eq", "eqa", "cov", "eqcov",
+_KNOWN = {"tfidf", "rrf", "struct", "eq", "eqa", "eqx", "cov", "eqcov",
           "structural", "structural_mmr", "gbdt", "ctr",
           "hyp", "sub", "cooc", "nsub", "allsig",
           # ★ 반유니피케이션 비유사도 D_λ (future-idea.md ⑮-A)
@@ -222,6 +223,22 @@ def rank_all(state, texts, pool, tf, tr, kinds, docs=None, names=None,
             EQFIRE[f"{PHASE}:α발화질의"] += (nf > 0)
         return _ab
 
+    _xb = None
+
+    def stmt_bonus():
+        nonlocal _xb
+        if _xb is None:
+            _xb = [0.0] * n
+            gq = goal_stmt(state)
+            if gq is not None:
+                for j in cand:
+                    if prem_stmt(texts[j]) == gq:
+                        _xb[j] = 1.0
+            nf = int(sum(_xb))
+            EQFIRE[f"{PHASE}:x발화"] += nf
+            EQFIRE[f"{PHASE}:x발화질의"] += (nf > 0)
+        return _xb
+
     _covv = None
 
     def cov_rrf():
@@ -256,6 +273,13 @@ def rank_all(state, texts, pool, tf, tr, kinds, docs=None, names=None,
         elif k == "eq":
             eb = eq_bonus()
             out[k] = [rrf[j] + 3.0 * eb[j] for j in range(n)]
+        elif k == "eqx":
+            # ★ 전체 명제(∀mv. h₁→…→c)의 α-정규형 비교.
+            #   `eqa` 는 결론만 봐서 `∀x, P x → Q x` 와 `Q a` 가 맞아버린다 —
+            #   exact 는 실패한다. 가설을 화살표로 되감으면 **발화 ⟺ exact 성공**.
+            #   덤으로 goal 문맥을 추측할 필요가 없어져 정규식 휴리스틱이 사라진다.
+            xb = stmt_bonus()
+            out[k] = [rrf[j] + 3.0 * xb[j] for j in range(n)]
         elif k == "eqa":
             # ★ α-동치 = L ⊑ g ∧ g ⊑ L — 포섭 선순서를 부분순서로 만드는 표준 몫.
             #   `eq` 는 몫을 안 낸 대표원 비교(이름 의존)이고, `⊑` 단독은 이데알이라
@@ -615,6 +639,25 @@ def selftest() -> int:
     _ok2 = _bot != goal_alpha(_sub)
     print(f"   [{'✓' if _ok2 else '✗'}] eqa  공허 premise(⊥)에는 발화하지 않는가 → {_ok2}")
     bad += (not _ok2)
+    # ★ eqx — **발화 ⟺ exact 성공** 을 못박는다. 여기가 깨지면 랭커가 exact 로
+    #   닫히지 않는 premise 를 1순위로 올린다(= cut 이 컴파일에 실패한다).
+    _EX = [("C 국면 subgoal · 이름 다름", "\n\nforall p q : nat, p + q = q + p",
+            "Lemma add_comm x y : x + y = y + x.", True),
+           ("가설 lemma vs 결론만 같은 goal", "a : nat\n\nQ a",
+            "Lemma foo : forall x, P x -> Q x.", False),
+           ("가설 개수 다름", "\n\nforall x : nat, Q x",
+            "Lemma foo : forall x, P x -> Q x.", False),
+           ("공허 premise(⊥)", "\n\nforall a b : nat, a + b = b + a",
+            "Lemma triv (P : Prop) (h : P) : P.", False)]
+    _nb = 0
+    for _tag, _st, _p, _want in _EX:
+        _g = goal_stmt(_st)
+        _got = _g is not None and prem_stmt(_p) == _g
+        if _got != _want:
+            print(f"   [✗] eqx  {_tag}: 발화={_got} 기대={_want}")
+            _nb += 1
+    print(f"   [{'✓' if not _nb else '✗'}] eqx  발화 ⟺ exact 성공 ({len(_EX)}건)")
+    bad += _nb
     # assert 변환 + 이름 충돌
     from tactic_gen import assert_split as AS
     AS.WHY.clear()

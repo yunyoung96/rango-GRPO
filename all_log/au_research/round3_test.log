@@ -3,7 +3,7 @@
    [✓] struct  `a+b=b+a` 로 add_comm 이 1위인가 → Lemma add_comm
    [✓] eqa  이름이 달라도 α-동치로 잡는가 (x,y ↔ p,q) → True
    [✓] eqa  공허 premise(⊥)에는 발화하지 않는가 → True
+   [✓] eqx  발화 ⟺ exact 성공 (4건)
    [✓] assert 이름이 기존 H_asrt0 을 피하는가 → assert (forall n : nat, n <= n) as H_asrta0. { exact (L). }
    [✓] evar 타입이 eassert + _ 로 구제되는가 → eassert (forall (l : list _) (d : _), nth 0 l d = d) as H_asrt0. { exa
    자기검사: 통과
-   100/1500  (92s · 0.92s/건 · C 68건 · D 25건)

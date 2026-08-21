@@ -199,9 +199,106 @@ for g in gs_:
 ok(sup_ok, "eq 발화 ⟹ τ(g)=1  — 받침이 C 국면에 갇힌다",
    "게이트 모형 ω·(…) 의 매개변수 0개짜리 특수해")
 
+# ══ X. eqx — 전체 명제의 α-정규형 ═════════════════════════════════════════
+print("\n■ X  eqx = 전체 명제의 α-정규형 — `exact` 를 정확히 특징짓는다\n")
+
+from tactic_gen.tier_rank import (prem_stmt, goal_stmt, alpha_canon,  # noqa: E402
+                                  _mk_impl)
+from tactic_gen.applicable import decompose, match, parse_toks  # noqa: E402
+
+
+def raw_stmt(d):
+    """α-정규화 **전** 의 전체 명제 트리와 메타변수. 포섭 판정에 쓴다."""
+    if d is None:
+        return None, None
+    c = parse_toks(d[2])
+    if c is None:
+        return None, None
+    hs = []
+    for h in d[1]:
+        ht = parse_toks(h)
+        if ht is None:
+            return None, None
+        hs.append(canon(ht))
+    return _mk_impl(hs, canon(c)), set(d[0])
+
+
+def subsumes(a, amv, b):
+    """a ⊑ b — a 의 메타변수를 채워 b 를 만들 수 있는가."""
+    return a is not None and b is not None and match(a, b, amv, {})
+
+
+DECLS = [
+    "Lemma add_comm x y : x + y = y + x.",
+    "Lemma add_comm2 (p q : nat) : p + q = q + p.",     # 위와 α-동치
+    "Lemma mul_comm x y : x * y = y * x.",
+    "Lemma foo : forall x, P x -> Q x.",
+    "Lemma foo2 : forall y, P y -> Q y.",               # 위와 α-동치
+    "Lemma bar : forall x, Q x.",                       # 가설이 없다
+    "Lemma triv (P : Prop) (h : P) : P.",               # 바닥 ⊥
+    "Lemma refl : forall (A : Type) (a : A), a = a.",
+    "Lemma add_0_r n : n + 0 = n.",
+]
+STS = []
+for t in DECLS:
+    tr, mv = raw_stmt(decompose(t))
+    if tr is not None:
+        STS.append((t, tr, mv, prem_stmt(t)))
+
+# X1 — 강제성: α-정규형 동일 ⟺ 서로 포섭 (⊑ ∩ ⊒)
+bad = []
+for na, ta, mva, aa in STS:
+    for nb, tb, mvb, ab in STS:
+        lhs = (aa == ab)
+        rhs = bool(subsumes(ta, mva, tb)) and bool(subsumes(tb, mvb, ta))
+        if lhs != rhs:
+            bad.append((na[:28], nb[:28], lhs, rhs))
+ok(not bad, "X1 강제성  ⟦p⟧ = ⟦g⟧  ⟺  p ⊑ g ∧ g ⊑ p",
+   f"{len(STS)}² = {len(STS)**2}쌍 전수" if not bad else str(bad[:2]))
+
+# X2 — 동치관계
+refl = all(a == a for _, _, _, a in STS)
+symm = all((a == b) == (b == a) for _, _, _, a in STS for _, _, _, b in STS)
+tran = all((not ((a == b) and (b == c))) or (a == c)
+           for _, _, _, a in STS for _, _, _, b in STS for _, _, _, c in STS)
+ok(refl and symm and tran, "X2 동치관계  반사·대칭·추이",
+   "선순서 ⊑ 를 부분순서로 만드는 표준 몫")
+
+# X3 — 바닥 ⊥ 는 모두를 포섭하지만 어떤 것과도 동치가 아니다
+bot = [x for x in STS if "triv" in x[0]]
+if bot:
+    _, tb_, mvb_, ab_ = bot[0]
+    subs_all = sum(1 for _, t, _, _ in STS if subsumes(tb_, mvb_, t))
+    eq_all = sum(1 for _, _, _, a in STS if a == ab_)
+    ok(subs_all >= len(STS) - 1 and eq_all == 1,
+       "X3 바닥 ⊥ 은 ⊑ 로는 거의 전부를 포섭하나 ≡α 로는 자기 자신뿐",
+       f"⊑ {subs_all}/{len(STS)} · ≡α {eq_all}/{len(STS)}  ← A 붕괴의 원인이 여기서 제거된다")
+
+# X4 — 몫 위에서 잘 정의되는가: α-변형을 줘도 값이 안 바뀌는가
+ren = {"x": "u", "y": "v", "p": "u", "q": "v", "n": "u", "a": "u", "A": "U"}
+import re as _re  # noqa: E402
+
+
+def rename(txt):
+    return _re.sub(r"(?<![\w'])([A-Za-z])(?![\w'])", lambda m: ren.get(m.group(1), m.group(1)), txt)
+
+
+wd = all(prem_stmt(t) == prem_stmt(rename(t)) for t in DECLS)
+ok(wd, "X4 몫 위에서 잘 정의됨  p ≡α p′ ⟹ ⟦p⟧ = ⟦p′⟧",
+   "결론만 보던 d₀ 는 이 성질이 없었다 — 이름을 바꾸면 값이 바뀐다")
+
+# X5 — 결론만 비교하면 건전성이 깨진다 (eqa 의 흠을 반례로 명시)
+c_foo, mv_foo = parse_toks(decompose("Lemma foo : forall x, P x -> Q x.")[2]), {"x"}
+c_bar = parse_toks(decompose("Lemma bar : forall z, Q z.")[2])
+concl_same = alpha_canon(canon(c_foo), mv_foo) == alpha_canon(canon(c_bar), {"z"})
+stmt_same = prem_stmt("Lemma foo : forall x, P x -> Q x.") == prem_stmt("Lemma bar : forall z, Q z.")
+ok(concl_same and not stmt_same,
+   "X5 결론만 비교하면 `∀x,P x→Q x` 와 `∀z,Q z` 가 같아진다 — 전체 명제는 안 그렇다",
+   "exact 가 실패하는데 발화하던 자리")
+
 print()
 print("=" * 66)
 if fails:
     print("✗ 실패:", fails)
     sys.exit(1)
-print("✓ L · Z · S 모두 확인")
+print("✓ L · Z · S · X 모두 확인")
