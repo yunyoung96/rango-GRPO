@@ -58,10 +58,14 @@ print(f"■ 예산 어긋남 실측   TRAIN {TOTAL:,} · {len(SPOTS)}곳 × {N_P
 QUAL_NORM = re.compile(r"(?<![\w'])[A-Za-z_][\w']*\.([TfCLG]\d+)(?![\w'])")
 
 lost = []
-safe_rank = []
+safe_n = []
 overflow = 0
 qual_hits = collections.Counter()
 n = 0
+nfit_all = []
+
+# 모듈 한정 이름의 꼬리가 정규화 이름으로 바뀐 흔적: `X.T3` `X.f0` `X.L7`
+QUAL_NORM = re.compile(r"(?<![\w'])[A-Za-z_][\w']*\.([TfCLG]\d+)(?![\w'])")
 
 for sp in SPOTS:
     for i in range(sp, min(sp + N_PER, TOTAL)):
@@ -70,31 +74,44 @@ for sp in SPOTS:
         except Exception:
             continue
         n += 1
-        prompt = s.rsplit("[TACTIC]", 1)[0]
-        if "[PREMISES]" not in prompt:
-            continue
-        seg = prompt.split("[PREMISES]", 1)[1]
-        for h in ("[PROOFS]", "[SCRIPT]", "[STATE]", "[TYPES]", "[DEFINITIONS]"):
-            seg = seg.split(h, 1)[0]
-        # premise 는 역순으로 담긴다 — **뒤에 있을수록 상위**
-        prem = [x for x in seg.strip().split("\n") if x.strip()]
-        nfit = len(prem)                                  # build_cuts 가 보는 개수
-
-        full = len(tok(s, add_special_tokens=False)["input_ids"])
-        if full > HARD:
-            overflow += 1
-            enc = tok(s, max_length=HARD, truncation=True)
-            cut = tok.decode(enc["input_ids"], skip_special_tokens=True)
-            alive = sum(1 for p in prem if p.strip() and p.strip() in cut)
-            lost.append(nfit - alive)
-            # 상위 몇 위까지 안전한가 (뒤에서부터 세면 그것이 순위)
-            safe_rank.append(alive)
-        else:
-            lost.append(0)
-            safe_rank.append(nfit)
-
-        for m in QUAL_NORM.finditer(prompt):
+        for m in QUAL_NORM.finditer(s):
             qual_hits[m.group(1)[0]] += 1
+        if "[PREMISES]" not in s:
+            continue
+
+        # ── premise 줄의 **문자 구간**을 정확히 잡는다 ────────────────────
+        #   `allocate_and_fmt` 가 "\n".join 이므로 한 줄 = 한 premise 다.
+        p0 = s.index("[PREMISES]") + len("[PREMISES]")
+        p1 = len(s)
+        for h in ("[PROOFS]", "[SCRIPT]", "[STATE]", "[TYPES]", "[DEFINITIONS]",
+                  "[TACTIC]"):
+            k = s.find(h, p0)
+            if k != -1:
+                p1 = min(p1, k)
+        spans, off = [], p0
+        for ln in s[p0:p1].split("\n"):
+            if ln.strip():
+                spans.append((off, off + len(ln)))
+            off += len(ln) + 1
+        nfit = len(spans)
+        nfit_all.append(nfit)
+
+        # ── 절단으로 **완전히 사라지는** premise 를 센다 ──────────────────
+        #   토큰 오프셋으로 잰다. 문자열 포함으로 세면 디코딩이 공백을 바꿔
+        #   멀쩡한 premise 도 '사라졌다' 고 잘못 세게 된다(실제로 그랬다).
+        enc = tok(s, add_special_tokens=False, return_offsets_mapping=True)
+        ids = enc["input_ids"]
+        full = len(ids)
+        if full <= HARD:
+            lost.append(0)
+            safe_n.append(nfit)
+            continue
+        overflow += 1
+        drop = full - HARD                       # 앞에서 이만큼 잘린다
+        cut_char = enc["offset_mapping"][drop][0] if drop < len(ids) else len(s)
+        gone = sum(1 for a, b in spans if b <= cut_char)
+        lost.append(gone)
+        safe_n.append(nfit - gone)
 
 print(f"■ 결과 (프롬프트 {n}건)\n")
 print(f"   2048 초과              {overflow:4d}건  {overflow/max(n,1)*100:5.1f}%")
@@ -103,8 +120,10 @@ if lost:
     print(f"   premise 손실 있음      {len(nz):4d}건  {len(nz)/max(n,1)*100:5.1f}%")
     if nz:
         print(f"   손실 개수 (중앙/최대)  {statistics.median(nz):.0f} / {max(nz)}")
-    print(f"   ★ **상위 몇 개까지 안전한가** — 이 수보다 높은 순위의 gold 만 믿을 수 있다")
-    sr = sorted(safe_rank)
+    print(f"   nfit(896 예산으로 담긴 개수) 중앙 "
+          f"{statistics.median(nfit_all):.0f} · 최대 {max(nfit_all)}")
+    print(f"   ★ **실제로 남는 premise 개수** — build_cuts 는 nfit 을 그대로 믿는다")
+    sr = sorted(safe_n)
     for q, lab in ((0, "최악"), (5, "5%"), (25, "25%"), (50, "중앙")):
         print(f"        {lab:6s} {sr[max(0, len(sr)*q//100 - (1 if q else 0))]:3d}개")
 print()

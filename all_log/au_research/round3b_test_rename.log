@@ -4,12 +4,8 @@
    [✓] eqa  이름이 달라도 α-동치로 잡는가 (x,y ↔ p,q) → True
    [✓] eqa  공허 premise(⊥)에는 발화하지 않는가 → True
    [✓] eqx  발화 ⟺ exact 성공 (4건)
+   [✓] C_RENAME 개명 질의가 α-동치로 잡히는가 → forall (zq0 zq1 : nat), zq0 + zq1 = zq1 + zq0
    [✓] afh100(τ=1) 점수가 eqx 와 동일한가 (족의 끝점) → True
    [✓] assert 이름이 기존 H_asrt0 을 피하는가 → assert (forall n : nat, n <= n) as H_asrta0. { exact (L). }
    [✓] evar 타입이 eassert + _ 로 구제되는가 → eassert (forall (l : list _) (d : _), nth 0 l d = d) as H_asrt0. { exa
    자기검사: 통과
-Traceback (most recent call last):
-  File "/app/coq-modeling/scripts/exp_abcd.py", line 887, in <module>
-    q = re.sub(r"(?<![\w'])" + re.escape(_v) + r"(?![\w'])",
-        ^^
-NameError: name 're' is not defined. Did you mean: 'e'?
