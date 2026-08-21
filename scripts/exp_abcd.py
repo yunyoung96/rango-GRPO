@@ -187,6 +187,11 @@ def _cov(q_ids, docs, n):
 #   실증이고, 그게 사실이면 τ₀·ω 같은 게이트 매개변수가 필요 없다는 근거가 된다.
 PHASE = "A"
 EQFIRE = collections.Counter()
+# ★ 랭커별 소요 시간 — "큰 프로젝트에서 쓸 수 있나" 의 답이 여기 있다.
+#   신호 계산(구조 파싱 등)은 랭커마다 다르고, 어떤 것은 후보 5,000개를 전부
+#   파싱해야 한다. 목표지표만 보면 그 비용이 안 보인다.
+RTIME = collections.Counter()
+RCALL = collections.Counter()
 
 
 def rank_all(state, texts, pool, tf, tr, kinds, docs=None, names=None,
@@ -278,6 +283,7 @@ def rank_all(state, texts, pool, tf, tr, kinds, docs=None, names=None,
             _covv = [1.0 / (60 + r[j]) for j in range(n)]
         return _covv
     for k in kinds:
+        _t_k = time.time()
         if k == "tfidf":
             out[k] = list(tf)
         elif k == "rrf":
@@ -625,6 +631,8 @@ def rank_all(state, texts, pool, tf, tr, kinds, docs=None, names=None,
             out[k] = gbdt_rank.score(state, texts, tf, ns, cand=cand)
         else:
             raise ValueError(k)
+        RTIME[k] += time.time() - _t_k
+        RCALL[k] += 1
     return out
 
 
@@ -1142,6 +1150,16 @@ if D:
     # ── eq 항의 받침 (자기게이팅 실측) ────────────────────────────────────
     #   verify_eq_props.py 성질 S: 1[d₀=0]≠0 ⟹ τ(g)=1 이므로 이 항은 C 국면에만
     #   받침을 갖는다. A 에서 거의 0 · C 에서 거의 1 이면 게이트 매개변수가 불필요하다.
+    if RTIME:
+        print(f"\n【T】 랭커별 소요 시간 — 큰 프로젝트에서 쓸 수 있나")
+        print(f"      질의 1회당. 신호 계산(구조 파싱 등)이 랭커마다 다르다.")
+        print(f"      {'랭커':16s}{'질의당(ms)':>12}{'총(s)':>10}{'호출':>8}")
+        _b = min(RTIME[r] / max(RCALL[r], 1) for r in RTIME)
+        for r in sorted(RTIME, key=lambda x: RTIME[x] / max(RCALL[x], 1)):
+            per = RTIME[r] / max(RCALL[r], 1)
+            print(f"      {r:16s}{per*1000:11.3f}{RTIME[r]:10.1f}{RCALL[r]:8d}"
+                  f"   {per/max(_b,1e-12):5.1f}x")
+
     if EQFIRE:
         print(f"\n【E】 eq 항이 실제로 언제 발화하나 (성질 S 의 실측)")
         print(f"      {'국면':6s} {'질의수':>8} {'발화한 질의':>12} {'후보당 발화율':>14}")

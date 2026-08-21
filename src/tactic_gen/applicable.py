@@ -61,7 +61,21 @@ _TOK = re.compile(
                                                       #   `Definition f : bool := true` 의 결론이
                                                       #   `bool : = true` 라는 쓰레기가 된다
       | <=\?|>=\?|=\?|<\?|>\?|\?=                     # bool 비교
+      | ==>|<==|===|==|!=                             # ★ setoid/부울 등호 계열 — `==` 를
+                                                      #   빼면 `=` 두 개로 쪼개져
+                                                      #   `x == y` 가 `x = = y` 라는 쓰레기가 된다
+                                                      #   (실측: 파싱 실패 12,196건의 큰 몫)
       | <=|>=|<>|=|<|>                                # 비교
+      # ★ 유니코드 표기 — 안 넣으면 토크나이저가 **통째로 버려서**
+      #   `∀ a b, a ≤ b ↔ 0 ≤ b + -a` 가 `a b , a b 0 b + - a` 가 된다(실측 1,498건).
+      #   Coq/mathcomp/유니코드 라이브러리가 흔히 쓴다.
+      | [∀∃λ]                                         # 한정사·람다
+      | ↔|⟺|<->                                       # 동치
+      | →|⟶|⇒                                         # 함의
+      | ≤|≥|≠|≡|≈|∼                                   # 비교·동치
+      | ∧|∨|¬                                         # 논리
+      | ∈|∉|⊆|⊂|∪|∩|⊔|⊓|∖                            # 집합·격자
+      | ×|∘|⁻¹|√|∑|∏                                  # 연산
       | \+\+|\+|-|\*|/|\^                             # 산술
       | &&|\|\|                                       # bool 연산 (Prop 의 /\ \/ 와 레벨이 다르다)
       | ::|:|~|@|!|\||,|;|\.                          # 기타 (:: 먼저!)
@@ -74,7 +88,9 @@ _TOK = re.compile(
 _SCOPE = re.compile(r"%[A-Za-z_]\w*")
 
 _KW = {"forall", "exists", "fun", "match", "with", "end", "let", "in", "if", "then",
-       "else", "return", "fix", "cofix", "as", "struct", "Type", "Prop", "Set"}
+       "else", "return", "fix", "cofix", "as", "struct", "Type", "Prop", "Set",
+       # ★ 유니코드 한정사도 같은 키워드로 취급한다 — 안 하면 식별자로 오인된다
+       "∀", "∃", "λ"}
 
 # 중위 연산자 우선순위 = **Coq notation 레벨**(클수록 약하게 묶인다). 숫자를 그대로 쓴다.
 #   ★ 함정: `||`(orb)·`&&`(andb) 는 bool 연산이라 레벨 50/40 으로 `=`(70) 보다 **강하게** 묶인다.
@@ -83,6 +99,17 @@ _KW = {"forall", "exists", "fun", "match", "with", "end", "let", "in", "if", "th
 _INFIX: dict[str, tuple[int, bool]] = {
     ",": (200, True),                                  # pair — 괄호 안에서만 의미
     "->": (99, True), "<->": (95, True),
+    # ★ 유니코드 별칭 — ASCII 와 **같은 레벨**이어야 파싱이 일관된다
+    "→": (99, True), "⟶": (99, True), "⇒": (99, True),
+    "↔": (95, True), "⟺": (95, True),
+    "∨": (85, True), "∧": (80, True),
+    "≤": (70, False), "≥": (70, False), "≠": (70, False),
+    "≡": (70, False), "≈": (70, False), "∼": (70, False),
+    "==": (70, False), "===": (70, False), "!=": (70, False),
+    "==>": (99, True), "<==": (99, True),
+    "∈": (70, False), "∉": (70, False), "⊆": (70, False), "⊂": (70, False),
+    "∪": (50, True), "∩": (40, True), "⊔": (50, True), "⊓": (40, True),
+    "∖": (50, False), "×": (40, True), "∘": (40, True),
     "\\/": (85, True),
     "/\\": (80, True),
     "=": (70, False), "<>": (70, False), "<=": (70, False), "<": (70, False),
@@ -94,6 +121,10 @@ _INFIX: dict[str, tuple[int, bool]] = {
     "&&": (40, True), "*": (40, False), "/": (40, False),
     "^": (30, True),
 }
+# 전위(단항) 연산자 → 함수 이름. 중위 표에도 있는 기호는 **문맥으로** 갈린다
+#   (`atom` 자리에 오면 전위, `app` 뒤에 오면 중위).
+_PREFIX = {"-": "opp", "√": "sqrt", "∑": "sum", "∏": "prod_", "⁻¹": "inv"}
+
 _CLOSE = {")", "]", "}"}
 _STOP = _CLOSE | {";", ".", ":"}
 
@@ -154,8 +185,14 @@ class _P:
             return ("opq", self._skip_balanced(start))     # 못 읽은 구조 → 통째로 불투명
         if v in ("[", "{"):
             return ("opq", self._skip_balanced(start))
-        if v == "~":
+        if v == "~" or v == "¬":
             return ("app", ("id", "not"), self.expr(75))
+        # ★ 전위 연산자 — `-a`(단항 마이너스) · `√x` · `∑f` 등.
+        #   없으면 `0 <= b + -a` 가 통째로 파싱 실패한다(실측: 유니코드가 아니라
+        #   이것이 원인이었다 — ASCII `-a` 도 똑같이 실패했다).
+        #   Coq 에서 단항 `-` 는 레벨 35 로 **중위 `-`(50)보다 강하게** 묶인다.
+        if v in _PREFIX:
+            return ("app", ("id", _PREFIX[v]), self.expr(35))
         if v in ("forall", "exists", "fun", "match", "let", "if", "fix", "cofix"):
             rest = self.t[start:]
             self.i = len(self.t)
@@ -213,12 +250,20 @@ def parse(text: str):
 #     이 판정은 **재현율이 생명**이므로 의도한 트레이드오프다.
 _OP2FN = {
     "+": "add", "-": "sub", "*": "mul", "/": "div", "^": "pow",
+    # ★ 유니코드를 ASCII 대응으로 **접는다** — `a ≤ b` 와 `a <= b` 는 같은 명제다.
+    #   접지 않으면 α-정규형이 갈라져 같은 것을 다르다고 판정한다.
+    "→": "impl", "⟶": "impl", "⇒": "impl", "↔": "iff", "⟺": "iff",
+    "∨": "or", "∧": "and", "≤": "le", "≠": "neq",
+    "≡": "eq", "≈": "eq", "∼": "eq", "==": "eq", "===": "eq", "!=": "neq",
+    "∈": "In", "∉": "notIn", "⊆": "subset", "⊂": "subset",
+    "∪": "union", "∩": "inter", "⊔": "join", "⊓": "meet", "∖": "diff",
+    "×": "prod", "∘": "comp", "==>": "impl", "<==": "impl",
     "++": "app", "::": "cons", "||": "orb", "&&": "andb",
     "/\\": "and", "\\/": "or", "<->": "iff", "->": "impl", ",": "pair",
     "=": "eq", "<": "lt", "<=": "le", "<>": "neq",
     "=?": "eqb", "<?": "ltb", "<=?": "leb", "?=": "compare",
 }
-_SWAP = {">": "lt", ">=": "le", ">?": "ltb", ">=?": "leb"}      # a > b ≡ lt b a
+_SWAP = {">": "lt", ">=": "le", ">?": "ltb", ">=?": "leb", "≥": "le"}      # a > b ≡ lt b a
 _FN_ALIAS = {
     "plus": "add", "minus": "sub", "mult": "mul",
     "Zplus": "add", "Zminus": "sub", "Zmult": "mul", "Zpower": "pow", "Zdiv": "div",
