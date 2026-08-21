@@ -14,9 +14,13 @@
 #      아니면 도착지를 건드리지 않고 실패한다.
 set -u
 SPLIT="${1:-train}"
+MODE="${2:-plan}"          # plan(기본) | cut(옛 형식)
 cd /app/coq-modeling || exit 1
-SRC="data/cut_chunks_$SPLIT"
-DST="data/cuts_$SPLIT.jsonl"
+if [ "$MODE" = "plan" ]; then
+  SRC="data/cut_plan_chunks_$SPLIT"; PFX="p"; DST="data/cut_plans_$SPLIT.jsonl"
+else
+  SRC="data/cut_chunks_$SPLIT";      PFX="c"; DST="data/cuts_$SPLIT.jsonl"
+fi
 CHUNK="${CHUNK:-25000}"
 
 TOTAL=$(PYTHONPATH=src python3 - "$SPLIT" <<'PYX'
@@ -31,18 +35,18 @@ print(si.split_length(getattr(Split, sys.argv[1].upper())))
 PYX
 )
 N=$(( (TOTAL + CHUNK - 1) / CHUNK ))
-have=$(ls "$SRC"/c_*.jsonl 2>/dev/null | wc -l)
+have=$(ls "$SRC"/${PFX}_*.jsonl 2>/dev/null | wc -l)
 echo "전체 $TOTAL · 청크 $CHUNK × $N · 보유 $have"
 
 if [ "$have" -lt "$N" ]; then
   echo "★ 청크가 모자란다 ($have/$N) — 병합하지 않는다."
-  for k in $(seq 0 $((N-1))); do [ -s "$SRC/c_$k.jsonl" ] || echo "   빠진 청크 c_$k (인덱스 $((k*CHUNK)) ~ $(( (k+1)*CHUNK )))"; done
+  for k in $(seq 0 $((N-1))); do [ -s "$SRC/${PFX}_$k.jsonl" ] || echo "   빠진 청크 ${PFX}_$k (인덱스 $((k*CHUNK)) ~ $(( (k+1)*CHUNK )))"; done
   exit 1
 fi
 
 TMP="$DST.new"
 : > "$TMP"
-for k in $(seq 0 $((N-1))); do cat "$SRC/c_$k.jsonl" >> "$TMP"; done   # ② 숫자순
+for k in $(seq 0 $((N-1))); do cat "$SRC/${PFX}_$k.jsonl" >> "$TMP"; done   # ② 숫자순
 echo "이어붙임: $(wc -l < "$TMP") 줄 · $(du -h "$TMP" | cut -f1)"
 
 # ③ 연속 커버리지 확인 — 도착지를 건드리기 **전에** 본다

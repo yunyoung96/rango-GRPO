@@ -874,14 +874,46 @@ class ProofPremiseCollator:
         #     그때는 원래 gold tactic 을 그대로 쓴다(환각을 감수한다 — how-to-learn §3).
         #   ★ 정규화(③)보다 **먼저** 해야 한다. 정규화 후에 바꾸면 cut 명제 안의 이름이
         #     프롬프트의 매핑과 어긋난다.
+        #   ★★ 결정은 **여기서** 내린다 — 미리 만들어 둔 것은 "무엇을 assert 할 수
+        #     있는가" 라는 재료(계획)뿐이다.
+        #     옛 방식은 cut 생성 시점에 검색을 돌려 "어느 gold 가 없는가" 까지 확정하고
+        #     조립본을 저장했다. 그러면 **검색 정책이 cut 파일에 박힌다** — 랭커를 바꾸면
+        #     (structural → eqx) 전제가 틀린 산출물이 되고, 5시간짜리 재생성이 필요했다.
+        #     지금은 완성된 프롬프트를 보고 **실제로 안 보이는 것만** assert 한다.
+        #
+        #       (1) gold 가 전부 보인다        → gold tactic 그대로
+        #       (2) 일부가 안 보인다           → 그것들만 assert 해서 조립
+        #       (3) 계획이 없다(hopeless)      → `resolved_example` 이 이미 걸러냈다
         if os.environ.get("CUTS_PATH", ""):
             from tactic_gen import cut_lookup
             _ck = (f"{getattr(example, 'file_name', '')}:"
                    f"{getattr(example, 'proof_idx', '')}:"
                    f"{getattr(example, 'step_idx', '')}")
-            _cut = cut_lookup.cut_for(_ck)
-            if _cut:
-                target = _cut
+            _plan = cut_lookup.plan_for(_ck)
+            if _plan:
+                _miss = [(nm, ty) for nm, ty in (_plan.get("lem") or [])
+                         if not re.search(r"(?<![\w'])" + re.escape(nm) + r"(?![\w'])",
+                                          input_str)]
+                if _miss:
+                    try:
+                        from tactic_gen.assert_split import transform as _tf
+                        _new = _tf(_plan.get("tac", target),
+                                   [(nm, f"Lemma {nm} : {ty}.") for nm, ty in _miss],
+                                   proof_script=getattr(example, "proof_script", "") or "",
+                                   state=getattr(example, "proof_state", "") or "")
+                    except Exception:
+                        _new = None
+                    # 조립이 실패하면 **저장해 둔 전체 조립본**으로 물러선다.
+                    #   그것도 없으면 gold 그대로 — 환각을 감수한다(how-to-learn §3).
+                    if _new and isinstance(_new, str):
+                        target = _new
+                    elif _plan.get("cut"):
+                        target = _plan["cut"]
+            else:
+                # 옛 형식(`step` 의 조립본) 호환 — 계획 파일로 완전히 넘어가면 지운다
+                _cut = cut_lookup.cut_for(_ck)
+                if _cut:
+                    target = _cut
 
         # ② 인용 타깃: 프롬프트에 실제로 주입된 정의만 인용(없는 걸 인용시키면 환각 조장)
         if os.environ.get("CITE_TARGET", "0") == "1":

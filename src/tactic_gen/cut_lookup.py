@@ -31,6 +31,12 @@ import threading
 _lock = threading.Lock()
 _loaded = False
 _steps: dict[str, dict] = {}
+# ★ 계획(plan) — **검색과 무관한 재료**만 담는다.
+#     {"sid": …, "tac": 원래 tactic, "lem": [[이름, statement], …],
+#      "fn": [함수·타입 이름 …], "cut": 전부 assert 한 조립본}
+#   옛 형식(`step` 의 `cut` 문자열)은 생성 시점의 검색 결과에 묶여 있어서,
+#   검색 정책을 바꾸면 전제가 틀린 산출물이 된다. 계획은 그렇지 않다.
+_plans: dict[str, dict] = {}
 _stmts: dict[str, str] = {}
 _stat = {"조회": 0, "적중": 0, "미적중": 0}
 _meta: list = []
@@ -56,12 +62,26 @@ def load(path: str | None = None) -> bool:
                     continue
                 if d.get("kind") == "step":
                     _steps[d["sid"]] = d
+                elif d.get("kind") == "plan":
+                    _plans[d["sid"]] = d
                 elif d.get("kind") == "stmt":
                     _stmts[d["name"]] = d["ty"]
                 elif d.get("kind") == "meta":
                     # ★ 이 파일이 덮는 인덱스 범위. 여러 샤드를 병합하면 여러 개가 온다.
                     _meta.append(d)
-        return bool(_steps)
+        return bool(_steps or _plans)
+
+
+def plan_for(sid: str):
+    """이 스텝의 cut **계획**. 없으면 None.
+
+    ★ 계획은 "무엇을 assert 할 수 있는가" 라는 **사실**이지 "assert 할 것인가" 라는
+      **결정**이 아니다. 결정은 학습 시점에 완성된 프롬프트를 보고 내린다
+      (`tactic_data.collate` ①-b) — 그래야 검색 정책을 바꿔도 계획이 유효하다.
+    """
+    if not load():
+        return None
+    return _plans.get(sid)
 
 
 def enabled() -> bool:
@@ -127,4 +147,4 @@ def scanned_range() -> tuple:
 
 
 def stats() -> dict:
-    return dict(_stat, 스텝수=len(_steps), 명제수=len(_stmts))
+    return dict(_stat, 스텝수=len(_steps), 계획수=len(_plans), 명제수=len(_stmts))

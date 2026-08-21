@@ -68,6 +68,10 @@ def cut_key(sid_file: str, pi: int, si_: int) -> str:
 
 
 _CUTKEYS = {}
+_PLANKEYS = {}
+for _k in list(getattr(cut_lookup, "_plans", {}) or {}):
+    _a, _b, _c = _k.rsplit(":", 2)
+    _PLANKEYS[(_a.split("repos/", 1)[-1].replace("/", "-"), int(_b), int(_c))] = _k
 for _k in list(getattr(cut_lookup, "_steps", {}) or {}):
     _a, _b, _c = _k.rsplit(":", 2)
     _CUTKEYS[(_a.split("repos/", 1)[-1].replace("/", "-"), int(_b), int(_c))] = _k
@@ -75,7 +79,8 @@ for _k in list(getattr(cut_lookup, "_steps", {}) or {}):
 
 # 변환이 실제로 맞는지 **먼저 확인한다** — 안 맞으면 검증 자체가 무의미하다
 _probe = sum(1 for _i in range(0, min(TOTAL, 200000), 997)
-             if (lambda z: (z.file, z.proof_idx, z.step_idx) in _CUTKEYS)(si.get_idx(sp, _i)))
+             if (lambda z: (z.file, z.proof_idx, z.step_idx) in _CUTKEYS
+                 or (z.file, z.proof_idx, z.step_idx) in _PLANKEYS)(si.get_idx(sp, _i)))
 print(f"   키 변환 검사: 표본 {len(range(0, min(TOTAL,200000), 997))}개 중 "
       f"cut 적중 {_probe}개", flush=True)
 if _probe == 0:
@@ -114,10 +119,20 @@ for i in range(TOTAL):
         holes.append((run_start, i))
         run_start = None
 
-    _k = _CUTKEYS.get(tup)
-    _rec = (getattr(cut_lookup, "_steps", {}) or {}).get(_k) if _k else None
-    cut = (_rec or {}).get("cut")
-    hop = bool((_rec or {}).get("hopeless"))
+    _pk = _PLANKEYS.get(tup)
+    if _pk:
+        _pl = (getattr(cut_lookup, "_plans", {}) or {}).get(_pk) or {}
+        cut = _pl.get("cut")
+        hop = False
+        if _pl.get("lem"):
+            st["계획 있음 (lemma 사용)"] += 1
+        else:
+            st["계획 있음 (함수 이름뿐)"] += 1
+    else:
+        _k = _CUTKEYS.get(tup)
+        _rec = (getattr(cut_lookup, "_steps", {}) or {}).get(_k) if _k else None
+        cut = (_rec or {}).get("cut")
+        hop = bool((_rec or {}).get("hopeless"))
     if hop:
         st["hopeless (학습 제외)"] += 1
         continue

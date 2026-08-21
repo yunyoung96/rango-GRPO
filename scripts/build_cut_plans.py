@@ -229,21 +229,31 @@ for i in range(START, min(START + N, len(ds))):
         if nm and nm not in txt:
             txt[nm] = t
 
-    lem, fn, miss_pool, no_stmt = [], [], [], []
+    lem, fn, miss_pool = [], [], []
     for g in names:
         b = g.split(".")[-1]
-        # ★ 순서가 중요하다: **먼저** 명제인지 보고, 명제일 때만 풀 존재를 요구한다.
-        #   함수·타입·생성자는 애초에 풀에 없는 것이 정상이다.
-        if not _is_provable(b):
-            fn.append(b)                             # 함수·타입 — cut 대상 아님
-            continue
+        # ★★ 판정은 **이 프로젝트 풀에서 찾은 실제 원문**으로 한다.
+        #   전역 종류 사전(`_KIND`)은 bare name 으로 만들어져 **프로젝트 간 이름이
+        #   충돌한다**: 어느 프로젝트의 `Axiom union` 때문에 이 프로젝트의
+        #   `Definition union := …` 이 '명제'로 분류되고, statement 추출에 실패해
+        #   hopeless 로 떨어졌다(실측). 반대 방향 오분류도 같은 이유로 생긴다.
+        #   원문이 있으면 원문이 진실이다 — 사전은 **원문이 없을 때만** 참고한다.
         pt = txt.get(g) or txt.get(b)
-        if pt is None:
+        if pt is not None:
+            ty = seed_ty.get(b) or seen_ty.get(b) or statement_of(pt)
+            if not ty:
+                # 명제가 아니다(본문 있는 정의 등) → 함수 이름으로 본다.
+                #   assert 할 명제가 없을 뿐이고, 이름은 [DEFINITIONS] 로 도달한다.
+                #   여기서 hopeless 로 찍으면 **멀쩡한 스텝을 버리게 된다.**
+                fn.append(b)
+                continue
+        else:
+            # 풀에 없다 — 사전으로 명제인지 짐작한다.
+            #   명제가 아니면 함수·타입·생성자이고, 그건 풀에 없는 것이 정상이다.
+            if not _is_provable(b):
+                fn.append(b)
+                continue
             miss_pool.append(g)                      # 명제인데 풀에 없다 — 검색 무관
-            continue
-        ty = seed_ty.get(b) or seen_ty.get(b) or statement_of(pt)
-        if not ty:
-            no_stmt.append(b)                        # statement 를 못 뽑는다
             continue
         if b not in seen_ty and b not in seed_ty:
             seen_ty[b] = ty
@@ -256,13 +266,6 @@ for i in range(START, min(START + N, len(ds))):
         why["gold 가 풀에 없음"] += 1
         fo.write(json.dumps({"kind": "step", "sid": key, "hopeless": True,
                              "why": "gold 가 풀에 없음", "miss": miss_pool},
-                            ensure_ascii=False) + "\n")
-        continue
-    if no_stmt:
-        st["★ statement 추출 실패 → hopeless"] += 1
-        why["statement 추출 실패"] += 1
-        fo.write(json.dumps({"kind": "step", "sid": key, "hopeless": True,
-                             "why": "statement 추출 실패", "miss": no_stmt},
                             ensure_ascii=False) + "\n")
         continue
     if not lem:
