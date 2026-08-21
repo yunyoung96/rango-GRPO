@@ -150,6 +150,29 @@ def _is_provable(name: str) -> bool:
     return k in _PROVABLE
 
 
+_TOK = None
+_TOKLIM = int(os.environ.get("CUT_MAX_TOKENS", "128"))
+
+
+def _too_long(c: str) -> bool:
+    """정답 예산(`out_tokens`)을 넘는가.
+
+    ★ 넘으면 collator 가 **라벨을 앞에서 자른다**(`allocate_tokens(..., truncate_front=False)`
+      이지만 뒤를 자른다). 잘린 tactic 은 문법이 깨진 채 학습된다 — 모델이
+      `assert (P) as H_asrt0. { exact` 까지만 배우는 셈이다. 오류가 안 난다.
+      옛 `build_cuts._cut_ok` 에는 이 검사가 있었는데 계획 생성에 옮기며 빠뜨렸다.
+    """
+    global _TOK
+    if _TOK is None:
+        try:
+            from transformers import AutoTokenizer
+            _TOK = AutoTokenizer.from_pretrained(
+                os.environ.get("CUT_TOKENIZER", "Qwen/Qwen2.5-Coder-3B-Instruct"))
+        except Exception:
+            _TOK = False
+    return bool(_TOK) and len(_TOK.tokenize(c)) > _TOKLIM
+
+
 _ASSERT = re.compile(r"^\s*e?assert\s*\(")
 _EXACT = re.compile(r"exact\s+@?([\w\'.]+?)\s*[.)]")
 _EVAR = re.compile(r"(?<![\w])\?[A-Za-z_]")
@@ -186,6 +209,8 @@ def _cut_bad(cut, names) -> str:
     head = cut.split(" as ", 1)[0]
     if _EVAR.search(head) and not head.lstrip().startswith("eassert"):
         return "assert 문에 evar"
+    if _too_long(cut):
+        return f"정답 예산({_TOKLIM}토큰) 초과"
     return ""
 
 
@@ -213,6 +238,12 @@ for i in range(START, min(START + N, len(ds))):
     tac = (step.step.text or "").strip()
     state = fmt_goals(step.goals)
     script = proof.proof_prefix_to_string(step)
+    # ★★ **그 스텝 이후의 증명 전체**도 이름 충돌 검사에 넣어야 한다.
+    #   assert 시점에 `H_asrt0` 이 없었어도 **뒤에서 생길 수 있다** — 그러면
+    #   뒤 증명의 `assumption`/`auto` 가 우리 가설을 집어 조용히 다른 증명이 된다.
+    #   (오류가 안 나서 더 나쁘다.) `transform` 에 suffix 자리가 있는데 안 넘기고
+    #   있었다 — 앞부분만 보고 "안 겹친다" 고 판정하던 셈이다.
+    suffix = "".join(s2.step.text or "" for s2 in proof.steps[sid.step_idx + 1:])
     fpath = str(dp.file_context.file).split("/coq-dataset/", 1)[-1]
     key = f"{fpath}:{sid.proof_idx}:{sid.step_idx}"
 
@@ -275,6 +306,26 @@ for i in range(START, min(START + N, len(ds))):
                                 ensure_ascii=False) + "\n")
         lem.append([b, ty])
 
+    # ★ 함수·타입 이름은 cut 으로 못 고친다. 프롬프트에서 **읽히지 않으면** 그 스텝은
+    #   어떻게 해도 못 배운다(`unfold foo` 인데 foo 가 어디에도 없는 경우).
+    #   ★ 판정은 **검색 무관하게** 해야 하므로 상계(state + script + 풀 전체)로 본다.
+    #     거기에도 없으면 어떤 검색으로도 프롬프트에 못 들어온다 — 확실한 hopeless 다.
+    #     (풀에는 있는데 실제 프롬프트엔 안 들어오는 경우는 남지만, 그건 절단 위험과
+    #      같은 부류로 별도 측정한다 — 실측 0.2%.)
+    if fn:
+        _hay = state + "\n" + script + "\n" + "\n".join(txt.values())
+        _unseen = [b for b in fn
+                   if not re.search(r"(?<![\w'])" + re.escape(b) + r"(?![\w'])", _hay)
+                   and not (_CTOR_PARENT.get(b) and re.search(
+                       r"(?<![\w'])" + re.escape(_CTOR_PARENT[b]) + r"(?![\w'])", _hay))]
+        if _unseen:
+            st["★ 함수·타입 이름이 어디에도 없음 → hopeless"] += 1
+            why["함수·타입 이름이 프롬프트에 없음"] += 1
+            fo.write(json.dumps({"kind": "step", "sid": key, "hopeless": True,
+                                 "why": "함수·타입 이름이 프롬프트에 없음",
+                                 "miss": _unseen}, ensure_ascii=False) + "\n")
+            continue
+
     if miss_pool:
         st["★ gold 가 풀에 없음 → hopeless"] += 1
         why["gold 가 풀에 없음"] += 1
@@ -294,7 +345,7 @@ for i in range(START, min(START + N, len(ds))):
     #   그리고 만든 것을 **그대로 저장**한다 — 나중에 사람이 열어 볼 수 있어야 하고,
     #   검증기가 형태를 검사할 수 있어야 한다.
     cut = transform(tac, [(nm, f"Lemma {nm} : {ty}.") for nm, ty in lem],
-                    proof_script=script, state=state)
+                    proof_script=script, state=state, suffix=suffix)
     bad = _cut_bad(cut, [n for n, _ in lem])
     if bad:
         st[f"★ cut 실패 → hopeless"] += 1

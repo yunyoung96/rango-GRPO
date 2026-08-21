@@ -897,10 +897,15 @@ class ProofPremiseCollator:
                 if _miss:
                     try:
                         from tactic_gen.assert_split import transform as _tf
+                        # ★ suffix = 이 스텝 **이후**의 증명. 이름 충돌 검사에 반드시
+                        #   넣어야 한다 — assert 시점에 없던 `H_asrt0` 이 뒤에서 생기면
+                        #   뒤 증명의 assumption/auto 가 우리 가설을 집는다(조용한 오염).
+                        _suf = "".join(getattr(example, "next_steps", [])[1:])
                         _new = _tf(_plan.get("tac", target),
                                    [(nm, f"Lemma {nm} : {ty}.") for nm, ty in _miss],
                                    proof_script=getattr(example, "proof_script", "") or "",
-                                   state=getattr(example, "proof_state", "") or "")
+                                   state=getattr(example, "proof_state", "") or "",
+                                   suffix=_suf)
                     except Exception:
                         _new = None
                     # 조립이 실패하면 **저장해 둔 전체 조립본**으로 물러선다.
@@ -1505,7 +1510,7 @@ class LmDataset(Dataset):
             return
         try:
             from tactic_gen import cut_lookup
-            start, end = cut_lookup.scanned_range()
+            start, end = cut_lookup.scanned_range(self.split.name)
         except Exception:
             return
         need = self.shuffled_idx.split_length(self.split)
@@ -1592,7 +1597,7 @@ class LmDataset(Dataset):
                 self._cut_range = (0, 1 << 62)          # cut 미사용 — 전부 커버로 본다
             else:
                 from tactic_gen import cut_lookup
-                self._cut_range = cut_lookup.scanned_range()
+                self._cut_range = cut_lookup.scanned_range(self.split.name)
         a, b = self._cut_range
         return not (a <= index < b)
 

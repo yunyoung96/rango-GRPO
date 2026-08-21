@@ -120,7 +120,7 @@ def is_hopeless(sid: str) -> bool:
     return bool(d and d.get("hopeless"))
 
 
-def scanned_range() -> tuple:
+def scanned_range(split: str | None = None) -> tuple:
     """이 cut 파일이 실제로 훑은 **연속** 인덱스 범위 [start, end).
 
     ★ 없으면 (0, 0) — **범위를 모른다**는 뜻이고, 그건 곧 커버리지를 보장할 수
@@ -135,8 +135,16 @@ def scanned_range() -> tuple:
     load()
     if not _meta:
         return (0, 0)
+    # ★★ **split 을 따진다.** TRAIN 만 담긴 파일로 VAL 데이터셋을 열면, 인덱스 범위만
+    #   보고 "덮는다" 고 답해서 **VAL 이 조용히 cut 없이 돈다**(sid 가 아예 없으므로
+    #   조회가 전부 None). 오류도 경고도 없다 — 정확히 우리가 반복해 당한 실패 모드다.
+    #   meta 에 split 이 기록돼 있으니 그것으로 거른다.
+    _ms = [m for m in _meta
+           if split is None or str(m.get("split", "")).upper() == split.upper()]
+    if not _ms:
+        return (0, 0)
     iv = sorted((int(m.get("scan_start", 0)), int(m.get("scan_end", 0)))
-                for m in _meta)
+                for m in _ms)
     start = iv[0][0]
     end = iv[0][1]
     for a, b in iv[1:]:
