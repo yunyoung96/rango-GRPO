@@ -350,6 +350,76 @@ def alpha_stmt(d):
     return alpha_canon(_mk_impl(hs, canon(c)), set(d[0]))
 
 
+# ══ 몫 위의 AU-Dice — 연속 확장 ═══════════════════════════════════════════
+#
+#   ⟦p⟧, ⟦g⟧ 는 α-정규형이므로 `?0,?1,…` 가 **정준 위치 이름**이다. 그래서 몫 위에서는
+#   모든 식별자를 **상수로** 읽는 것이 옳다 — 메타변수로 읽으면 다시 비대칭 포섭이
+#   되어 바닥이 살아난다(그것이 A 를 무너뜨린 원인이다).
+#
+#       m = |⟦p⟧ ⊓ ⟦g⟧|      c = |⟦p⟧|      n = |⟦g⟧|
+#       F_β = (1+β²)m / (c + β²n)            β=1 이 대칭 — 자유 매개변수가 없다
+#       1 − F₁ = (c+n−2m)/(c+n) = d/(c+n)    격자 대칭거리의 정규화
+#
+#   ★ 이 F 는 **몫 위에서 잘 정의된다**(성질 X4). 옛 `sig_au_f` 는 premise binder 만
+#     메타변수로 읽는 비대칭 구성이라 이름을 바꾸면 값이 바뀌었다 — 몫 위의 함수가
+#     아니었다. 그것이 `auf` 가 못생겼던 진짜 이유다.
+#
+#   ★ 그리고 F₁ = 1 ⟺ ⟦p⟧ = ⟦g⟧ ⟺ p ≡α g 이므로 (2m ≤ c+n, 등호는 m=c=n),
+#     **`eqx` 는 이 연속량의 τ→1 극한**이다. 둘은 경쟁 관계가 아니라 한 족(族)이다.
+#
+#       score_τ(p) = RRF(tfidf) + RRF(C') + W · h_τ(F₁^α(p,g))
+#       h_τ(x) = max(0, x−τ)/(1−τ)        h₁ = 1[F₁^α = 1] = eqx
+
+
+def _au_rigid(a, b, cnt):
+    """몫 위의 반유니피케이션 — 모든 식별자가 상수. lgg 의 크기를 센다."""
+    if a is None or b is None:
+        return
+    if a[0] == b[0] == "id":
+        if a[1] == b[1]:
+            cnt[0] += 1
+        return
+    if a[0] == b[0] == "app":
+        cnt[0] += 1
+        _au_rigid(a[1], b[1], cnt)
+        _au_rigid(a[2], b[2], cnt)
+        return
+    if a[0] == b[0] == "op" and a[1] == b[1]:
+        cnt[0] += 2
+        _au_rigid(a[2], b[2], cnt)
+        _au_rigid(a[3], b[3], cnt)
+        return
+    if a == b:
+        cnt[0] += 1
+    return
+
+
+def _tsize(t) -> int:
+    c = [0]
+    _au_rigid(t, t, c)
+    return c[0]
+
+
+def au_f_alpha(pa, ga, beta: float = 1.0) -> float:
+    """α-정규형 두 개의 F_β. 몫 위에서 잘 정의된다. F=1 ⟺ p ≡α g."""
+    if pa is None or ga is None:
+        return 0.0
+    c = [0]
+    _au_rigid(pa, ga, c)
+    m, cc, nn = c[0], _tsize(pa), _tsize(ga)
+    b2 = beta * beta
+    den = cc + b2 * nn
+    return (1.0 + b2) * m / den if den > 0 else 0.0
+
+
+def hinge(x: float, tau: float) -> float:
+    """h_τ(x) = max(0, x−τ)/(1−τ). τ=1 이면 지시자 1[x=1]."""
+    if tau >= 1.0:
+        return 1.0 if x >= 1.0 - 1e-9 else 0.0
+    return max(0.0, x - tau) / (1.0 - tau)
+
+
+@functools.lru_cache(maxsize=300_000)
 def prem_stmt(text: str):
     """premise 선언 → 전체 명제의 α-정규형."""
     return alpha_stmt(decompose(text or ""))

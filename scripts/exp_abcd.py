@@ -63,7 +63,8 @@ from tactic_gen.assert_split import statement_of  # noqa: E402
 from tactic_gen.tier_rank import (TierRanker, declname, prem_struct,  # noqa: E402
                                   goal_struct, sig_hyp_match, head_of, sig_au_dist,
                                   au_res_gen, sig_au_f, goal_alpha, prem_alpha,
-                                  goal_stmt, prem_stmt)
+                                  goal_stmt, prem_stmt,
+                                  au_f_alpha, hinge)
 
 # ★ C 국면 질의의 binder 를 개명할지. 기본 끔(옛 측정과 비교 가능하게).
 #   켜면 "모델이 자기 말로 assert 를 쓴 경우" 를 재는 것이고, 그것이 실전 조건이다.
@@ -90,6 +91,7 @@ RANKERS = [x for x in A.rankers.split(",") if x]
 # ★ 랭커 이름 오타/구버전 이름을 **시작 전에** 잡는다. 예전엔 잘못된 이름이 매 스텝
 #   예외로 빠져 결과가 전부 0.0% 로 나왔고, 20분을 버린 뒤에야 알았다.
 _KNOWN = {"tfidf", "rrf", "struct", "eq", "eqa", "eqx", "cov", "eqcov",
+          "afh80", "afh90", "afh95", "afh100",
           "structural", "structural_mmr", "gbdt", "ctr",
           "hyp", "sub", "cooc", "nsub", "allsig",
           # ★ 반유니피케이션 비유사도 D_λ (future-idea.md ⑮-A)
@@ -243,6 +245,19 @@ def rank_all(state, texts, pool, tf, tr, kinds, docs=None, names=None,
             EQFIRE[f"{PHASE}:x발화질의"] += (nf > 0)
         return _xb
 
+    _afv = None
+
+    def af_vals():
+        """F₁^α(p, g) — 몫 위의 AU-Dice. τ 여러 개가 이 값을 공유한다."""
+        nonlocal _afv
+        if _afv is None:
+            _afv = [0.0] * n
+            gq = goal_stmt(state)
+            if gq is not None:
+                for j in cand:
+                    _afv[j] = au_f_alpha(prem_stmt(texts[j]), gq)
+        return _afv
+
     _covv = None
 
     def cov_rrf():
@@ -277,6 +292,18 @@ def rank_all(state, texts, pool, tf, tr, kinds, docs=None, names=None,
         elif k == "eq":
             eb = eq_bonus()
             out[k] = [rrf[j] + 3.0 * eb[j] for j in range(n)]
+        elif k.startswith("afh"):
+            # ★ 한 족(族)으로 묶는다.
+            #     score_τ(p) = RRF(tfidf) + RRF(C') + W·h_τ(F₁^α(p,g))
+            #     h_τ(x) = max(0, x−τ)/(1−τ)      h₁ = 1[F₁^α=1] = eqx
+            #
+            #   옛 `auf`/`aufh` 는 여기에 `cov`(A 를 −6.9pp 해친다)와 **상시 켜진**
+            #   RRF(F₁) 을 얹었고, F 도 비대칭(premise binder 만 메타변수)이라 몫 위의
+            #   함수가 아니었다. 그 셋을 빼면 남는 것이 이 족이다.
+            tau = int(k[3:]) / 100.0
+            W = float(os.environ.get("AU_HINGE_W", "3.0"))
+            fv = af_vals()
+            out[k] = [rrf[j] + W * hinge(fv[j], tau) for j in range(n)]
         elif k == "eqx":
             # ★ 전체 명제(∀mv. h₁→…→c)의 α-정규형 비교.
             #   `eqa` 는 결론만 봐서 `∀x, P x → Q x` 와 `Q a` 가 맞아버린다 —
@@ -662,6 +689,14 @@ def selftest() -> int:
             _nb += 1
     print(f"   [{'✓' if not _nb else '✗'}] eqx  발화 ⟺ exact 성공 ({len(_EX)}건)")
     bad += _nb
+    # ★ afh100 (τ=1) 이 eqx 와 **완전히 같은 점수**인가 — "eqx 는 족의 끝점" 이라는
+    #   주장이 코드에서도 참인지 못박는다. 논문의 그림이 여기에 걸려 있다.
+    _st2 = "\n\nforall (x y : nat), x + y = y + x"
+    _sc2 = rank_all(_st2, POOL, POOL, tf, tr, ["eqx", "afh100"], docs,
+                    [None] * len(POOL), q_ids=[0, 1])
+    _same = _sc2["eqx"] == _sc2["afh100"]
+    print(f"   [{'✓' if _same else '✗'}] afh100(τ=1) 점수가 eqx 와 동일한가 (족의 끝점) → {_same}")
+    bad += (not _same)
     # assert 변환 + 이름 충돌
     from tactic_gen import assert_split as AS
     AS.WHY.clear()
