@@ -154,6 +154,27 @@ _TOK = None
 _TOKLIM = int(os.environ.get("CUT_MAX_TOKENS", "128"))
 
 
+def _substeps(tac: str, lem, cut: str):
+    """cut 을 **하위스텝 문자열 목록**으로 쪼갠다 (안 B · docs/premise/substep.md).
+
+        assert (P1) as H0.  ·  exact L1.  ·  assert (P2) as H1.  ·  exact L2.  ·  <마무리>
+
+    ★ 예산 검사는 **조각별로** 해야 한다. 전체 길이로 자르면 쪼개면 쓸 수 있었을
+      cut 을 버린다(실측 2.69% vs 1.54% — 1.15%p 를 헛되이 버린다).
+    """
+    parts = []
+    body = cut
+    for m in re.finditer(r"(e?assert\s*\(.*?\)\s*as\s+(H_asrt\w*)\s*\.)\s*\{\s*(.*?)\s*\}",
+                         cut, re.S):
+        parts.append(m.group(1))          # assert 선언
+        parts.append(m.group(3))          # { } 안의 증명 (보통 `exact L.`)
+        body = body.replace(m.group(0), "", 1)
+    tail = body.strip()
+    if tail:
+        parts.append(tail)                # 마무리 (원래 tactic 을 H_asrt 로 바꾼 것)
+    return [x for x in parts if x.strip()]
+
+
 def _too_long(c: str) -> bool:
     """정답 예산(`out_tokens`)을 넘는가.
 
@@ -209,8 +230,14 @@ def _cut_bad(cut, names) -> str:
     head = cut.split(" as ", 1)[0]
     if _EVAR.search(head) and not head.lstrip().startswith("eassert"):
         return "assert 문에 evar"
-    if _too_long(cut):
-        return f"정답 예산({_TOKLIM}토큰) 초과"
+    # ★ **조각별로** 잰다 — 학습 시점에 하위스텝 하나만 정답이 되므로
+    #   전체가 길어도 조각이 짧으면 쓸 수 있다.
+    subs = _substeps("", None, cut)
+    if not subs:
+        return "하위스텝 분해 실패"
+    over = [x for x in subs if _too_long(x)]
+    if over:
+        return f"하위스텝이 정답 예산({_TOKLIM}토큰) 초과"
     return ""
 
 
