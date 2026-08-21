@@ -1422,6 +1422,10 @@ class ExampleCache:
                 return None
 
 
+# 진단 모드에서 건너뛴 '판정 없음' 스텝 수 — 스크립트가 읽어 보고한다.
+_UNCOVERED_SKIPS = [0]
+
+
 class LmDataset(Dataset):
     def __init__(
         self,
@@ -1512,6 +1516,8 @@ class LmDataset(Dataset):
             step_id.step_idx, step_id.proof_idx, dp, training=True
         )
 
+    _cut_range = None          # (start, end) — 첫 호출에 채운다
+
     def _hopeless(self, example) -> bool:
         """이 스텝이 '가망 없음'(how-to-learn §3 의 ③)인가.
 
@@ -1526,8 +1532,40 @@ class LmDataset(Dataset):
             f"{getattr(example, 'file_name', '')}:"
             f"{getattr(example, 'proof_idx', '')}:{getattr(example, 'step_idx', '')}")
 
+    def _uncovered(self, index: int) -> bool:
+        """이 인덱스가 cut **판정을 못 받은** 구간인가.
+
+        ★ 왜 이게 필요한가 (설계의 핵심):
+          cut 파일에 그 스텝이 없다는 것은 두 가지 중 하나다.
+            ⓐ 훑어봤고 cut 이 필요 없었다        → 그냥 쓰면 된다
+            ⓑ 아예 안 훑었다(생성 범위 밖)        → **알 수 없다**
+          그런데 `cut_for()` 도 `is_hopeless()` 도 둘을 구분 못 하고 똑같이
+          "해당 없음" 을 돌려준다. 그러면 ⓑ 가 ⓐ 로 둔갑해서, gold 가 프롬프트에
+          없는 스텝이 cut 없이 그대로 학습에 들어간다 = **환각을 가르친다.**
+          이것이 커버리지 사고의 진짜 원인이었다. 범위 검사는 그 증상을 잡아낸
+          **탐지기**였을 뿐이다.
+
+          그래서 여기서 ⓑ 를 **인덱스 단위로** 가른다. 그리고 ⓑ 는 **건너뛰지 않고
+          죽인다.** cut 은 전 구간을 만들도록 되어 있으므로, 없다는 것은 정상 상태가
+          아니라 **생성이 덜 끝났다는 버그**다. 조용히 건너뛰면 "90%만 학습하고 성공
+          보고" 가 되는데, 그게 우리가 계속 당한 실패 모드다.
+
+          (hopeless 는 다르다 — 그건 원리적으로 고칠 수 없는 스텝이라 **의도적으로**
+           건너뛰는 것이고 비율도 측정돼 있다(6.7%). 둘을 같이 취급하면 안 된다.)
+
+          `CUTS_ALLOW_PARTIAL=1` 일 때만 건너뛴다 — 생성 중에 돌리는 진단 스크립트용이다.
+        """
+        if self._cut_range is None:
+            if not os.environ.get("CUTS_PATH", ""):
+                self._cut_range = (0, 1 << 62)          # cut 미사용 — 전부 커버로 본다
+            else:
+                from tactic_gen import cut_lookup
+                self._cut_range = cut_lookup.scanned_range()
+        a, b = self._cut_range
+        return not (a <= index < b)
+
     def resolved_example(self, index: int):
-        """학습이 **실제로 쓰는** 예제. 가망 없는 스텝은 다음 인덱스로 치환한다.
+        """학습이 **실제로 쓰는** 예제. 가망 없거나 판정을 못 받은 스텝은 다음으로 치환한다.
 
         ★ 가망 없는 스텝으로 학습하면 *볼 수 없는 이름을 지어내라*고 가르치는 셈이다.
           길이(`__len__`)를 바꾸면 스케줄러·재개가 어긋나므로 **인덱스를 치환**한다.
@@ -1539,8 +1577,24 @@ class LmDataset(Dataset):
         if os.environ.get("CUT_DROP_HOPELESS", "0") != "1":
             return example
         n = len(self)
-        for _ in range(32):
-            if not self._hopeless(example):
+        _partial = os.environ.get("CUTS_ALLOW_PARTIAL", "0") == "1"
+        for _ in range(64):
+            if self._uncovered(index):
+                # ★ 건너뛰지 않는다 — 생성이 덜 끝났다는 뜻이므로 **죽인다**.
+                if not _partial:
+                    a, b = self._cut_range
+                    raise RuntimeError(
+                        f"cut 판정이 없는 인덱스 {index:,} 로 학습하려 한다.\n"
+                        f"   cut 파일이 훑은 연속 범위 [{a:,}, {b:,}) · "
+                        f"필요 [0, {n:,})\n"
+                        f"   cut 은 전 구간을 만들도록 되어 있다 — 없다는 것은 "
+                        f"**생성이 덜 끝났다**는 뜻이다.\n"
+                        f"   메우려면: bash scripts/gen_cuts_all.sh "
+                        f"{self.split.name.lower()} && "
+                        f"bash scripts/merge_cuts.sh {self.split.name.lower()}\n"
+                        f"   (생성 중 진단이면 CUTS_ALLOW_PARTIAL=1)")
+                _UNCOVERED_SKIPS[0] += 1
+            elif not self._hopeless(example):
                 return example
             index = (index + 1) % n
             try:

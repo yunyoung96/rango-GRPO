@@ -449,7 +449,9 @@ for i in range(START, min(START + N, len(ds))):
 #   아무도 몰랐다(실측: 640,000 중 60,000 만 덮은 채 학습이 돌았다).
 #   조회 쪽(cut_lookup)이 이 값을 읽어 범위 밖 질의를 셀 수 있게 한다.
 fo.write(json.dumps({"kind": "meta", "split": SPLIT,
-                     "scan_start": START, "scan_end": START + N,
+                     # ★ 실제로 훑은 끝으로 **클램프**한다. `START+N` 을 그대로 쓰면
+                     #   마지막 청크가 데이터 끝을 넘어 "더 많이 훑었다" 고 주장한다.
+                     "scan_start": START, "scan_end": min(START + N, len(ds)),
                      "dataset_len": len(ds)}, ensure_ascii=False) + "\n")
 
 for nm, ty in stmts.items():

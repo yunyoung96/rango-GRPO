@@ -101,16 +101,29 @@ def is_hopeless(sid: str) -> bool:
 
 
 def scanned_range() -> tuple:
-    """이 cut 파일이 실제로 훑은 인덱스 범위 [start, end).
+    """이 cut 파일이 실제로 훑은 **연속** 인덱스 범위 [start, end).
 
     ★ 없으면 (0, 0) — **범위를 모른다**는 뜻이고, 그건 곧 커버리지를 보장할 수
       없다는 뜻이다. 학습 전 가드가 이 값을 보고 막는다.
+
+    ★★ 반드시 **연속**이어야 한다. 예전 구현은 `(min(start), max(end))` 를 돌려줬는데,
+      cut 파일은 청크 81개를 이어붙여 만든다. 가운데 청크 하나가 빠져도 min/max 는
+      전 구간을 커버한다고 답한다 — 가드가 통과하고, 그 구멍 구간의 스텝은 cut 치환도
+      CUT_DROP_HOPELESS 도 조용히 안 걸린다. 정확히 우리가 한 번 당한 사고다.
+      그래서 구간을 정렬해 **첫 구멍에서 끊고** 거기까지만 보장한다.
     """
     load()
     if not _meta:
         return (0, 0)
-    return (min(m.get("scan_start", 0) for m in _meta),
-            max(m.get("scan_end", 0) for m in _meta))
+    iv = sorted((int(m.get("scan_start", 0)), int(m.get("scan_end", 0)))
+                for m in _meta)
+    start = iv[0][0]
+    end = iv[0][1]
+    for a, b in iv[1:]:
+        if a > end:                 # 구멍 — 여기서 끊는다
+            break
+        end = max(end, b)
+    return (start, end)
 
 
 def stats() -> dict:

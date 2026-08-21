@@ -122,10 +122,21 @@ if lost:
         print(f"   손실 개수 (중앙/최대)  {statistics.median(nz):.0f} / {max(nz)}")
     print(f"   nfit(896 예산으로 담긴 개수) 중앙 "
           f"{statistics.median(nfit_all):.0f} · 최대 {max(nfit_all)}")
-    print(f"   ★ **실제로 남는 premise 개수** — build_cuts 는 nfit 을 그대로 믿는다")
-    sr = sorted(safe_n)
-    for q, lab in ((0, "최악"), (5, "5%"), (25, "25%"), (50, "중앙")):
-        print(f"        {lab:6s} {sr[max(0, len(sr)*q//100 - (1 if q else 0))]:3d}개")
+    # ★ premise 가 아예 없는 예제(약 18%)를 섞으면 분포가 왜곡된다 — 빼고 본다.
+    pos = [(a, b) for a, b in zip(nfit_all, safe_n) if a > 0]
+    print(f"   premise 가 있는 예제 {len(pos)}건 / 전체 {len(nfit_all)}건")
+    print(f"   ★ **상위 몇 위까지 살아남나** — build_cuts 는 nfit 위까지 다 산다고 본다")
+    sr = sorted(b for _, b in pos)
+    for q, lab in ((1, "1%"), (5, "5%"), (10, "10%"), (25, "25%"), (50, "중앙")):
+        k = max(0, len(sr) * q // 100 - 1)
+        print(f"        {lab:6s} {sr[k]:3d}위까지")
+    # 이 값으로 자르면 몇 %의 예제에서 build_cuts 판정이 맞아지나
+    print(f"   ★ nfit 상한을 K 로 걸었을 때 **판정이 맞는 예제 비율**")
+    for K in (8, 12, 16, 20, 24, 999):
+        okc = sum(1 for a, b in pos if min(a, K) <= b)
+        cut_up = sum(1 for a, b in pos if a > K)
+        print(f"        K={K if K < 999 else '제한없음':>6}  정확 {okc/len(pos)*100:5.1f}%"
+              f"   ·  cut 이 늘어나는 예제 {cut_up/len(pos)*100:5.1f}%")
 print()
 print(f"■ 모듈 한정 이름의 꼬리가 정규화된 흔적 (`X.f0` 꼴)")
 tot = sum(qual_hits.values())

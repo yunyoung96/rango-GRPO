@@ -127,7 +127,10 @@ _KNOWN = {"tfidf", "rrf", "struct", "eq", "eqa", "eqx", "cov", "eqcov",
           #   ω≡0 → rrf(A 최고) · ω≡1 → structural 유사(C 최고) ·
           #   ω=[τ=1] 이고 F₁→지시자면 **EQ_W 그 자체**(특수해).
           "gate", "gate80", "gate95"}
-_bad = [r for r in RANKERS if r not in _KNOWN]
+# ★ afh 족은 τ 를 이름에 담는다(`afh80` = τ 0.80). 유효 범위만 확인하고 통과시킨다 —
+#   목록에 일일이 적으면 τ 하나 바꿀 때마다 "알 수 없는 랭커" 로 죽는다(실제로 겪었다).
+_AFH = re.compile(r"^afh([1-9]\d?|100)$")
+_bad = [r for r in RANKERS if r not in _KNOWN and not _AFH.match(r)]
 if _bad:
     sys.stderr.write(f"알 수 없는 랭커: {_bad}\n사용 가능: {sorted(_KNOWN)}\n")
     sys.exit(2)
@@ -787,6 +790,11 @@ ALLA = {r: collections.Counter() for r in RANKERS}
 RC = {r: collections.Counter() for r in RANKERS}
 ALLC = {r: collections.Counter() for r in RANKERS}
 D = collections.Counter()
+# ★ 예제별 **복합 성공** 불리언. 목표지표 A + (1−A)×C 는 이 불리언의 평균과 같다.
+#   집계만 있으면 두 랭커를 **독립 표본**으로 비교하게 되어 CI 가 크게 나온다.
+#   같은 예제를 같은 후보 풀로 재는 **쌍 비교**(McNemar)면 공통 분산이 상쇄되어
+#   훨씬 작은 차이도 유의하게 가른다. 저장 비용은 랭커당 불리언 하나뿐이다.
+PAIRED = collections.defaultdict(list)
 TM = collections.Counter()
 nA = nC = nmulti = nCname = nCmulti = 0
 NFIT = []
@@ -842,6 +850,7 @@ for i in range(200000):
     TM["rank"] += time.time() - ta
 
     # ── 실험 중 불변식 검사 ──────────────────────────────────────────────
+    _aok = {}                      # 예제별: A 단계(ALL·P)에서 성공했나
     for r, v in sc.items():
         if len(v) != len(pool):
             D[f"불변식: {r} 점수 길이 불일치"] += 1
@@ -856,6 +865,7 @@ for i in range(200000):
             ALLA[r][k] += (rw < k)
         RA[r]["P"] += (pb < 10 ** 9)      # [프롬프트] 기준
         ALLA[r]["P"] += (pw < 10 ** 9)
+        _aok[r] = (pw < 10 ** 9)          # ALL·P 기준으로 A 가 성공했나
 
     # ── C: 못 찾은 gold **하나하나** 에 대해 L' 을 세우고 그 L 이 잡히나 ───
     #   ★ 예전엔 gold 중 첫 번째 하나로만 질의를 만들고 순위는 전체 중 최선을 봤다.
@@ -939,6 +949,14 @@ for i in range(200000):
                 for k in list(KS) + ["P"]:
                     RC[r][k] += any_ok[r][k]      # R: 하나라도
                     ALLC[r][k] += found[r][k]     # ALL: 전부
+                # 복합: A 로 잡았거나(위) C 로 전부 건졌으면 성공
+                PAIRED[r].append(bool(_aok.get(r)) or bool(found[r]["P"]))
+        else:
+            for r in RANKERS:
+                PAIRED[r].append(bool(_aok.get(r)))
+    else:
+        for r in RANKERS:
+            PAIRED[r].append(bool(_aok.get(r)))
     if nA % 100 == 0:
         el = time.time() - t0
         print(f"   {nA}/{A.nrank}  ({el:.0f}s · {el/max(nA,1):.2f}s/건 · "
@@ -1019,6 +1037,42 @@ for r in RANKERS:
     cc_ = ALLC[r]["P"] / max(nC, 1)
     print(f"      {r:16s}{(a_+(1-a_)*c_)*100:12.1f}%{(aa+(1-aa)*cc_)*100:14.1f}%")
 
+# ── 쌍 비교 (McNemar) ────────────────────────────────────────────────────
+#   ★ 왜 필요한가: 랭커들은 **같은 예제·같은 후보 풀**을 본다. 그래서 두 랭커의
+#     차이를 독립 표본 CI(±1.2pp @ n=1500)로 재면 공통 분산까지 오차로 세게 되어
+#     실제로 유의한 차이를 "구분 불가" 로 잘못 판정한다.
+#     불일치 쌍만 세는 McNemar 는 그 공통 분산이 상쇄되므로 훨씬 예민하다.
+#     b = 이긴 쪽만 성공한 예제 수 · c = 진 쪽만 성공한 예제 수.
+#     H0 아래 b ~ Binom(b+c, 1/2) 이므로 정확 이항검정을 쓴다(근사 없이).
+if PAIRED and len(PAIRED) > 1:
+    _n = min(len(v) for v in PAIRED.values())
+    _rate = {r: sum(PAIRED[r][:_n]) / max(_n, 1) for r in PAIRED}
+    _best = max(_rate, key=lambda r: _rate[r])
+
+    def _binom_p(b, c):
+        """정확 이항 양측검정 P(|X−(b+c)/2| ≥ |b−(b+c)/2|), X~Binom(b+c, 1/2)."""
+        m = b + c
+        if m == 0:
+            return 1.0
+        k = max(b, c)
+        tail = sum(math.comb(m, j) for j in range(k, m + 1)) / (2 ** m)
+        return min(1.0, 2 * tail)
+
+    print(f"\n【P】 쌍 비교 (McNemar 정확검정) — 기준 `{_best}` {_rate[_best]*100:.1f}%")
+    print(f"      같은 예제 {_n}건을 같은 후보 풀로 재므로 **쌍 비교**가 맞다.")
+    print(f"      b = 기준만 성공 · c = 상대만 성공 · 차이는 (b−c)/n")
+    print(f"      {'랭커':16s}{'ALL·P':>8}{'차이':>9}{'b':>6}{'c':>6}{'p':>10}  판정")
+    for r in RANKERS:
+        if r == _best or r not in PAIRED:
+            continue
+        b = sum(1 for i in range(_n) if PAIRED[_best][i] and not PAIRED[r][i])
+        c = sum(1 for i in range(_n) if not PAIRED[_best][i] and PAIRED[r][i])
+        pv = _binom_p(b, c)
+        d = (b - c) / max(_n, 1) * 100
+        mark = "유의" if pv < 0.05 else "구분 불가"
+        print(f"      {r:16s}{_rate[r]*100:7.1f}%{d:+8.2f}{b:6d}{c:6d}{pv:10.4f}  {mark}")
+
+
 if D:
     print(f"\n【D】 그 밖에 걸린 것")
     for k, v in D.most_common(15):
@@ -1045,6 +1099,7 @@ res = {"split": SPLIT, "stage1": A.stage1, "nA": nA, "nC": nC, "nmulti": nmulti,
        "A_ALL": {r: dict(ALLA[r]) for r in RANKERS},
        "C_R": {r: dict(RC[r]) for r in RANKERS},
        "C_ALL": {r: dict(ALLC[r]) for r in RANKERS},
+       "paired": {r: [int(x) for x in PAIRED[r]] for r in PAIRED},
        "nCname": nCname, "nCmulti": nCmulti,
        "D": dict(D), "sec": round(time.time() - t0, 1)}
 out = A.out or ("/tmp/claude-0/-app-coq-modeling/e02d0688-7cb1-43a8-aa0e-ee8afd60ce19/"

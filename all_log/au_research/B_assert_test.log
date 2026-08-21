@@ -25,3 +25,173 @@
   125건 검증 · 성공 112 (2658s)
   130건 검증 · 성공 115 (2702s)
   135건 검증 · 성공 119 (2825s)
+  140건 검증 · 성공 124 (2929s)
+  145건 검증 · 성공 129 (3063s)
+  150건 검증 · 성공 134 (3107s)
+
+■ TEST — assert 변환 동적 검증
+   premise 텍스트 못 찾음               675
+   소스 파일 없음                       292
+   Check(항) 타입 획득                 232
+   검증                             150
+   ✓ 변환 성공                        134
+   admit 시도                       133
+   ✓ admit 만으로 suffix 통과          130
+   suffix 검증 시도                   126
+   ✓ suffix 까지 통과                 124
+   Check(이름) 폴백                    87
+   변환 포기(위험/불가)                    73
+   ✗ 변환 실패                         16
+   ★ PrintingAll 폴백으로 성공            9
+   원본이 이미 오류(스킵)                    6
+   ✗ admit 만으로는 suffix 실패           3
+   ✗ suffix 에서 깨짐                   2
+
+   변환 성공률(시도분): 134/150 = 89.3%
+   적용률(포기 포함)  : 150/223 = 67.3%   — 포기 73건
+
+   ✓ 이름 침범 0건 (state·앞증명·뒤증명·premise 전부 대조)
+
+   ■ 포기 이유 (많은 순)
+     [  23] 위험 타입: canonical structure(eqType 등)
+     [  18] 위험 tactic: //
+     [  13] 위험 타입: SSReflect 집합표기
+     [  12] 위험 tactic: =>
+     [  12] 위험 타입: 중괄호 notation({pred T} 등)
+     [   8] rewrite ?L / !L (반복 재작성)
+     [   7] 위험 tactic: exact:
+     [   7] 위험 tactic: apply:
+     [   6] 위험 tactic: // => case:
+     [   5] 위험 tactic: rewrite -
+     [   5] statement 추출 실패(정의/본문있음)
+     [   4] 위험 타입: SSReflect 내포표기
+     [   4] 위험 tactic: // apply:
+     [   3] 위험 tactic: => move:
+     [   3] 위험 tactic: move:
+     [   3] 위험 tactic: // =>
+     [   3] 위험 tactic: // rewrite -
+     [   2] 위험 tactic: case:
+     [   2] 위험 tactic: => case:
+     [   2] 위험 tactic: move: rewrite -
+
+   ■ 실패 유형 (많은 순)
+   [  3회] X no X X "…" in X X X.
+          원래: rewrite rings.preserves_plus, rings.preserves_1.
+          변환: assert (∀ x y : N, id (x + y) = id x + id y) as H_asrt0. { exact (rings.preserves_plus). }
+          오류: Found no subterm matching "id (?n + ?n0)" in the current goal.
+   [  2회] X X X X X X in X X X.
+          원래: rewrite <- A, ! Val.addl_assoc; auto.
+          변환: assert (forall x y z, addl (addl x y) z = addl x (addl y z)) as H_asrt0. { exact addl_assoc. }
+          오류: The variable addl was not found in the current environment.
+   [  1회] X to X X X X: In X: F : X Ae : X F X : X F X : X F X : X F X : X F X : X F X : X F H : X F
+          원래: rewrite <-?preserves_mult, <-preserves_plus, <-preserves_mult.
+          변환: assert (∀ (A B : Type) (Ae : Equiv A) (Be : Equiv B) (Aplus : Plus A) (Amult : Mult A) (Azero : Zero
+          오류: Unable to satisfy the following constraints:
+In environment:
+F : Type
+Ae : Equiv F
+Aplus : Plus F
+Amult : Mult F
+Azero : Zero F
+Aone : One F
+Anegate :
+   [  1회] In X A : X X : X A o : X A X : X A H : X X o X X : X m2 : X A,          (X i : X, X i X = 
+          원래: specialize (H1 xH); rewrite ! gNode in H1.
+          변환: assert (forall (A : Type) (i : positive) (l : tree A) (x : option A) (r : tree A), get i (Node l x r
+          오류: In environment
+A : Type
+m1_1 : tree A
+o : option A
+m1_2 : tree A
+H : not_trivially_empty m1_1 o m1_2
+IHm1_1 : forall m2 : tree A,
+         (forall i :
+   [  1회] In X A : X Ae : X A X : X A X : X A X : X A X : X A X : X A H : X A B : X X : X B X : X B 
+          원래: apply (encode_morphism_only _).
+          변환: assert (∀ (A : sorts theory → Type) (H : AlgebraOps theory A) (H0 : ∀ u : sorts theory, Equiv (A u))
+          오류: In environment
+A : Type
+Ae : Equiv A
+Aplus : Plus A
+Amult : Mult A
+Azero : Zero A
+Aone : One A
+Anegate : Negate A
+H : Ring A
+B : Type
+Ae0 : Equiv B
+Ap
+   [  1회] In X h : X h' : X Dh : h = h'.+1 X : X X : X h = X n : X X : n < h.+1 i : X b0 : X t0, t1,
+          원래: rewrite cbit0_addc cbit0_ccons cbit1_addc cbit1_ccons.
+          변환: assert (forall b1 b0 : bool, cbit1 (ccons b1 b0) = b1) as H_asrt0. { exact (cbit0_addc cbit0_ccons c
+          오류: In environment
+h : Datatypes_nat__canonical__eqtype_Equality
+h' : nat
+Dh : h = h'.+1
+ltab : ctree_table
+Dltab : ctree_leaf_table h = ltab
+n : nat
+ltnh
+   [  1회] In X A : X Ae : X A X : X A H : X A B : X X : X B X : X B H0 : X B f : A → A → B X : X f H
+          원래: apply strong_binary_setoid_morphism_both_coordinates.
+          변환: assert (StrongSetoid_BinaryMorphism (λ z x : A, f x z)) as H_asrt0. { exact (strong_binary_setoid_mo
+          오류: In environment
+A : Type
+Ae : Equiv A
+Aap : Apart A
+H : StrongSetoid A
+B : Type
+Ae0 : Equiv B
+Aap0 : Apart B
+H0 : StrongSetoid B
+f : A → A → B
+Commutat
+   [  1회] X X X X X G of X X X is  "…" in X: qt : X G : X X : X G X : X y : G, ~~ X y qt X := X : X 
+          원래: by rewrite Ezp1 /qstepR /= /zmove Dnf faceK Dnf.
+          변환: assert (forall G : hypermap, cancel3 face edge node) as H_asrt0. { exact faceK. }
+          오류: Cannot infer the implicit parameter G of edge whose type is 
+"hypermap" in
+environment:
+qt : quiz_tree
+G : hypermap
+geoG : plain_cubic_pentagonal G
+fi
+   [  1회] In X Q : X e : X Q X : X Q X : X Q X : X Q X : X Q X : X Q X : X Q U : X Q H : X Q H0 : X 
+          원래: apply (naturals.to_semiring_unique _).
+          변환: assert (∀ x : nat, n_to_sr x = n_to_sr x) as H_asrt0. { exact (naturals.to_semiring_unique _). }
+          오류: In environment
+Q : Type
+e : Equiv Q
+plus0 : Plus Q
+mult0 : Mult Q
+zero0 : Zero Q
+one0 : One Q
+neg0 : Negate Q
+recip0 : DecRecip Q
+U : RationalsToFrac 
+   [  1회] In X Z : X e : X Z X : X Z X : X Z X : X Z X : X Z X : X Z U : X Z H : X Z H0 : X Z X : X 
+          원래: now apply to_semiring_nonneg.
+          변환: assert (∀ n : N, 0 ≤ id n) as H_asrt0. { exact (to_semiring_nonneg). }
+          오류: In environment
+Z : Type
+e : Equiv Z
+plus0 : Plus Z
+mult0 : Mult Z
+zero0 : Zero Z
+one0 : One Z
+negate0 : Negate Z
+U : IntegersToRing Z
+H : Integers Z
+H
+   [  1회] In X X := X b : X => if b X X X X : X -> X -> X -> X cp : X X X : X cp G := X cp : X X : X
+          원래: rewrite !has_map !(eq_has (cface_icpY G x)) !has_cat !has_seqb.
+          변환: assert (forall (T : Type) (a1 a2 : T -> bool), a1 =1 a2 -> has a1 =1 has a2) as H_asrt0. { exact eq_
+          오류: In environment
+nsp := fun b : bool => if b then orb else andb : bool -> bool -> bool -> bool
+cp : seq cpstep
+cpQ : cubic_prog cp
+G := cpmap cp : point
+   [  1회] X X: X X X: X to X.
+          원래: setoid_rewrite listset_in_join.
+          변환: assert (∀ (l k : set_type (set_type elt)) (x : set_type elt), x ∈ l ⊔ k ↔ x ∈ l ∨ x ∈ k) as H_asrt0.
+          오류: Tactic failure: setoid rewrite failed: Nothing to rewrite.
