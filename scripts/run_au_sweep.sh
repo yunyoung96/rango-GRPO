@@ -13,4 +13,4 @@ source all_log/v9_env.sh
 unset CUTS_PATH
 exec nice -n 19 python3 -u scripts/exp_abcd.py \
     --split "$SPLIT" --n "$N" \
-    --rankers tfidf,rrf,structural,aul,aul05,aul2,auf
+    --rankers rrf,eq,eqcov,structural,auf,aufh,aufh80,aufh95

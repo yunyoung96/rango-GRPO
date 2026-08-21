@@ -103,7 +103,21 @@ _KNOWN = {"tfidf", "rrf", "struct", "eq", "cov", "eqcov",
           #   logit 은 F=1 에서 극점을 가지므로 **완전일치가 자동으로 압도**한다 —
           #   손으로 정한 3.0 이 하던 일이 정의에서 나온다.
           #   (로그 오즈의 가산 = 독립 증거의 결합, 나이브 베이즈)
-          "aul", "aul05", "aul2"}
+          "aul", "aul05", "aul2",
+          # ★ 절단형(hinge) — EQ_W 의 **희소성**을 유지한 채 연속화한다.
+          #   aul 이 진 원인이 희소성 파괴였다: logit 은 모든 후보에 ±3.45 를 주어
+          #   RRF 항(최대 0.017)을 통째로 지웠다(목표 76.6% — 최하위권).
+          #   EQ_W 는 완전일치일 때만 발화해서 나머지는 RRF 가 정한다.
+          #   hinge 는 F<τ 면 0, F≥τ 면 선형 — EQ_W 는 τ→1 극한이다.
+          "aufh", "aufh80", "aufh95",
+          # ★ 국면 게이트 모형 — 잠재 국면 z∈{A,C} 의 혼합.
+          #   P(p|g) = Σ_z P(z|g)·P(p|g,z) 인데 P(z=C|g) 가 **관측 가능**하다:
+          #       τ(g) = max_p F₁(p,g)   ← goal 이 누군가의 명제면 1 에 가깝다
+          #   ω(g) = hinge_{τ₀}(τ(g)) 로 게이트를 만들면
+          #       score = RRF(tfidf)+RRF(C')  +  ω·[RRF(cov) + W·F₁]
+          #   ω≡0 → rrf(A 최고) · ω≡1 → structural 유사(C 최고) ·
+          #   ω=[τ=1] 이고 F₁→지시자면 **EQ_W 그 자체**(특수해).
+          "gate", "gate80", "gate95"}
 _bad = [r for r in RANKERS if r not in _KNOWN]
 if _bad:
     sys.stderr.write(f"알 수 없는 랭커: {_bad}\n사용 가능: {sorted(_KNOWN)}\n")
@@ -239,6 +253,60 @@ def rank_all(state, texts, pool, tf, tr, kinds, docs=None, names=None,
                 eb = eq_bonus()
                 sc = [sc[j] + 3.0 * eb[j] for j in range(n)]
             out[k] = sc
+        elif k in ("gate", "gate80", "gate95"):
+            # ★ 국면 게이트 — 이 파일의 핵심 제안.
+            #
+            #   관찰: 같은 신호가 A 와 C 에서 **정반대로** 작동한다.
+            #     cov  : A −4.4pp        C 도움
+            #     EQ   : A 0 (미발화)    C +23.6pp (@1)
+            #   원인: 두 국면이 **다른 질문**을 던진다.
+            #     A — goal 이 어떤 lemma 의 명제도 아니다 → "무엇이 관련 있나"(어휘)
+            #     C — 질의가 곧 명제다                    → "무엇이 이 명제인가"(구조)
+            #
+            #   그래서 국면을 잠재변수로 두고 혼합한다. 그런데 국면이 **관측 가능**하다:
+            #     τ(g) = max_p F₁(p,g)  가 1 에 가까우면 C 국면이다.
+            #
+            #   ω = hinge_{τ₀}(τ) 로 C 국면 특징만 켠다. A 국면에서는 정확히 rrf 가 된다.
+            tau0 = {"gate80": 0.80, "gate95": 0.95}.get(k, 0.90)
+            W = float(os.environ.get("AU_GATE_W", "3.0"))
+            gs2 = goal_struct("\n" + state if not state.startswith("\n") else state)
+            fv = [0.0] * n
+            if gs2 is not None:
+                for j in cand:
+                    ps = prem_struct(texts[j])
+                    if ps is not None:
+                        fv[j] = sig_au_f(gs2, ps, 1.0)
+            tau = max(fv) if fv else 0.0
+            omega = max(0.0, tau - tau0) / (1.0 - tau0)       # 게이트 ∈ [0,1]
+            if omega <= 0.0:
+                out[k] = list(rrf)                            # A 국면 = rrf 그대로
+            else:
+                cv = cov_rrf()
+                out[k] = [rrf[j] + omega * (cv[j] + W * fv[j]) for j in range(n)]
+        elif k in ("aufh", "aufh80", "aufh95"):
+            # ★ score = RRF(tfidf) + RRF(cov) + RRF(F₁) + W·hinge_τ(F₁)
+            #     hinge_τ(F) = max(0, F−τ)/(1−τ)      F<τ 면 0 · F=1 이면 1
+            #
+            #   EQ_W(=3.0×[완전일치]) 는 이것의 **τ→1 극한**이다.
+            #   τ<1 로 두면 "거의 완전일치"(F=0.95, 인자 하나 차이)까지 잡으므로
+            #   EQ_W 보다 **엄밀히 더 일반적**이면서 희소성은 유지된다.
+            tau = {"aufh80": 0.80, "aufh95": 0.95}.get(k, 0.90)
+            W = float(os.environ.get("AU_HINGE_W", "3.0"))
+            gs2 = goal_struct("\n" + state if not state.startswith("\n") else state)
+            fv = [0.0] * n
+            if gs2 is not None:
+                for j in cand:
+                    ps = prem_struct(texts[j])
+                    if ps is not None:
+                        fv[j] = sig_au_f(gs2, ps, 1.0)
+            o = sorted(range(n), key=lambda j: -fv[j])
+            rr = [0] * n
+            for pp, j in enumerate(o):
+                rr[j] = pp
+            f_rrf = [1.0 / (60 + rr[j]) for j in range(n)]
+            cv = cov_rrf()
+            out[k] = [rrf[j] + cv[j] + f_rrf[j]
+                      + W * max(0.0, (fv[j] - tau)) / (1.0 - tau) for j in range(n)]
         elif k in ("aul", "aul05", "aul2"):
             # ★ score = RRF(tfidf) + RRF(cov) + w·logit(F_β)
             #
