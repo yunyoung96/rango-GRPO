@@ -1,40 +1,36 @@
 #!/bin/bash
-# 2차(cov 절제 + hinge) → 3차(국면 게이트) 자동 연결.
+# α-동치 랭커(eqa) 검증 체인.
 #
-# ★ 왜 자동으로 잇나: 각 회차가 n=1000 으로 1~2시간 걸리고, cut 전량 생성과
-#   CPU 를 나눠 쓰므로 사람이 붙어 있을 이유가 없다. 결과는 로그에 쌓인다.
+# ★ 무엇을 재나: `eq` 는 정규형을 **이름까지** 비교한다(포섭 선순서의 몫을 안 냄).
+#   `eqa` 는 대칭화 ⊑∩⊒ = α-동치로 비교한다 — 이름에 의존하지 않는 구조 비교.
+#   동시에 C 국면 질의를 **실제 assert 가 만드는 subgoal**(statement_of, ∀ 포함)로
+#   바꿨다. 옛 질의는 gold 의 결론부라 이름이 gold 것 그대로여서 eq 가 공짜로
+#   맞았다 — C 수치가 낙관적이었다. 그래서 2차의 C 숫자와는 직접 비교가 안 된다.
+#
+# ★ pgrep 자기매칭 주의: 반드시 `python3 -u scripts/...` 전체를 패턴으로 쓴다.
 set -u
 cd /app/coq-modeling || exit 1
 OUT=all_log/au_research
 mkdir -p "$OUT"
 L="$OUT/chain.log"
 say(){ echo "[$(date '+%m-%d %H:%M')] $*" >> "$L"; }
+PAT='python3 -u scripts/exp_abcd\.py'
+wait_free(){ while pgrep -f "$PAT" > /dev/null; do sleep 60; done; }
 
-# ① 2차 완료 대기
-while pgrep -f exp_abcd.py > /dev/null; do sleep 60; done
-say "2차 완료 대기 끝"
-
-# ② 3차 — 국면 게이트 (τ₀ 세 종)
-#    τ(g) = max_p F₁(p,g) 로 국면을 탐지하고, C 국면에서만 구조 항을 켠다.
-#    ω≡0 → rrf(A 최고) · ω≡1 → structural 유사(C 최고) 를 잇는 연속 족.
-say "3차 시작 — gate,gate80,gate95 + 기준선"
+wait_free
 source all_log/v9_env.sh
 unset CUTS_PATH
-nice -n 19 python3 -u scripts/exp_abcd.py --split test --n 1000 \
-    --rankers rrf,structural,gate,gate80,gate95 \
-    > "$OUT/round3_test.log" 2>&1
+
+say "3차 시작 — TEST n=1500 · rrf,eq,eqa,structural (질의 충실화 후 재측정)"
+nice -n 19 python3 -u scripts/exp_abcd.py --split test --n 1500 \
+    --rankers rrf,eq,eqa,structural > "$OUT/round3_test.log" 2>&1
 say "3차 완료 → $OUT/round3_test.log"
 
-# ③ 3차에서 이긴 것이 있으면 VAL 로 교차확인
-BEST=$(grep -A 12 "프롬프트 포함(P) 기준" "$OUT/round3_test.log" 2>/dev/null \
-       | awk 'NF>=3 && $2 ~ /%/ {gsub("%","",$3); if ($3+0 > m) {m=$3+0; b=$1}} END{print b}')
-say "3차 최선: ${BEST:-없음}"
-if [ -n "${BEST:-}" ]; then
-  say "VAL 교차확인 시작 — rrf,structural,$BEST"
-  nice -n 19 python3 -u scripts/exp_abcd.py --split val --n 1000 \
-      --rankers "rrf,structural,$BEST" \
-      > "$OUT/round4_val.log" 2>&1
-  say "VAL 완료 → $OUT/round4_val.log"
-fi
+wait_free
+say "4차 시작 — VAL n=1500 · rrf,eq,eqa,structural"
+nice -n 19 python3 -u scripts/exp_abcd.py --split val --n 1500 \
+    --rankers rrf,eq,eqa,structural > "$OUT/round4_val.log" 2>&1
+say "4차 완료 → $OUT/round4_val.log"
+
 touch "$OUT/chain.done"
 say "연구 체인 종료"

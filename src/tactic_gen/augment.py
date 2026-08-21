@@ -253,13 +253,25 @@ def _is_type_def(defn):
     return i < len(head) and head[i] in _TYPE_KINDS
 
 
-def _shorten(defn, ntok, cap):
-    """긴 정의 축약: ':=' 앞 시그니처 → 그래도 길면 앞부분만 남기고 '...'."""
+def _shorten(defn, ntok, cap, want_type=False):
+    """긴 정의 축약: ':=' 앞 시그니처 → 그래도 길면 앞부분만 남기고 '...'.
+
+    ★ `want_type=True`(Inductive/Record)면 **시그니처만 남기지 않는다.**
+      타입은 **생성자 목록이 핵심**인데 시그니처만 주면 아무 정보가 없다:
+
+          Inductive f1 (clo: rel->rel) (r: rel): rel        ← 생성자 0개. 쓸모없다
+
+      실측 300 예제 중 21건(7%)이 이 형태였다. 프롬프트 자리만 먹고 모델은
+      "T0 의 생성자가 뭔가"를 여전히 못 읽는다. 넣지 않고 **자리를 다른 타입에 넘긴다.**
+      (함수는 반대다 — `Definition f : A -> B` 시그니처만으로도 타입 정보가 된다.)
+    """
     if ntok(defn) <= cap:
         return defn
     sig = defn.split(':=')[0].strip()
     if ':' in sig and ntok(sig) <= cap:
-        return sig
+        return None if want_type else sig
+    if want_type:
+        return None                      # 잘라서 넣느니 안 넣는다
     w = defn.split()
     while w and ntok(' '.join(w) + ' ...') > cap:
         w = w[:-1]
@@ -288,7 +300,7 @@ def _expand(seeds, index, project, want_type, ntok, budget, max_items, cap, dept
         d += 1
     lines, tot = [], 0
     for name, defn in order:
-        s = _shorten(defn, ntok, cap)
+        s = _shorten(defn, ntok, cap, want_type=want_type)
         if not s:
             continue
         t = ntok(s)

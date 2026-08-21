@@ -8,7 +8,7 @@ example_collator:
   alias: proof-premise
   out_tokens: 128
   premise_tokens: 896
-  proof_tokens: 640
+  proof_tokens: 256
   script_tokens: 512
   state_tokens: 1024
 gradient_accumulation_steps: 4
@@ -39,7 +39,7 @@ tactic_data:
     alias: proof-premise
     out_tokens: 128
     premise_tokens: 896
-    proof_tokens: 640
+    proof_tokens: 256
     script_tokens: 512
     state_tokens: 1024
   data_loc: /tmp/coq-dataset

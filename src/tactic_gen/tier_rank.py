@@ -209,6 +209,108 @@ def sig_match_size(gs, ps) -> float:
     return best
 
 
+# ══ α-동치 = 포섭 선순서의 표준 몫 ═══════════════════════════════════════
+#
+#   포섭 `s ⊑ t ⟺ ∃σ. σ(s)=t` 는 **선순서(preorder)** 이지 부분순서가 아니다.
+#   선순서를 부분순서로 만드는 표준 구성은 **대칭화로 몫을 내는 것**이고,
+#   항 대수에서 그 대칭화는 정확히 변항관계(variant) = α-동치다.
+#
+#       L ⊑ g  ∧  g ⊑ L   ⟺   L ≡α g            (Plotkin·Reynolds 1970)
+#
+#   그래서 (Terms/≡α, ⊑) 가 진짜 부분순서이고, 우리가 쓰던 `canon` 동일성은
+#   그 몫을 **내지 않은** 채 대표원을 이름까지 비교하던 것이다 — 이름 의존은
+#   설계 선택이 아니라 몫을 안 낸 부작용이다.
+#
+#   ★ 왜 ⊑ 하나만 쓰면 무너지나: ↓g = {L : L ⊑ g} 는 **이데알**이라 바닥(⊥,
+#     헐벗은 메타변수 `∀P. P`)을 포함하고, 바닥은 모든 goal 을 포섭한다.
+#     그래서 발화가 조밀해지고 A 가 붕괴한다(실측 ALL@50 45.4% → 18.2%).
+#     ⊑ ∩ ⊒ 로 대칭화하면 발화가 **포셋의 한 점(α-류)** 으로 줄어 희소성이 산다.
+#
+#   ★ PL 대응: `Γ ⊢ φ` 와 `⊢ ∀Γ. φ` 는 ∀-intro/elim 으로 상호유도된다. 그래서
+#     goal 쪽은 **지역 문맥 변수를 메타변수로 읽어야** premise 의 binder 와 대칭이다.
+
+_HYP_NAMES = re.compile(r"^\s*([A-Za-z_][\w']*(?:\s+[A-Za-z_][\w']*)*)\s*:(?!=)")
+
+
+def goal_locals(state: str) -> frozenset:
+    """goal 의 지역 문맥 변수 이름 — `Γ ⊢ φ` 를 `⊢ ∀Γ. φ` 로 읽기 위한 것."""
+    body = (state or "").split("[GOAL]")[0]
+    parts = re.split(r"\n\s*\n", body)
+    if len(parts) < 2:
+        return frozenset()
+    out: set[str] = set()
+    for ln in parts[0].split("\n"):
+        m = _HYP_NAMES.match(ln)
+        if m:
+            out |= set(m.group(1).split())
+    return frozenset(out)
+
+
+def alpha_canon(t, mv):
+    """메타변수를 **첫 등장 순서**로 ?0,?1,… 로 바꾼 α-정규형.
+
+    공유는 보존된다 — `?0 … ?0` 과 `?0 … ?1` 은 다른 항이다. 그래서 이 정규형의
+    동일성이 정확히 α-동치이고, 이름에는 전혀 의존하지 않는다.
+    """
+    ren: dict = {}
+
+    def go(x):
+        if x is None:
+            return None
+        k = x[0]
+        if k == "id":
+            nm = x[1]
+            if nm in mv:
+                if nm not in ren:
+                    ren[nm] = "?%d" % len(ren)
+                return ("id", ren[nm])
+            return x
+        if k == "app":
+            return ("app", go(x[1]), go(x[2]))
+        if k == "op":
+            return ("op", x[1], go(x[2]), go(x[3]))
+        return x
+
+    return go(t)
+
+
+def goal_alpha(state: str):
+    """goal 을 `⊢ ∀Γ.∀binders. φ` 로 읽고 **α-정규형**을 준다.
+
+    ★ 구현이 곧 진술이다: goal 결론을 가짜 선언으로 감싸 `decompose` 에 넣으면
+      goal 자신의 ∀-binder 가 premise 의 binder 와 **같은 경로로** 메타변수가 된다.
+      거기에 지역 문맥 Γ 를 더하면 `Γ ⊢ φ  ⟺  ⊢ ∀Γ. φ` 가 그대로 실현된다.
+    """
+    concl = goal_conclusion(state)
+    if not concl:
+        return None
+    d = decompose("Lemma _g : " + concl.rstrip(". ") + ".")
+    if d is not None:
+        t = parse_toks(d[2])
+        mv = set(d[0]) | set(goal_locals(state))
+    else:
+        t = parse(concl)
+        mv = set(goal_locals(state))
+    if t is None:
+        return None
+    return alpha_canon(canon(t), mv)
+
+
+def prem_alpha(ps):
+    """premise 결론의 α-정규형. `ps` 는 `prem_struct` 의 결과."""
+    if ps is None or ps[1] is None:
+        return None
+    return alpha_canon(ps[1], ps[0])
+
+
+def alpha_eq(ga, ps) -> bool:
+    """premise 결론과 goal 이 α-동치인가  (⟺ 서로 포섭한다: L ⊑ g ∧ g ⊑ L)."""
+    if ga is None:
+        return False
+    pa = prem_alpha(ps)
+    return pa is not None and pa == ga
+
+
 def sig_concl_heads(gs, ps, idf) -> float:
     """C': 결론 부분항 head 의 IDF 가중 코사인."""
     a, b = ps[5], gs[6]

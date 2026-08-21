@@ -58,10 +58,11 @@ from tactic_gen.tactic_data import TacticDataConf, LmDataset  # noqa: E402
 from tactic_gen.gold_lemma import gold_lemmas  # noqa: E402
 from tactic_gen.search_query import local_names  # noqa: E402
 from tactic_gen.applicable import (canon, decompose, match, parse,  # noqa: E402
-                                   subterms)
+                                   parse_toks, subterms)
+from tactic_gen.assert_split import statement_of  # noqa: E402
 from tactic_gen.tier_rank import (TierRanker, declname, prem_struct,  # noqa: E402
                                   goal_struct, sig_hyp_match, head_of, sig_au_dist,
-                                  au_res_gen, sig_au_f)
+                                  au_res_gen, sig_au_f, goal_alpha, prem_alpha)
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--split", default="test",
@@ -83,7 +84,7 @@ CTR_TOP = A.ctr_top
 RANKERS = [x for x in A.rankers.split(",") if x]
 # ★ 랭커 이름 오타/구버전 이름을 **시작 전에** 잡는다. 예전엔 잘못된 이름이 매 스텝
 #   예외로 빠져 결과가 전부 0.0% 로 나왔고, 20분을 버린 뒤에야 알았다.
-_KNOWN = {"tfidf", "rrf", "struct", "eq", "cov", "eqcov",
+_KNOWN = {"tfidf", "rrf", "struct", "eq", "eqa", "cov", "eqcov",
           "structural", "structural_mmr", "gbdt", "ctr",
           "hyp", "sub", "cooc", "nsub", "allsig",
           # ★ 반유니피케이션 비유사도 D_λ (future-idea.md ⑮-A)
@@ -132,9 +133,15 @@ class _G:
 
 
 def _query_tree(state: str):
-    """state 의 goal 결론을 항 트리로. struct 랭커의 질의."""
+    """state 의 goal 결론을 항 트리로. struct 랭커의 질의.
+
+    ★ goal 이 `forall x y : nat, …` 로 시작할 수 있다(assert 직후의 subgoal 이 그렇다).
+      premise 와 **같은 경로**(decompose)로 binder 를 벗겨야 트리가 맞물린다.
+    """
     g = state.split("\n\n")[-1] if "\n\n" in state else state
-    t = parse(g)
+    g = g.strip()
+    d = decompose("Lemma _g : " + g.rstrip(". ") + ".")
+    t = parse_toks(d[2]) if d is not None else parse(g)
     return canon(t) if t is not None else None
 
 
@@ -161,6 +168,13 @@ def _cov(q_ids, docs, n):
     return [len(qs & set(docs[j])) / len(qs) for j in range(n)]
 
 
+# ★ eq 항의 **받침 측정** — verify_eq_props.py 의 성질 S 를 실측으로 뒷받침한다.
+#   "A 국면에서는 거의 발화하지 않고 C 국면에서는 거의 항상 발화한다" 가 자기게이팅의
+#   실증이고, 그게 사실이면 τ₀·ω 같은 게이트 매개변수가 필요 없다는 근거가 된다.
+PHASE = "A"
+EQFIRE = collections.Counter()
+
+
 def rank_all(state, texts, pool, tf, tr, kinds, docs=None, names=None,
              q_ids=None, dp=None):
     """랭커별 점수를 **한 번의 신호 계산으로** 모두 만든다. 큰 값이 상위."""
@@ -185,7 +199,28 @@ def rank_all(state, texts, pool, tf, tr, kinds, docs=None, names=None,
                     ps = prem_struct(texts[j])
                     if ps is not None and ps[1] is not None and ps[1] == qt:
                         _eqb[j] = 1.0
+            nf = int(sum(_eqb))
+            EQFIRE[f"{PHASE}:질의"] += 1
+            EQFIRE[f"{PHASE}:후보"] += len(cand)
+            EQFIRE[f"{PHASE}:발화"] += nf
+            EQFIRE[f"{PHASE}:발화질의"] += (nf > 0)
         return _eqb
+
+    _ab = None
+
+    def alpha_bonus():
+        nonlocal _ab
+        if _ab is None:
+            _ab = [0.0] * n
+            ga = goal_alpha(state)
+            if ga is not None:
+                for j in cand:
+                    if prem_alpha(prem_struct(texts[j])) == ga:
+                        _ab[j] = 1.0
+            nf = int(sum(_ab))
+            EQFIRE[f"{PHASE}:α발화"] += nf
+            EQFIRE[f"{PHASE}:α발화질의"] += (nf > 0)
+        return _ab
 
     _covv = None
 
@@ -221,6 +256,12 @@ def rank_all(state, texts, pool, tf, tr, kinds, docs=None, names=None,
         elif k == "eq":
             eb = eq_bonus()
             out[k] = [rrf[j] + 3.0 * eb[j] for j in range(n)]
+        elif k == "eqa":
+            # ★ α-동치 = L ⊑ g ∧ g ⊑ L — 포섭 선순서를 부분순서로 만드는 표준 몫.
+            #   `eq` 는 몫을 안 낸 대표원 비교(이름 의존)이고, `⊑` 단독은 이데알이라
+            #   바닥(공허 premise)까지 발화해 A 를 무너뜨린다. 대칭화가 그 사이다.
+            ab = alpha_bonus()
+            out[k] = [rrf[j] + 3.0 * ab[j] for j in range(n)]
         elif k == "cov":
             cv = cov_rrf()
             out[k] = [rrf[j] + cv[j] for j in range(n)]
@@ -560,6 +601,20 @@ def selftest() -> int:
         if len(v) != len(POOL) or any(not math.isfinite(x) for x in v):
             print(f"   [✗] {k}: 점수 길이/NaN 이상")
             bad += 1
+    # ★ eqa — α-동치가 **이름에 의존하지 않는가**. 여기가 깨지면 eqa 는 eq 의
+    #   비싼 복사본이 되고, 그러면 "구조만 본다" 는 주장 자체가 거짓이 된다.
+    _prem = "Lemma add_comm x y : x + y = y + x."
+    _sub = "\n\n" + (statement_of("Lemma add_comm (p q : nat) : p + q = q + p.") or "")
+    _ok = prem_alpha(prem_struct(_prem)) == goal_alpha(_sub)
+    print(f"   [{'✓' if _ok else '✗'}] eqa  이름이 달라도 α-동치로 잡는가 "
+          f"(x,y ↔ p,q) → {_ok}")
+    bad += (not _ok)
+    #   그리고 **바닥(공허 premise)에는 발화하면 안 된다** — ⊑ 단독이 A 를 무너뜨린
+    #   원인이 정확히 바닥이었다. 대칭화가 그것을 걸러내는지 여기서 못박는다.
+    _bot = prem_alpha(prem_struct("Lemma triv (P : Prop) (h : P) : P."))
+    _ok2 = _bot != goal_alpha(_sub)
+    print(f"   [{'✓' if _ok2 else '✗'}] eqa  공허 premise(⊥)에는 발화하지 않는가 → {_ok2}")
+    bad += (not _ok2)
     # assert 변환 + 이름 충돌
     from tactic_gen import assert_split as AS
     AS.WHY.clear()
@@ -681,6 +736,7 @@ for i in range(200000):
     tf = tf_idf(h_ids + g_ids, docs)
     tr = TierRanker(texts, stage1=A.stage1)
     ta = time.time()
+    PHASE = "A"
     try:
         sc = rank_all(st, texts, pool, tf, tr, RANKERS, docs, names,
                       q_ids=h_ids + g_ids, dp=dp)
@@ -733,12 +789,17 @@ for i in range(200000):
                     for k in KS:
                         found[r][k] = False
                 continue
-            q = " ".join(d[2])
+            # ★ 실제 파이프라인은 `assert (statement_of(L)) as H. { exact L. }` 를 쓴다.
+            #   그 subgoal 은 **∀ binder 를 포함한 전체 statement** 이지 결론부가 아니다.
+            #   결론부만 질의로 쓰면 이름이 gold 것 그대로라 eq 가 공짜로 맞아
+            #   C 수치가 낙관적으로 나온다(측정 편향).
+            q = statement_of(texts[g0]) or " ".join(d[2])
             hyp = st.split("\n\n")[0] if "\n\n" in st else ""
             st2 = (hyp + "\n\n" + q) if hyp else ("\n\n" + q)
             _, qi = get_ids_from_goal(_G(q, []))
             tf2 = tf_idf(qi, docs)
             tr2 = TierRanker(texts, stage1=A.stage1)
+            PHASE = "C"
             try:
                 sc2 = rank_all(st2, texts, pool, tf2, tr2, RANKERS, docs, names,
                                q_ids=qi, dp=dp)
@@ -856,6 +917,21 @@ if D:
     print(f"\n【D】 그 밖에 걸린 것")
     for k, v in D.most_common(15):
         print(f"      [{v:6d}] {k}")
+
+    # ── eq 항의 받침 (자기게이팅 실측) ────────────────────────────────────
+    #   verify_eq_props.py 성질 S: 1[d₀=0]≠0 ⟹ τ(g)=1 이므로 이 항은 C 국면에만
+    #   받침을 갖는다. A 에서 거의 0 · C 에서 거의 1 이면 게이트 매개변수가 불필요하다.
+    if EQFIRE:
+        print(f"\n【E】 eq 항이 실제로 언제 발화하나 (성질 S 의 실측)")
+        print(f"      {'국면':6s} {'질의수':>8} {'발화한 질의':>12} {'후보당 발화율':>14}")
+        for ph in ("A", "C"):
+            q = EQFIRE[f"{ph}:질의"]
+            if not q:
+                continue
+            fq = EQFIRE[f"{ph}:발화질의"]
+            nc = max(EQFIRE[f"{ph}:후보"], 1)
+            print(f"      {ph:6s} {q:8d} {fq/q*100:11.1f}% "
+                  f"{EQFIRE[f'{ph}:발화']/nc*100:13.4f}%")
 
 res = {"split": SPLIT, "stage1": A.stage1, "nA": nA, "nC": nC, "nmulti": nmulti,
        "rankers": RANKERS,

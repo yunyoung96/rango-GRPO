@@ -82,23 +82,27 @@ if [ ! -s "$CUTS" ]; then
 fi
 n_cut=$(grep -c '"cut"' "$CUTS")
 echo "[$(TZ=Asia/Seoul date '+%m-%d %H:%M')]   cut 파일 확인: $(wc -l < "$CUTS") 줄 · cut $n_cut 개" | tee -a "$LOG"
-[ "$n_cut" -lt 1000 ] && { echo "★ 중단: cut 이 너무 적다($n_cut)" | tee -a "$LOG"; exit 1; }
 
-# ── 사전점검 3: 예제 캐시 ──
-# ★★ **캐시를 지우지 마라.**
-#   ExampleCache 는 캐시 미스 때 그 파일의 예제를 **전부**(모든 proof × step) 만들어
-#   pickle 로 저장한다. 파일 하나에 600쌍이면 한 번에 600개 예제 분량의 검색이다
-#   (실측: step 하나가 376초). 지우면 그 비용을 처음부터 다시 낸다.
-#   실측 워밍 속도 약 19.5 파일/분 · 전체 13,896 파일 → 약 12시간.
-#   캐시가 차면 검색이 사라지고 pickle 읽기만 남아 GPU 바운드가 된다.
-#
-#   설정을 바꿨을 때만 지운다. 그 판단은 CACHE_STAMP.txt 가 대신 해 준다 —
-#   검색에 영향을 주는 설정이 달라지면 학습이 **큰 소리로 멈춘다**(조용히 섞이지 않게).
-CACHE_LOC=$(python3 -c "import yaml;print(yaml.safe_load(open('$CONF'))['tactic_data']['cache_loc'])")
-if [ -d "$CACHE_LOC" ]; then
-  echo "[$(TZ=Asia/Seoul date '+%m-%d %H:%M')]   예제 캐시: $(ls "$CACHE_LOC" | wc -l) 파일 · $(du -sh "$CACHE_LOC" 2>/dev/null | cut -f1)" | tee -a "$LOG"
-else
-  echo "[$(TZ=Asia/Seoul date '+%m-%d %H:%M')]   예제 캐시 없음 — 처음부터 워밍한다(약 12시간)" | tee -a "$LOG"
+# ★★ 개수가 아니라 **커버리지**를 본다.
+#   예전 가드는 `n_cut -lt 1000` 이었다. cut 4,648개로 통과했지만 실제로는
+#   학습이 소비하는 640,000 예제 중 **처음 60,000(9.4%)** 만 덮고 있었다.
+#   build_cuts.py 가 파일럿 규모로 돌아간 산출물이 그대로 들어간 것이다.
+#   step 1,875 이후로 cut 치환도 CUT_DROP_HOPELESS 도 전혀 작동하지 않았다.
+#   (is_hopeless() 는 파일에 없는 스텝에 False 를 반환하므로 둘이 함께 죽는다)
+#   → 학습이 실제로 쓰는 인덱스 구간을 표본으로 찍어 적중률을 확인한다.
+# ★★ 커버리지를 **표본이 아니라 전수로** 검증한다.
+#   개수 가드(`n_cut -lt 1000`)로는 파일럿 산출물을 못 걸렀다 — cut 4,648개로 통과했지만
+#   실제로는 소비 640,000 중 처음 60,000(9.4%)만 덮고 있었다.
+#   그리고 표본 5곳만 찍었을 때도 640,000 이후 빈틈을 놓쳤다
+#   (CUT_DROP_HOPELESS 가 인덱스를 건너뛰어 도달 인덱스가 671,835 였다).
+#   → verify_cut_range.py 가 도달 인덱스를 **시뮬레이션**하고 전 구간을 훑는다.
+if ! PYTHONPATH=src python3 scripts/verify_cut_range.py "$CONF" "$CUTS" 2>&1 | tee -a "$LOG" | tail -20; then
+  echo "[$(TZ=Asia/Seoul date '+%m-%d %H:%M')] ★ 중단: cut 범위 검증 실패" | tee -a "$LOG"
+  exit 1
+fi
+if ! PYTHONPATH=src python3 scripts/verify_cut_range.py "$CONF" "$CUTS" > /dev/null 2>&1; then
+  echo "[$(TZ=Asia/Seoul date '+%m-%d %H:%M')] ★ 중단: cut 범위 검증 실패 (위 로그 참조)" | tee -a "$LOG"
+  exit 1
 fi
 
 USE=$(mkconf_resume | tail -1)

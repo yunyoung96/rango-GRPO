@@ -33,6 +33,7 @@ _loaded = False
 _steps: dict[str, dict] = {}
 _stmts: dict[str, str] = {}
 _stat = {"조회": 0, "적중": 0, "미적중": 0}
+_meta: list = []
 
 
 def load(path: str | None = None) -> bool:
@@ -57,6 +58,9 @@ def load(path: str | None = None) -> bool:
                     _steps[d["sid"]] = d
                 elif d.get("kind") == "stmt":
                     _stmts[d["name"]] = d["ty"]
+                elif d.get("kind") == "meta":
+                    # ★ 이 파일이 덮는 인덱스 범위. 여러 샤드를 병합하면 여러 개가 온다.
+                    _meta.append(d)
         return bool(_steps)
 
 
@@ -94,6 +98,19 @@ def is_hopeless(sid: str) -> bool:
         return False
     d = _steps.get(sid)
     return bool(d and d.get("hopeless"))
+
+
+def scanned_range() -> tuple:
+    """이 cut 파일이 실제로 훑은 인덱스 범위 [start, end).
+
+    ★ 없으면 (0, 0) — **범위를 모른다**는 뜻이고, 그건 곧 커버리지를 보장할 수
+      없다는 뜻이다. 학습 전 가드가 이 값을 보고 막는다.
+    """
+    load()
+    if not _meta:
+        return (0, 0)
+    return (min(m.get("scan_start", 0) for m in _meta),
+            max(m.get("scan_end", 0) for m in _meta))
 
 
 def stats() -> dict:

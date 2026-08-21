@@ -913,6 +913,17 @@ class ProofPremiseCollator:
                                         avoid_text=input_str + target,
                                         premises=list(getattr(example, "premises", None) or []),
                                         proof_script=getattr(example, "proof_script", "") or "")
+                # ★★ 프롬프트에 **실제로 없는 이름**은 매핑에서 뺀다.
+                #   build_mapping 은 `example.premises` 전부를 대상으로 하는데,
+                #   프롬프트는 premise_tokens(896) 에서 잘린다. 잘려나간 premise 의
+                #   이름이 정답에 있으면, 매핑 후 정답에만 `L92` 가 남아
+                #   **프롬프트 어디에도 없는 이름**이 된다 — 정확히 우리가 없애려던 환각이다.
+                #   (실측: 300 예제 중 2건. details.md §7 에 미해결로 적혀 있던 것)
+                #   매핑을 안 하면 원래 이름이 남고, 그건 최소한 의미 힌트라도 있다.
+                if mapping:
+                    mapping = {k: v for k, v in mapping.items()
+                               if re.search(r"(?<![\w'])" + re.escape(k) + r"(?![\w'])",
+                                            input_str)}
                 if mapping:
                     input_str = apply_mapping(input_str, mapping)
                     target = apply_mapping(target, mapping)
@@ -1441,6 +1452,45 @@ class LmDataset(Dataset):
             mlm=False,
         )
         self.example_cache = ExampleCache(cache_loc)
+        self.__check_cut_coverage()
+
+    # ── ★ cut 파일 커버리지 자기검사 ────────────────────────────────────────
+    #  cut 파일은 인덱스 [START, START+N) 만 훑는 **범위 제한 산출물**이다.
+    #  그런데 조회 쪽은 범위 밖 스텝에 조용히 None/False 를 준다:
+    #      cut_for(sid)     → None    (cut 치환 안 됨)
+    #      is_hopeless(sid) → False   (CUT_DROP_HOPELESS 도 함께 죽음)
+    #  오류도 경고도 없다. 실제로 파일럿 규모(60,000) 산출물이 본번(640,000 소비)에
+    #  들어간 채 학습이 4시간 넘게 돌았고, step 1,875 이후 cut 이 전혀 작동하지 않았다.
+    #
+    #  ★ 외부 검증 스크립트로는 부족하다 — 안 돌리면 그만이다.
+    #    **데이터셋 자신이** 자기 전제조건을 확인한다. 어느 경로로 학습을 시작하든 걸린다.
+    def __check_cut_coverage(self) -> None:
+        if not os.environ.get("CUTS_PATH", ""):
+            return
+        try:
+            from tactic_gen import cut_lookup
+            start, end = cut_lookup.scanned_range()
+        except Exception:
+            return
+        need = self.shuffled_idx.split_length(self.split)
+        if self.max_n_examples is not None:
+            need = min(need, self.max_n_examples)
+        if end >= need and start <= 0:
+            _logger.info(f"[cut] 커버리지 OK — 스캔 [{start:,}, {end:,}) ⊇ 사용 {need:,}")
+            return
+        msg = (f"\n★ cut 파일 커버리지 부족 — 조용히 기능이 죽는다.\n"
+               f"   파일        {os.environ['CUTS_PATH']}\n"
+               f"   스캔 범위    [{start:,}, {end:,})\n"
+               f"   필요 범위    [0, {need:,})   ({self.split})\n"
+               f"   범위 밖 스텝은 cut 치환도 CUT_DROP_HOPELESS 도 작동하지 않는다.\n"
+               f"   메우려면:  python3 scripts/build_cuts.py {max(need-end,0)+20000} "
+               f"{self.split.name.lower()} <out> {end}\n"
+               f"   (의도한 부분 실행이면 CUTS_ALLOW_PARTIAL=1)\n")
+        if os.environ.get("CUTS_ALLOW_PARTIAL", "0") == "1":
+            _logger.warning(msg)
+            print(msg, flush=True)
+            return
+        raise RuntimeError(msg)
 
     def __len__(self) -> int:
         if self.max_n_examples is not None:
