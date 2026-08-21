@@ -154,6 +154,12 @@ for c in range(N):
     if len(target) > 12 and target in tail:
         st["L5 정답이 프롬프트 꼬리와 겹친다"] += 1
 
+    # ★ 도입되는 이름은 참조가 아니다 (`destruct X as [f1 …]` 의 f1)
+    try:
+        from tactic_gen.normalize_names import introduced_names as _intro
+        _skip_names = _intro(target)
+    except Exception:
+        _skip_names = set()
     enc = tok(s, max_length=HARD, truncation=True)
     vis = tok.decode(enc["input_ids"], skip_special_tokens=True)
     vis_p = vis.rsplit("[TACTIC]", 1)[0] if "[TACTIC]" in vis else vis
@@ -165,7 +171,7 @@ for c in range(N):
 
     # ── 정규화 ──
     decls = collections.Counter(DECL.findall(prompt))
-    tnorm = set(NORM.findall(target))
+    tnorm = set(NORM.findall(target)) - _skip_names
     for nm in tnorm:
         if not re.search(r"(?<![\w'])" + nm + r"(?![\w'])", prompt):
             note("L2 ★ 정답의 정규화 이름이 프롬프트에 없다", f"idx={i} {nm} ← {target[:60]}")
@@ -174,7 +180,7 @@ for c in range(N):
         elif nm not in decls:
             note("N1 ★ 정규화 이름의 선언이 프롬프트에 없다", f"idx={i} {nm}")
     for w in set(re.findall(r"(?<![\w'])([A-Za-z_][\w']{3,})(?![\w'])", target)):
-        if w in TACWORDS or NORM.fullmatch(w):
+        if w in TACWORDS or NORM.fullmatch(w) or w in _skip_names:
             continue
         if re.search(r"(?<![\w'])" + re.escape(w) + r"(?![\w'])", prompt) and \
            not re.search(r"(?<![\w'])" + re.escape(w) + r"(?![\w'])", vis_p):

@@ -361,6 +361,34 @@ def _sub_code(seg: str, mapping: dict) -> str:
         else mapping.get(m.group(0), m.group(0)), seg)
 
 
+# ══ 도입되는 이름 vs 참조되는 이름 ═══════════════════════════════════════
+#
+#   tactic 안의 이름에는 두 종류가 있다.
+#
+#       참조   `apply add_comm`      — 프롬프트에서 **읽어야** 하는 이름
+#       도입   `destruct X as [f1 …]` — 그 자리에서 **새로 만드는** 이름
+#              `intros a b c`         — 마찬가지
+#
+#   검사기가 이걸 구분 못 하면 "정답이 프롬프트에 없는 이름을 쓴다" 고 **오탐**한다.
+#   실측: `destruct IN as [f1 [IN1 [a1 [b1 LE1]]]].` 의 `f1` 이 그렇게 걸렸다.
+#   (`[TfCLG]\d+` 정규식은 정규화 이름과 진짜 식별자를 구분 못 한다 — 네 번 당했다.)
+_INTRO_AS = re.compile(r"\bas\s*\[[^\]]*\]|\bas\s+[A-Za-z_][\w']*")
+_INTRO_TAC = re.compile(
+    r"\b(?:intros?|intro|eintros?|move\s*=>|rename\s+\S+\s+into)\s+[^.;]*")
+_INTRO_PAT = re.compile(r"\[[^\[\]]*\]")
+
+
+def introduced_names(tac: str) -> set:
+    """이 tactic 이 **새로 만드는** 이름들. 프롬프트에 없어도 정상이다."""
+    out: set = set()
+    for m in _INTRO_AS.finditer(tac or ""):
+        out |= set(re.findall(r"[A-Za-z_][\w']*", m.group(0)))
+    for m in _INTRO_TAC.finditer(tac or ""):
+        out |= set(re.findall(r"[A-Za-z_][\w']*", m.group(0)))
+    out -= {"as", "intros", "intro", "eintros", "eintro", "move", "rename", "into"}
+    return out
+
+
 def apply_mapping(text: str, mapping: dict) -> str:
     """단어 경계 기준 일괄 치환. 부분 문자열 오염 방지(`val` 이 `value` 를 건드리지 않게).
 

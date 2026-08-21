@@ -126,15 +126,23 @@ for c, i in enumerate(idxs):
     except Exception as ex:
         note(f"P3 ★ 마스킹 예외 {type(ex).__name__}", f"idx={i} {ex}")
 
+    # ★ **도입되는 이름은 참조가 아니다** — `destruct X as [f1 …]` 의 `f1` 은
+    #   그 자리에서 새로 만드는 이름이라 프롬프트에 없는 것이 정상이다.
+    #   구분 안 하면 오탐한다(실측: idx=1815688 의 f1).
+    try:
+        from tactic_gen.normalize_names import introduced_names as _intro
+        _skip_names = _intro(target)
+    except Exception:
+        _skip_names = set()
     vis = tok.decode(enc["input_ids"], skip_special_tokens=True)
     vp = vis.rsplit("[TACTIC]", 1)[0] if "[TACTIC]" in vis else vis
-    for nm in set(NORM.findall(target)):
+    for nm in set(NORM.findall(target)) - _skip_names:
         if not re.search(r"(?<![\w'])" + nm + r"(?![\w'])", prompt):
             note("P4 ★★ 정답의 정규화 이름이 프롬프트에 없다", f"idx={i} {nm} ← {target[:60]}")
         elif not re.search(r"(?<![\w'])" + nm + r"(?![\w'])", vp):
             note("P4 ★★ 정답의 이름이 **잘려서** 안 보인다", f"idx={i} {nm}")
     for w in set(re.findall(r"(?<![\w'])([A-Za-z_][\w']{3,})(?![\w'])", target)):
-        if w in TACW or NORM.fullmatch(w):
+        if w in TACW or NORM.fullmatch(w) or w in _skip_names:
             continue
         if re.search(r"(?<![\w'])" + re.escape(w) + r"(?![\w'])", prompt) and \
            not re.search(r"(?<![\w'])" + re.escape(w) + r"(?![\w'])", vp):

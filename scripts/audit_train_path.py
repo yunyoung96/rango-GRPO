@@ -138,10 +138,17 @@ for sp in SPOTS:
         #   ★★ **잘린 뒤의 프롬프트**로 본다. 섹션 예산 합(3,416)이 hard_seq_len(2,048)을
         #     넘으므로 앞쪽(=하위 premise)이 실제로 잘려 나간다. 자르기 **전**으로 재면
         #     "정답이 읽힌다" 는 결론이 낙관적으로 나온다 — 모델이 보는 것은 잘린 쪽이다.
+        try:
+            from tactic_gen.normalize_names import introduced_names as _intro
+            _skip_names = _intro(target)
+        except Exception:
+            _skip_names = set()
         vis = tok.decode(enc["input_ids"], skip_special_tokens=True)
         vis_prompt = vis.rsplit("[TACTIC]", 1)[0] if "[TACTIC]" in vis else vis
         for m in NORM.finditer(target):
             nm = m.group(0)
+            if nm in _skip_names:
+                continue
             if not re.search(r"(?<![\w'])" + nm + r"(?![\w'])", prompt):
                 note("D ★ 정답의 정규화이름이 프롬프트에 없음",
                      f"idx={i} {nm} ← {target.strip()[:70]}")
@@ -151,7 +158,8 @@ for sp in SPOTS:
         # gold lemma 이름 자체(정규화 안 된 경우 포함)가 잘려 사라졌나
         for w in set(re.findall(r"(?<![\w'])([A-Za-z_][\w']{3,})(?![\w'])", target)):
             if w in ("intros", "apply", "rewrite", "exact", "destruct", "induction",
-                     "reflexivity", "assumption", "simpl", "unfold", "auto"):
+                     "reflexivity", "assumption", "simpl", "unfold", "auto") \
+                    or w in _skip_names:
                 continue
             inp = re.search(r"(?<![\w'])" + re.escape(w) + r"(?![\w'])", prompt)
             if inp and not re.search(r"(?<![\w'])" + re.escape(w) + r"(?![\w'])",
