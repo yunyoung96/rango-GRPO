@@ -45,7 +45,27 @@ from typing import Optional
 
 from tactic_gen.name_alloc import NameAllocator  # noqa: E402
 
+# ★ 치환 단위 — 왜 이렇게 생겼나 (실측으로 드러난 두 사고)
+#
+#   ① **모듈 접두사를 건드리면 안 된다.**
+#      `Mem.load` 의 `Mem` 은 모듈이지 우리가 매핑한 상수가 아니다. 그런데 옛 정규식은
+#      식별자를 조각별로 매칭해서 `O.eq` → `tt.f0` 를 만들었다(실측: 프롬프트당 0.10회).
+#      `tt` 는 stdlib 생성자 이름이라 **더 나쁜 이름으로 바뀐 것**이다.
+#      → 뒤에 `.식별자` 가 오는 조각은 모듈 경로다. 절대 치환하지 않는다.
+#
+#   ② **문자열·주석 안을 건드리면 안 된다.**
+#      `idtac "eq"` 의 `"eq"` 는 출력 문자열이지 이름이 아니다. 바꾸면 tactic 의 의미가
+#      달라진다. `(* … *)` 도 마찬가지로 코드가 아니다.
+#
+#   꼬리(`M.x` 의 `x`)는 **계속 치환한다.** 접두사가 남아 서로 다른 상수가 합쳐지지 않고,
+#   프롬프트(`Lemma L3 : …`)와 정답(`apply PTree.L3`)의 일관성이 유지되기 때문이다.
+#   일관성이 깨지면 그 예제는 학습 신호가 아니라 노이즈가 된다.
 _IDENT = re.compile(r"[A-Za-z_][\w']*")
+
+#   조각 뒤에 `.식별자` 가 오면 모듈 경로 — 치환 금지
+_MODPFX = re.compile(r"[A-Za-z_][\w']*(?=\.[A-Za-z_])")
+#   건드리면 안 되는 구간: 문자열 리터럴 · 주석(중첩 없음 가정)
+_SKIP = re.compile(r'"(?:[^"\\]|\\.)*"|\(\*.*?\*\)', re.S)
 
 # 절대 바꾸면 안 되는 것: Coq 키워드 · tactic · stdlib 상식
 _PROTECTED = {
@@ -333,11 +353,28 @@ def build_mapping(injected: dict, seed_key: str, avoid_text: str = "",
     return mapping
 
 
+def _sub_code(seg: str, mapping: dict) -> str:
+    """코드 구간 한 조각을 치환한다. 모듈 접두사는 건너뛴다."""
+    keep = {m.start() for m in _MODPFX.finditer(seg)}
+    return _IDENT.sub(
+        lambda m: m.group(0) if m.start() in keep
+        else mapping.get(m.group(0), m.group(0)), seg)
+
+
 def apply_mapping(text: str, mapping: dict) -> str:
-    """단어 경계 기준 일괄 치환. 부분 문자열 오염 방지(`val` 이 `value` 를 건드리지 않게)."""
+    """단어 경계 기준 일괄 치환. 부분 문자열 오염 방지(`val` 이 `value` 를 건드리지 않게).
+
+    ★ 모듈 접두사(`M.x` 의 `M`)와 문자열·주석 안은 건너뛴다 — 위 `_IDENT` 주석 참고.
+    """
     if not text or not mapping:
         return text
-    return _IDENT.sub(lambda m: mapping.get(m.group(0), m.group(0)), text)
+    out, pos = [], 0
+    for m in _SKIP.finditer(text):
+        out.append(_sub_code(text[pos:m.start()], mapping))
+        out.append(m.group(0))                 # 문자열·주석은 원문 그대로
+        pos = m.end()
+    out.append(_sub_code(text[pos:], mapping))
+    return "".join(out)
 
 
 def invert(mapping: dict) -> dict:

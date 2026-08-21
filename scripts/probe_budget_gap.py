@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+"""**예산 두 개가 어긋나는 자리**를 잰다.
+
+  · `build_cuts.py` 는 `PREMISE_TOKENS=896` 만 보고 "gold 가 프롬프트에 들어간다" 를 판정한다.
+  · 실제 프롬프트는 그 뒤에 `HARD_SEQ_LEN=2048` 로 **한 번 더** 잘린다.
+
+    섹션 예산 합 = 896(premise) + 256(proof) + 512(script) + 1024(state)
+                 + 300(types) + 300(defs) + 128(out) = 3,416  >  2,048
+
+  넘치면 `truncation_side="left"` 가 **앞쪽부터** 지운다. premise 는 `[::-1]` 로
+  **나쁜 것이 앞**이라 최상위는 살아남지만, 하위 premise 는 사라진다.
+  → build_cuts 가 "들어간다" 고 본 gold 가 실제로는 없을 수 있다(낙관 편향).
+
+무엇을 재나
+  · nfit_896   896 예산으로 담기는 premise 개수 (build_cuts 의 가정)
+  · nfit_real  2048 절단 후 실제로 남는 premise 개수
+  · 손실       nfit_896 − nfit_real · 그리고 **몇 위까지 안전한가**
+
+부수적으로 정규화가 **모듈 한정 이름**(`O.eq`)의 꼬리를 건드리는 빈도도 센다.
+
+사용: PYTHONPATH=src python3 scripts/probe_budget_gap.py [구간당 건수]
+"""
+import collections
+import copy
+import logging
+import os
+import re
+import statistics
+import sys
+
+sys.path.insert(0, "src")
+logging.disable(logging.CRITICAL)
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+os.environ.setdefault("CUTS_ALLOW_PARTIAL", "1")
+
+N_PER = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1].isdigit() else 40
+
+import yaml  # noqa: E402
+from data_management.splits import Split  # noqa: E402
+from tactic_gen.tactic_data import (TacticDataConf, LmDataset,  # noqa: E402
+                                    example_collator_from_conf, get_tokenizer)
+
+CONF = os.environ.get("CONF", "all_log/ft_qwen3b_v9_conf.yaml")
+cc = yaml.safe_load(open(CONF))
+conf = TacticDataConf.from_yaml(copy.deepcopy(cc["tactic_data"]))
+tok = get_tokenizer(cc["model_name"])
+ds = LmDataset.from_conf(conf, Split.TRAIN, None)
+coll = example_collator_from_conf(conf.collator_conf)
+
+TOTAL = ds.shuffled_idx.split_length(Split.TRAIN)
+HARD = int(os.environ.get("HARD_SEQ_LEN", "2048"))
+SPOTS = [0, TOTAL // 6, TOTAL // 3, TOTAL // 2, TOTAL * 2 // 3, TOTAL * 5 // 6,
+         TOTAL - N_PER - 2]
+print(f"■ 예산 어긋남 실측   TRAIN {TOTAL:,} · {len(SPOTS)}곳 × {N_PER}건\n", flush=True)
+
+# 모듈 한정 이름의 꼬리가 정규화 이름으로 바뀐 흔적: `X.T3` `X.f0` `X.L7`
+QUAL_NORM = re.compile(r"(?<![\w'])[A-Za-z_][\w']*\.([TfCLG]\d+)(?![\w'])")
+
+lost = []
+safe_rank = []
+overflow = 0
+qual_hits = collections.Counter()
+n = 0
+
+for sp in SPOTS:
+    for i in range(sp, min(sp + N_PER, TOTAL)):
+        try:
+            s = coll.collate(tok, ds.resolved_example(i))
+        except Exception:
+            continue
+        n += 1
+        prompt = s.rsplit("[TACTIC]", 1)[0]
+        if "[PREMISES]" not in prompt:
+            continue
+        seg = prompt.split("[PREMISES]", 1)[1]
+        for h in ("[PROOFS]", "[SCRIPT]", "[STATE]", "[TYPES]", "[DEFINITIONS]"):
+            seg = seg.split(h, 1)[0]
+        # premise 는 역순으로 담긴다 — **뒤에 있을수록 상위**
+        prem = [x for x in seg.strip().split("\n") if x.strip()]
+        nfit = len(prem)                                  # build_cuts 가 보는 개수
+
+        full = len(tok(s, add_special_tokens=False)["input_ids"])
+        if full > HARD:
+            overflow += 1
+            enc = tok(s, max_length=HARD, truncation=True)
+            cut = tok.decode(enc["input_ids"], skip_special_tokens=True)
+            alive = sum(1 for p in prem if p.strip() and p.strip() in cut)
+            lost.append(nfit - alive)
+            # 상위 몇 위까지 안전한가 (뒤에서부터 세면 그것이 순위)
+            safe_rank.append(alive)
+        else:
+            lost.append(0)
+            safe_rank.append(nfit)
+
+        for m in QUAL_NORM.finditer(prompt):
+            qual_hits[m.group(1)[0]] += 1
+
+print(f"■ 결과 (프롬프트 {n}건)\n")
+print(f"   2048 초과              {overflow:4d}건  {overflow/max(n,1)*100:5.1f}%")
+if lost:
+    nz = [x for x in lost if x > 0]
+    print(f"   premise 손실 있음      {len(nz):4d}건  {len(nz)/max(n,1)*100:5.1f}%")
+    if nz:
+        print(f"   손실 개수 (중앙/최대)  {statistics.median(nz):.0f} / {max(nz)}")
+    print(f"   ★ **상위 몇 개까지 안전한가** — 이 수보다 높은 순위의 gold 만 믿을 수 있다")
+    sr = sorted(safe_rank)
+    for q, lab in ((0, "최악"), (5, "5%"), (25, "25%"), (50, "중앙")):
+        print(f"        {lab:6s} {sr[max(0, len(sr)*q//100 - (1 if q else 0))]:3d}개")
+print()
+print(f"■ 모듈 한정 이름의 꼬리가 정규화된 흔적 (`X.f0` 꼴)")
+tot = sum(qual_hits.values())
+print(f"   총 {tot}회 · 프롬프트당 {tot/max(n,1):.2f}회   {dict(qual_hits)}")

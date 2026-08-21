@@ -278,6 +278,15 @@ def _shorten(defn, ntok, cap, want_type=False):
     return (' '.join(w) + ' ...') if w else None
 
 
+#   `Definition eq := O.eq.` 꼴 — 모듈 함자의 **재수출 별칭**.
+#   CompCert·MSet 계열에 흔하다(`func_defs_v3` 에 570건: L.eq · E.eq · V.eq …).
+#   `O` 는 모듈 **파라미터**라 여기서 풀 수 없고, 그래서 이 줄은 "이건 저것이다" 라고만
+#   말하고 저것이 뭔지는 끝내 안 알려준다 — 모델에게 **정보량이 0** 이다.
+#   게다가 정규화 후에는 `f0 := O.f0` 이 되어 자기참조처럼 보인다(실측으로 발견).
+_ALIAS_DEF = re.compile(r"^\s*(?:Definition|Notation)\s+[A-Za-z_][\w']*\s*:=\s*"
+                        r"[A-Za-z_][\w']*(?:\.[A-Za-z_][\w']*)+\s*\.?\s*$")
+
+
 def _expand(seeds, index, project, want_type, ntok, budget, max_items, cap, depth=1):
     """시드에서 시작해 정의를 모으고(재귀 depth), 예산/개수 캡을 적용. [(name, line), ...] 반환."""
     seen, order, frontier, d = set(), [], list(seeds), 0
@@ -289,6 +298,8 @@ def _expand(seeds, index, project, want_type, ntok, budget, max_items, cap, dept
             seen.add(name)
             defn = pick_def(index.get(name), project)
             if not defn or _is_type_def(defn) != want_type:
+                continue
+            if _ALIAS_DEF.match(defn):        # 모듈 별칭 — 정보량 0
                 continue
             order.append((name, defn))
             body = defn.split(':=', 1)[-1]
