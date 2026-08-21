@@ -62,7 +62,7 @@ from tactic_gen.tactic_data import TacticDataConf, LmDataset  # noqa: E402
 from tactic_gen.gold_lemma import gold_lemmas  # noqa: E402
 from tactic_gen.search_query import local_names  # noqa: E402
 from tactic_gen.tier_rank import declname  # noqa: E402
-from tactic_gen.assert_split import statement_of, transform  # noqa: E402
+from tactic_gen.assert_split import statement_of, transform, risky_tactic  # noqa: E402
 from tactic_gen.lm_example import fmt_goals  # noqa: E402
 
 cc = yaml.safe_load(open("all_log/ft_qwen3b_v9_conf.yaml"))
@@ -221,6 +221,20 @@ for i in range(START, min(START + N, len(ds))):
         st["gold 이름 없음 (cut 무관)"] += 1
         continue
     st["gold 사용 스텝"] += 1
+
+    # ★ SSReflect 문법이면 **바로 건너뛴다.**
+    #   `assert` 는 goal 을 하나 더 만들고 컨텍스트에 가설을 하나 더 넣는다.
+    #   일반 Coq tactic 은 그 변화에 둔감하지만 SSReflect 는 **goal 개수와 컨텍스트
+    #   모양에 직접 의존하는 문법**(`//` 자명닫기 · `by` 완결계약 · `=>` 분해패턴 ·
+    #   `apply:` 콜론 스택)이라 전부 어긋난다. 시도해도 실패하므로 미리 뺀다.
+    #   (`have H : S by exact L.` 로 바꾸면 가능하지만 별도 변환기가 필요하다.)
+    if risky_tactic(tac):
+        st["★ SSReflect 문법 → 건너뜀"] += 1
+        why["SSReflect 문법"] += 1
+        fo.write(json.dumps({"kind": "step", "sid": key, "hopeless": True,
+                             "why": "SSReflect 문법", "tac": tac[:120]},
+                            ensure_ascii=False) + "\n")
+        continue
     pool = [p for p in dp.get_premises_before(proof) if pfilter.filter_premise(p)]
     txt = {}
     for p in pool:

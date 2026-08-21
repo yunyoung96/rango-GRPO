@@ -484,7 +484,30 @@ _RISKY_TY = re.compile(
 )
 
 # SSReflect 결합자는 goal 개수·순서를 바꾸므로 assert 를 끼우면 어긋나기 쉽다.
-_RISKY_TAC = re.compile(r"//|=>|\bexact:|\bapply:|\bcase:|\belim:|\bmove:|\brewrite\s+-")
+# ★ SSReflect 전용 문법만 잡는다. 일반 Coq 과 겹치는 두 가지를 **빼야** 한다
+#   (실측: 위험 판정 8,104건 중 900건 = 11.1% 가 오탐이었다).
+#     · `rewrite ->` 는 일반 Coq 의 **방향 명시**다. SSReflect 의 `rewrite -X`(역방향)와
+#       전혀 다른데 `\brewrite\s+-` 가 `->` 의 `-` 를 잡았다.        (433건)
+#     · `fun x => …` · `match … with | A => …` 의 화살표는 일반 Coq 이다.  (493건)
+#       그래서 `=>` 를 그대로 보면 안 되고, 람다·match 를 **지우고** 남은 것만 본다.
+_LAMBDA = re.compile(r"\bfun\b[^=]*?=>|\bmatch\b.*?\bwith\b|\|[^|=]*?=>", re.S)
+_RISKY_TAC_PAT = re.compile(
+    r"//"                                  # 자명 goal 닫기
+    r"|=>"                                 # SSReflect intro 패턴 (람다 제거 후 남은 것)
+    r"|\bexact:|\bapply:|\bcase:|\belim:|\bmove:"   # 콜론 형태 (goal 스택)
+    r"|\brewrite\s+-(?!>)"                # 역방향 rewrite. `->` 는 일반 Coq 이라 제외
+)
+
+
+class _RiskyTac:
+    """람다·match 를 지운 뒤 SSReflect 문법을 찾는다."""
+
+    @staticmethod
+    def search(tac: str):
+        return _RISKY_TAC_PAT.search(_LAMBDA.sub(" ", tac or ""))
+
+
+_RISKY_TAC = _RiskyTac
 
 
 _TY_KIND = [
@@ -502,7 +525,7 @@ _TY_KIND = [
 ]
 _TAC_KIND = [(r"//", "//"), (r"=>", "=>"), (r"\bexact:", "exact:"), (r"\bapply:", "apply:"),
              (r"\bcase:", "case:"), (r"\belim:", "elim:"), (r"\bmove:", "move:"),
-             (r"\brewrite\s+-", "rewrite -")]
+             (r"\brewrite\s+-(?!>)", "rewrite -")]
 
 
 def _ty_kind(ty: str) -> str:
@@ -513,7 +536,9 @@ def _ty_kind(ty: str) -> str:
 
 
 def _tac_kind(tac: str) -> str:
-    hit = [nm for pat, nm in _TAC_KIND if re.search(pat, tac or "")]
+    # 람다·match 를 지운 뒤 본다 — `_RISKY_TAC` 과 같은 기준이어야 진단이 맞는다
+    _t = _LAMBDA.sub(" ", tac or "")
+    hit = [nm for pat, nm in _TAC_KIND if re.search(pat, _t)]
     return " ".join(hit) if hit else "기타"
 
 
