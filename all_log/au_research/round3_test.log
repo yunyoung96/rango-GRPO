@@ -7,3 +7,5 @@
    [✓] assert 이름이 기존 H_asrt0 을 피하는가 → assert (forall n : nat, n <= n) as H_asrta0. { exact (L). }
    [✓] evar 타입이 eassert + _ 로 구제되는가 → eassert (forall (l : list _) (d : _), nth 0 l d = d) as H_asrt0. { exa
    자기검사: 통과
+   100/1500  (102s · 1.02s/건 · C 67건 · D 27건)
+   200/1500  (198s · 0.99s/건 · C 128건 · D 55건)

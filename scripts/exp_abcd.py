@@ -65,6 +65,10 @@ from tactic_gen.tier_rank import (TierRanker, declname, prem_struct,  # noqa: E4
                                   au_res_gen, sig_au_f, goal_alpha, prem_alpha,
                                   goal_stmt, prem_stmt)
 
+# ★ C 국면 질의의 binder 를 개명할지. 기본 끔(옛 측정과 비교 가능하게).
+#   켜면 "모델이 자기 말로 assert 를 쓴 경우" 를 재는 것이고, 그것이 실전 조건이다.
+C_RENAME = os.environ.get("C_RENAME", "0") == "1"
+
 ap = argparse.ArgumentParser()
 ap.add_argument("--split", default="test",
                 help="쉼표로 여러 개 가능 — 한 프로세스에서 돌면 토큰 캐시를 공유해 빠르다")
@@ -837,6 +841,16 @@ for i in range(200000):
             #   결론부만 질의로 쓰면 이름이 gold 것 그대로라 eq 가 공짜로 맞아
             #   C 수치가 낙관적으로 나온다(측정 편향).
             q = statement_of(texts[g0]) or " ".join(d[2])
+            # ★ C_RENAME=1 — 명제의 **binder 를 개명**해서 질의한다.
+            #   실제 추론에서는 모델이 assert 를 자기 말로 쓰므로 변수 이름이 gold 와
+            #   다르다. gold 의 이름을 그대로 넘겨주면 `eq`(이름 비교)가 공짜로 맞아
+            #   이름 강건성을 **원리적으로 측정할 수 없다.** 이것이 그 편향을 없앤다.
+            if C_RENAME:
+                _dq = decompose("Lemma _g : " + q.rstrip(". ") + ".")
+                if _dq is not None and _dq[0]:
+                    for _i, _v in enumerate(sorted(_dq[0])):
+                        q = re.sub(r"(?<![\w'])" + re.escape(_v) + r"(?![\w'])",
+                                   "zq%d" % _i, q)
             hyp = st.split("\n\n")[0] if "\n\n" in st else ""
             st2 = (hyp + "\n\n" + q) if hyp else ("\n\n" + q)
             _, qi = get_ids_from_goal(_G(q, []))
