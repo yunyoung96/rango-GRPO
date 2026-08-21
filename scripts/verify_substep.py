@@ -78,6 +78,27 @@ ok(not bad, "G2  goal 과 가설이 하위스텝마다 정확히 맞는다", str
 ok("n : nat" in _substep_state(BASE, subs, 4) and "Hn : P n" in _substep_state(BASE, subs, 4),
    "G2b 원래 가설(Γ)이 보존된다")
 
+# G2b — [SCRIPT] 가 앞선 하위스텝을 포함하나
+#   goal 이 P 인 **이유**(방금 assert 했다)가 스크립트에 있어야 한다.
+#   없으면 모델이 보는 증명과 goal 이 어긋난다 — 오류는 안 나고 학습만 망가진다.
+def script_for(pick):
+    base = "Lemma foo : P.\nProof.\n  intros."
+    if pick == 0:
+        return base
+    return base.rstrip() + "\n" + "\n".join(t for t, _, _, _ in subs[:pick])
+
+
+bad_sc = []
+for i in range(len(subs)):
+    sc = script_for(i)
+    for j in range(i):
+        if subs[j][0] not in sc:
+            bad_sc.append(f"sub{i} 에 sub{j} 가 없다")
+    if i < len(subs) and subs[i][0] in sc:
+        bad_sc.append(f"sub{i} 자신이 스크립트에 미리 들어갔다")
+ok(not bad_sc, "G2c [SCRIPT] 가 앞선 하위스텝을 포함하고 자기 자신은 없다",
+   str(bad_sc[:2]) if bad_sc else f"sub4 스크립트에 assert 2개 + exact 2개")
+
 # G5 — 결정성
 import hashlib  # noqa: E402
 h1 = int(hashlib.sha1(b"a/b.v:1:2").hexdigest()[:8], 16) % 5

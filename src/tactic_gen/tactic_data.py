@@ -1751,6 +1751,15 @@ class LmDataset(Dataset):
         example = copy.copy(example)
         example.proof_state = st              # G2
         example.next_steps = [tac]            # G3
+        # ★★ G2b — `[SCRIPT]` 도 함께 밀어야 한다.
+        #   sub 1 의 goal 이 `P` 인 **이유**는 바로 앞에서 `assert (P) as H.` 를 했기
+        #   때문인데, 스크립트에 그게 없으면 모델이 보는 증명과 goal 이 **어긋난다**.
+        #   (goal 은 assert 의 결과인데 스크립트에는 assert 가 없는 상태.)
+        #   앞선 하위스텝들을 스크립트 끝에 붙여 실제 증명 진행과 일치시킨다.
+        if pick > 0:
+            _pre = "\n".join(t for t, _, _, _ in subs[:pick])
+            _sc = (getattr(example, "proof_script", "") or "").rstrip()
+            example.proof_script = (_sc + "\n" + _pre) if _sc else _pre
         example.cut_substep = (pick, len(subs), kind)   # 진단용
         return example
 
@@ -1763,12 +1772,23 @@ class LmDataset(Dataset):
 
         사전점검 스크립트도 이걸 써야 학습과 같은 예제를 본다.
         """
-        example = self.raw_example(index)
-        example = self._apply_substep(example, index)
         if os.environ.get("CUT_DROP_HOPELESS", "0") != "1":
-            return example
+            return self._apply_substep(self.raw_example(index), index)
         n = len(self)
         _partial = os.environ.get("CUTS_ALLOW_PARTIAL", "0") == "1"
+
+        # ★ `_uncovered` 는 **예제를 안 봐도** 판정된다(인덱스만 보면 된다).
+        #   먼저 싸게 건너뛰고 나서 예제를 만든다 — 옛 순서(예제 먼저)로는
+        #   범위 밖 구간에서 `raw_example`(검색 ~1s)을 64번 돌아 **64초/예제**가 됐다.
+        #   부분 cut 파일 + CUTS_ALLOW_PARTIAL=1 일 때 실측으로 걸렸다.
+        if _partial:
+            for _ in range(64):
+                if not self._uncovered(index):
+                    break
+                index = (index + 1) % n
+
+        example = self.raw_example(index)
+        example = self._apply_substep(example, index)
         for _ in range(64):
             if self._uncovered(index):
                 # ★ 건너뛰지 않는다 — 생성이 덜 끝났다는 뜻이므로 **죽인다**.
@@ -1789,7 +1809,7 @@ class LmDataset(Dataset):
                 return example
             index = (index + 1) % n
             try:
-                example = self.raw_example(index)
+                example = self._apply_substep(self.raw_example(index), index)
             except Exception:
                 return example
         return example
