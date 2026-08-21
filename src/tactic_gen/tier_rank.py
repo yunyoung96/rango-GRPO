@@ -371,6 +371,84 @@ def alpha_stmt(d):
 #       h_τ(x) = max(0, x−τ)/(1−τ)        h₁ = 1[F₁^α = 1] = eqx
 
 
+# ══ 경로집합 — 격자 Jaccard 거리를 **진짜 metric** 으로 만드는 표현 ═══════
+#
+#   ## 왜 경로집합인가
+#
+#   포섭 격자에서 `d = 1 − |s⊓t|/|s⊔t|` 를 그대로 쓰면 metric 이 **아니다**.
+#   `⊔`(단일화)가 크기를 폭발시켜 값매김 `size` 가 modular 하지 않기 때문이다.
+#
+#   항을 **루트→노드 심볼 경로의 집합** 으로 보내면 멱집합 격자 `2^P` 로 옮겨진다.
+#   거기서 `f(X) = |X|` 는 **정확히 modular** 다:  |A∪B| + |A∩B| = |A| + |B|.
+#
+#       Theorem 1 (arXiv:2608.18194) — 임의의 격자에서 값매김이
+#       strictly positive · monotone · modular 이면
+#           d_{f,J}(A,B) = 1 − f(A∧B)/f(A∨B)
+#       는 삼각부등식을 만족한다.
+#
+#   ⟹ `d_J(s,t) = 1 − |S(s)∩S(t)| / |S(s)∪S(t)|` 는 **metric** 이다.
+#
+#   ## 왜 교집합이 반유니피케이션인가
+#
+#   경로가 lgg 에 살아남으려면 **루트부터 그 노드까지 심볼이 전부 일치**해야 한다.
+#   그게 정확히 두 경로집합의 교집합 원소 조건이다. 그래서
+#       |S(s) ∩ S(t)|  =  s ⊓ t 의 강성(rigid) 크기
+#   이고, 별도의 AU 구현 없이 집합 연산으로 같은 것을 얻는다.
+#
+#   ## PL 쪽 근거
+#
+#   · path indexing (McCune·Stickel) — ATP 가 쓰는 항 인덱싱이 바로 루트→잎 경로다
+#   · fingerprint indexing (Schulz 2012) — "비변수 위치 골격은 **치환에 불변**"
+#   · Ramon·Bruynooghe 1998 — Plotkin 의 lgg 가 그 거리 아래 최소 일반화 연산자
+#
+#   ## 검색 가속
+#
+#   metric 이면 VP-tree·cover-tree 로 가지치기가 가능하고, **집합 Jaccard** 이므로
+#   MinHash+LSH 라는 훨씬 강한 도구를 바로 쓸 수 있다(부분선형 근사 최근접).
+#   그러면 `tfidf` 1차 필터가 필요 없어진다 — 랭커가 구조 정보만으로 완결된다.
+
+
+def path_set(t, prefix: str = "", out=None, depth: int = 0) -> frozenset:
+    """항 → **루트→노드 심볼 경로**의 집합.
+
+    경로는 `심볼/자식번호/심볼/…` 로 적는다. 자식 번호를 넣어야 위치가 구분되고,
+    그래야 `f(a,b)` 와 `f(b,a)` 가 다른 집합이 된다.
+    """
+    if out is None:
+        out = set()
+    if t is None or depth > 24:
+        return frozenset(out)
+    k = t[0]
+    if k == "id":
+        out.add(prefix + "/" + t[1])
+    elif k == "app":
+        p = prefix + "/@"
+        out.add(p)
+        path_set(t[1], p + "0", out, depth + 1)
+        path_set(t[2], p + "1", out, depth + 1)
+    elif k == "op":
+        p = prefix + "/" + str(t[1])
+        out.add(p)
+        path_set(t[2], p + "0", out, depth + 1)
+        path_set(t[3], p + "1", out, depth + 1)
+    else:
+        out.add(prefix + "/" + str(t))
+    return frozenset(out)
+
+
+def jaccard_dist(a: frozenset, b: frozenset) -> float:
+    """격자 Jaccard 거리. **metric** 이다(Theorem 1). d=0 ⟺ 같은 경로집합."""
+    if not a and not b:
+        return 0.0
+    u = len(a | b)
+    return 1.0 - (len(a & b) / u if u else 0.0)
+
+
+def path_sim(a: frozenset, b: frozenset) -> float:
+    """1 − d_J. 랭킹에 쓸 유사도(클수록 상위)."""
+    return 1.0 - jaccard_dist(a, b)
+
+
 def _au_rigid(a, b, cnt):
     """몫 위의 반유니피케이션 — 모든 식별자가 상수. lgg 의 크기를 센다."""
     if a is None or b is None:

@@ -65,7 +65,8 @@ from tactic_gen.tier_rank import (TierRanker, declname, prem_struct,  # noqa: E4
                                   goal_struct, sig_hyp_match, head_of, sig_au_dist,
                                   au_res_gen, sig_au_f, goal_alpha, prem_alpha,
                                   goal_stmt, prem_stmt,
-                                  au_f_alpha, hinge)
+                                  au_f_alpha, hinge, _rrf_of,
+                                  path_set, path_sim)
 
 # ★ C 국면 질의의 binder 를 개명할지. 기본 끔(옛 측정과 비교 가능하게).
 #   켜면 "모델이 자기 말로 assert 를 쓴 경우" 를 재는 것이고, 그것이 실전 조건이다.
@@ -92,6 +93,8 @@ RANKERS = [x for x in A.rankers.split(",") if x]
 # ★ 랭커 이름 오타/구버전 이름을 **시작 전에** 잡는다. 예전엔 잘못된 이름이 매 스텝
 #   예외로 빠져 결과가 전부 0.0% 로 나왔고, 20분을 버린 뒤에야 알았다.
 _KNOWN = {"tfidf", "rrf", "struct", "eq", "eqa", "eqx", "cov", "eqcov",
+          "f1a", "f1a_only", "f1pure", "f1a95", "f1a90",
+          "jac", "jac_pure", "jac_eqx",
           "afh80", "afh90", "afh95", "afh100",
           "structural", "structural_mmr", "gbdt", "ctr",
           "hyp", "sub", "cooc", "nsub", "allsig",
@@ -296,6 +299,64 @@ def rank_all(state, texts, pool, tf, tr, kinds, docs=None, names=None,
         elif k == "eq":
             eb = eq_bonus()
             out[k] = [rrf[j] + 3.0 * eb[j] for j in range(n)]
+        elif k in ("jac", "jac_pure", "jac_eqx"):
+            # ★ 경로집합 Jaccard — **진짜 metric** (arXiv:2608.18194 Theorem 1).
+            #   항을 루트→노드 심볼 경로의 집합으로 보내면 멱집합 격자로 옮겨지고,
+            #   거기서 |·| 는 정확히 modular 라 Jaccard 거리가 삼각부등식을 만족한다.
+            #   그리고 경로집합의 교집합이 곧 반유니피케이션이다 —
+            #   경로가 lgg 에 살아남으려면 루트부터 심볼이 전부 일치해야 하므로.
+            #
+            #   ★ d=0 ⟺ α-동치 이므로 **eqx 가 이 거리의 영집합 그대로**다.
+            #     지금까지의 정리(강제성·exact 특징짓기·정규화 불변)가 전부 보존된다.
+            #
+            #   jac       RRF(tfidf) + RRF(1−d_J)          C' 를 metric 으로 대체
+            #   jac_pure  1−d_J 단독 (tfidf 는 후보 생성만)  구조 정보만으로 완결
+            #   jac_eqx   RRF(tfidf) + RRF(1−d_J) + W·1[d_J=0]
+            gq2 = goal_stmt(state)
+            gp = path_set(gq2) if gq2 is not None else frozenset()
+            jv = [0.0] * n
+            if gp:
+                for j in cand:
+                    pj = prem_stmt(texts[j])
+                    if pj is not None:
+                        jv[j] = path_sim(path_set(pj), gp)
+            if k == "jac_pure":
+                out[k] = list(jv)
+            elif k == "jac_eqx":
+                W = float(os.environ.get("AU_HINGE_W", "3.0"))
+                rj = _rrf_of(jv)
+                out[k] = [base[j] + rj[j] + W * (1.0 if jv[j] >= 1.0 - 1e-9 else 0.0)
+                          for j in range(n)]
+            else:
+                rj = _rrf_of(jv)
+                out[k] = [base[j] + rj[j] for j in range(n)]
+        elif k in ("f1a", "f1a_only", "f1pure", "f1a95", "f1a90"):
+            # ★ 구조 항을 **하나로 통일**한다 — `C'`(head IDF 코사인, 임시방편) 자리에
+            #   격자에서 유도된 `F₁^α` 를 넣는다. 그러면 랭커 전체가
+            #     "어휘로 후보를 좁히고(공학) · 격자량 하나로 순위를 매긴다(이론)"
+            #   가 되어 "왜 코사인인가" 라는 질문이 사라진다.
+            #
+            #   f1a       RRF(tfidf) + RRF(F₁^α) + W·1[F₁^α=1]   (지시자 유지)
+            #   f1a_only  RRF(tfidf) + RRF(F₁^α)                 (지시자도 뺀다 — 극한이므로)
+            #   f1pure    F₁^α 단독 (tfidf 는 후보 생성만)         (격자량 하나)
+            #   f1a95/90  RRF(tfidf) + RRF(F₁^α) + W·h_τ(F₁^α)
+            #
+            #   ★ 옛 `auf` 가 나빴던 것은 F 가 **비대칭**(premise binder 만 메타변수)이라
+            #     몫 위의 함수가 아니었기 때문이다(X4 위반). 여기 F₁^α 는 α-정규형 위라
+            #     잘 정의된다 — 같은 실험이 아니다.
+            fv = af_vals()
+            rf = _rrf_of(fv)
+            if k == "f1pure":
+                out[k] = list(fv)
+            elif k == "f1a_only":
+                out[k] = [base[j] + rf[j] for j in range(n)]
+            elif k in ("f1a95", "f1a90"):
+                tau = 0.95 if k == "f1a95" else 0.90
+                W = float(os.environ.get("AU_HINGE_W", "3.0"))
+                out[k] = [base[j] + rf[j] + W * hinge(fv[j], tau) for j in range(n)]
+            else:                                   # f1a
+                W = float(os.environ.get("AU_HINGE_W", "3.0"))
+                out[k] = [base[j] + rf[j] + W * hinge(fv[j], 1.0) for j in range(n)]
         elif k.startswith("afh"):
             # ★ 한 족(族)으로 묶는다.
             #     score_τ(p) = RRF(tfidf) + RRF(C') + W·h_τ(F₁^α(p,g))

@@ -96,3 +96,5 @@ A + (1-A) × C
 | `scripts/research_structural.py` | 신호 A~K 실험대 |
 
 - [eqx.md](eqx.md) — α-동치 랭커. 포섭 선순서의 표준 몫 ⊑∩⊒ 로 유도되고 `exact` 성공 조건과 일치한다. 프로덕션 기본값(`RETRIEVAL_MODE=eqx`).
+
+- [terms.md](terms.md) — IR 용어 전부(tf-idf · IDF · BM25 · 코사인 · **RRF** · 재현율 · McNemar). 어디까지가 IR 표준이고 어디부터가 우리 기여인지.
