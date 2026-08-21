@@ -37,6 +37,7 @@ import copy
 import json
 import math
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -691,6 +692,19 @@ def selftest() -> int:
     bad += _nb
     # ★ afh100 (τ=1) 이 eqx 와 **완전히 같은 점수**인가 — "eqx 는 족의 끝점" 이라는
     #   주장이 코드에서도 참인지 못박는다. 논문의 그림이 여기에 걸려 있다.
+    # ★ C_RENAME 경로를 직접 태운다 — 이 코드는 C 국면에서만 실행되므로
+    #   자기검사가 안 태우면 오타 하나도 실험 30분 뒤에야 드러난다(실제로 겪었다).
+    _pq = statement_of("Lemma add_comm (a b : nat) : a + b = b + a.") or ""
+    _dq = decompose("Lemma _g : " + _pq.rstrip(". ") + ".")
+    _rq = _pq
+    if _dq is not None and _dq[0]:
+        for _i, _v in enumerate(sorted(_dq[0])):
+            _rq = re.sub(r"(?<![\w'])" + re.escape(_v) + r"(?![\w'])", "zq%d" % _i, _rq)
+    _rok = ("zq0" in _rq and "zq1" in _rq
+            and prem_stmt("Lemma add_comm x y : x + y = y + x.") == goal_stmt("\n\n" + _rq))
+    print(f"   [{'✓' if _rok else '✗'}] C_RENAME 개명 질의가 α-동치로 잡히는가 → {_rq[:46]}")
+    bad += (not _rok)
+
     _st2 = "\n\nforall (x y : nat), x + y = y + x"
     _sc2 = rank_all(_st2, POOL, POOL, tf, tr, ["eqx", "afh100"], docs,
                     [None] * len(POOL), q_ids=[0, 1])

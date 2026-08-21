@@ -1,3 +1,8 @@
 [08-21 12:50] 3차 시작 — VAL n=1500 · rrf,eq,structural,gate
 [08-21 13:04] 3차 시작 — TEST n=1500 · rrf,eq,eqa,structural (질의 충실화 후 재측정)
 [08-21 13:17] 3차 시작 — TEST n=1500 · rrf,eq,eqa,structural (질의 충실화 후 재측정)
+[08-21 13:44] 3b차 시작 — TEST n=1500 · C_RENAME=1 · rrf,eq,eqa,eqx,afh95,afh90,afh80,structural
+[08-21 13:44] 3b차 완료 → all_log/au_research/round3b_test_rename.log
+[08-21 13:44] 4차 시작 — VAL n=1500 · C_RENAME=1 · rrf,eq,eqa,eqx,afh95,afh90,afh80,structural
+[08-21 13:44] 4차 완료 → all_log/au_research/round4_val.log
+[08-21 13:44] 연구 체인 종료
