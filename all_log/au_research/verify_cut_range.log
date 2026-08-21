@@ -1,0 +1,5 @@
+Traceback (most recent call last):
+  File "/app/coq-modeling/scripts/verify_cut_range.py", line 45, in <module>
+    cc = yaml.safe_load(open(CONF))
+                        ^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'train'

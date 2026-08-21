@@ -25,7 +25,7 @@ export STRIP_TARGET_NL=1
 export PYTORCH_ALLOC_CONF=expandable_segments:True
 
 # ── v9 에서 새로 넣은 것 (근거: docs/premise/final.md §10) ──
-export RETRIEVAL_MODE=structural       # 랭커
+export RETRIEVAL_MODE=eqx       # 랭커
 export RETRIEVAL_STAGE1=5000           # 1단계 후보 수
 export PREMISE_PACK=hybrid             # 담기
 export PREMISE_PACK_TOPK=4             # 상위 K 는 무조건

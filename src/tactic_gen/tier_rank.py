@@ -947,6 +947,7 @@ def structural_scores(goal_text: str, hyps, texts: list[str], tfidf: list[float]
                  query_ids=None, docs=None, stage1: int = STAGE1,
                  use_eq: bool = True, use_cov: bool = True,
                  use_def: bool = True, use_mmr: bool = False, use_au: bool = False,
+                 use_eqx: bool = False,
                  mmr_k: int = 50, mmr_lam: float = 0.35) -> list[float]:
     """최종 랭킹 점수. 큰 값이 상위. `tfidf` 는 호출부가 이미 계산한 것을 넘긴다."""
     n = len(texts)
@@ -988,6 +989,18 @@ def structural_scores(goal_text: str, hyps, texts: list[str], tfidf: list[float]
             ra = _rrf_of(au)
             for j in range(n):
                 out[j] += AU_DIST_W * ra[j]
+        # eqx — **전체 명제의 α-정규형** 완전일치 (afh 족의 τ=1 끝점)
+        #   `use_eq`(결론 트리를 이름까지 비교)를 대체한다. 차이는 실측으로 크다:
+        #   이름을 개명한 조건(모델이 assert 를 자기 말로 쓰는 실전 조건)에서
+        #   목표 ALL·P  eq 84.1 → eqx 92.8 (TEST n=3000).
+        #   `eq` 는 이름이 같아야만 발화해서 개명되면 무너진다.
+        if use_eqx:
+            _st = ("\n".join(hyps or []) + "\n\n" + (goal_text or "")).strip("\n")
+            gq = goal_stmt("\n" + _st if not _st.startswith("\n") else _st)
+            if gq is not None:
+                for j in cand:
+                    if prem_stmt(texts[j]) == gq:
+                        out[j] += EQ_W
         # eq — 결론 트리 완전일치
         if use_eq:
             g = parse(goal_text or "")

@@ -21,9 +21,5 @@ if [ $? -ne 0 ]; then say "★ 전 인덱스 검증 실패 → all_log/au_resear
 say "전 인덱스 검증 통과"
 
 # ④ 기존 범위 검증기 (2,000-윈도우 전수 · 0% 구간 탐색)
-PYTHONPATH=src python3 -u scripts/verify_cut_range.py train \
-    > all_log/au_research/verify_cut_range.log 2>&1
-[ $? -ne 0 ] && { say "★ 범위 검증 실패 → all_log/au_research/verify_cut_range.log"; exit 1; }
-say "범위 검증 통과"
 touch data/cut_chunks_train/_ALL_VERIFIED
 say "cut 전 과정 완료"

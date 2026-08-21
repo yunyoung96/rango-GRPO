@@ -17,8 +17,10 @@ lemma 를 `exact L` 로 받으면 타입이 안 맞는 것도 — **전부 실�
 
 ## 대상
 
-TRAIN 프로젝트는 원본 .v 가 없어 Coq 을 못 돌린다. **VAL/TEST 프로젝트**(CoqStoq 에 소스가
-있다)에서 검증하고, 거기서 잡은 규칙을 TRAIN 정적 변환에 반영한다.
+★ 정정(2026-08-21): `/tmp/coq-dataset/repos` 에 원본이 **13GB · 2,182 레포** 받아져 있다.
+TRAIN 도 대부분 Coq 을 돌릴 수 있다(표본 기준 ~81%, 일부 레포는 아직 안 받아짐).
+따라서 TRAIN cut 도 **정적 검사에 그치지 말고 동적으로 검증할 수 있다.**
+(옛 주석은 '원본이 없다'고 단정했는데 사실이 아니었다.)
 
 사용: python3 scripts/hunt_assert_errors.py [스텝수] [val|test]
 """

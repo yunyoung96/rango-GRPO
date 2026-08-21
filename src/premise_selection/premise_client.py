@@ -371,15 +371,23 @@ class SparseClient:
         #   RRF(tfidf, 결론구조 C', 질의 포함률) + 3.0×[결론 트리 완전일치]
         #   실측 목표지표 ALL@50: TEST 86.4→95.6 · VAL 86.5→94.9 · TRAIN 87.8→97.2%
         #   되돌리려면 RETRIEVAL_MODE=tfidf (기본은 structural)
-        if os.environ.get("RETRIEVAL_MODE", "structural") == "tfidf" or not premises:
+        _mode = os.environ.get("RETRIEVAL_MODE", "eqx")
+        if _mode == "tfidf" or not premises:
             return base
         try:
-            from tactic_gen.tier_rank import eqcov_scores, STAGE1
+            from tactic_gen.tier_rank import structural_scores, STAGE1
             texts = [getattr(p, "text", "") or "" for p in premises]
-            return eqcov_scores(
+            # ★ eqx (기본) — RRF(tfidf) + RRF(C') + W·1[전체 명제가 α-동치]
+            #   `structural` 의 cov·def 를 뺀다. 실측(TEST n=3000, 이름 개명 조건):
+            #       목표 ALL·P  structural 85.7 → eqx 92.8   A 30.7 → 36.4
+            #   cov 는 A 를 −5.7pp 해치고 C 에 기여가 없다(2차 절제 실험).
+            #   def 는 정규식 휴리스틱이라 논문에서 정당화가 안 된다.
+            _kw = (dict(use_eq=False, use_cov=False, use_def=False, use_eqx=True)
+                   if _mode == "eqx" else {})
+            return structural_scores(
                 getattr(context, "goal", "") or "", getattr(context, "hyps", []) or [],
                 texts, base, query_ids=query_ids, docs=premise_docs,
-                stage1=int(os.environ.get("RETRIEVAL_STAGE1", str(STAGE1))))
+                stage1=int(os.environ.get("RETRIEVAL_STAGE1", str(STAGE1))), **_kw)
         except Exception:
             # ★ 재랭킹이 어떤 이유로 실패해도 **검색 자체가 죽으면 안 된다** — tfidf 로 돌아간다
             return base

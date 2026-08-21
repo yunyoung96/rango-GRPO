@@ -94,3 +94,5 @@ A + (1-A) × C
 | `src/tactic_gen/gbdt_rank.py` · `scripts/train_ranker_gbdt.py` | GBDT 랭커 |
 | `src/tactic_gen/contrastive_rank.py` | 크로스인코더 |
 | `scripts/research_structural.py` | 신호 A~K 실험대 |
+
+- [eqx.md](eqx.md) — α-동치 랭커. 포섭 선순서의 표준 몫 ⊑∩⊒ 로 유도되고 `exact` 성공 조건과 일치한다. 프로덕션 기본값(`RETRIEVAL_MODE=eqx`).

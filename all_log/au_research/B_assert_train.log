@@ -1,0 +1,169 @@
+  5건 검증 · 성공 4 (71s)
+  10건 검증 · 성공 9 (102s)
+  15건 검증 · 성공 14 (205s)
+  20건 검증 · 성공 18 (252s)
+  25건 검증 · 성공 22 (277s)
+  30건 검증 · 성공 26 (315s)
+  35건 검증 · 성공 30 (410s)
+  40건 검증 · 성공 34 (451s)
+  45건 검증 · 성공 39 (540s)
+  50건 검증 · 성공 44 (586s)
+  55건 검증 · 성공 49 (623s)
+  60건 검증 · 성공 54 (662s)
+  65건 검증 · 성공 57 (691s)
+  70건 검증 · 성공 62 (730s)
+  75건 검증 · 성공 66 (839s)
+  80건 검증 · 성공 70 (875s)
+  85건 검증 · 성공 75 (932s)
+  90건 검증 · 성공 78 (978s)
+  95건 검증 · 성공 82 (1064s)
+  100건 검증 · 성공 85 (1116s)
+  105건 검증 · 성공 89 (1159s)
+  110건 검증 · 성공 93 (1243s)
+  115건 검증 · 성공 95 (1284s)
+  120건 검증 · 성공 99 (1380s)
+  125건 검증 · 성공 103 (1413s)
+  130건 검증 · 성공 108 (1477s)
+  135건 검증 · 성공 113 (1531s)
+  140건 검증 · 성공 117 (1597s)
+  145건 검증 · 성공 122 (1672s)
+  150건 검증 · 성공 126 (1742s)
+  155건 검증 · 성공 131 (1782s)
+  160건 검증 · 성공 135 (1841s)
+  165건 검증 · 성공 140 (1873s)
+  170건 검증 · 성공 145 (1901s)
+  175건 검증 · 성공 149 (1947s)
+  180건 검증 · 성공 154 (1997s)
+  185건 검증 · 성공 159 (2035s)
+  190건 검증 · 성공 163 (2121s)
+  195건 검증 · 성공 166 (2191s)
+  200건 검증 · 성공 169 (2254s)
+  205건 검증 · 성공 174 (2295s)
+  210건 검증 · 성공 178 (2340s)
+  215건 검증 · 성공 183 (2403s)
+  220건 검증 · 성공 188 (2501s)
+  225건 검증 · 성공 192 (2550s)
+  230건 검증 · 성공 197 (2626s)
+  235건 검증 · 성공 201 (2668s)
+  240건 검증 · 성공 206 (2728s)
+  245건 검증 · 성공 208 (2808s)
+  250건 검증 · 성공 213 (2849s)
+
+■ TRAIN — assert 변환 동적 검증
+   premise 텍스트 못 찾음              1748
+   원본이 이미 오류(스킵)                  424
+   소스 파일 없음                       336
+   Check(항) 타입 획득                 288
+   검증                             250
+   admit 시도                       213
+   ✓ 변환 성공                        213
+   suffix 검증 시도                   212
+   ✓ suffix 까지 통과                 210
+   ✓ admit 만으로 suffix 통과          208
+   ✗ 변환 실패                         37
+   Check(이름) 폴백                    29
+   변환 포기(위험/불가)                    23
+   ✗ admit 만으로는 suffix 실패           5
+   ★ PrintingAll 폴백으로 성공            3
+   ✗ suffix 에서 깨짐                   2
+   원본 suffix 실패(스킵)                 1
+
+   변환 성공률(시도분): 213/250 = 85.2%
+   적용률(포기 포함)  : 250/273 = 91.6%   — 포기 23건
+
+   ✓ 이름 침범 0건 (state·앞증명·뒤증명·premise 전부 대조)
+
+   ■ 포기 이유 (많은 순)
+     [  29] 위험 타입: 중괄호 notation({pred T} 등)
+     [  18] 위험 tactic: rewrite -
+
+   ■ 실패 유형 (많은 순)
+   [  4회] X X: [X X 200] X X '(' (in [X]).
+          원래: apply not_less_eq_geq.
+          변환: assert (= (not x) : type_scope (default interpretation)) as H_asrt0. { exact (not_less_eq_geq). }
+          오류: Syntax error: [term level 200] expected after '(' (in [term]).
+   [  1회] In X X : X v1, v2 : X x1, x2 : X m : X X H : x2 <> x1 x : X e : x1 = x X X "…" X X  "…" X 
+          원래: apply beq_string_false_iff in H.
+          변환: assert (string) as H_asrt0. { exact (beq_string_false_iff). }
+          오류: In environment
+X : Type
+v1, v2 : X
+x1, x2 : string
+m : total_map X
+H : x2 <> x1
+x : string
+e : x1 = x
+The term "beq_string_false_iff" has type
+ "foral
+   [  1회] In X c1, c2, c3 : X H : X c1 c2 H0 : X c2 c3 X X "…" X X  "…" X it is X to X X  "…" (X X "
+          원래: apply reduce_implies_mstep_ireduce in H as [? [?]].
+          변환: assert (forall P : value -> Set, (forall c : comp, P (tm_thunk c)) -> (forall n : nat, P (tm_var n))
+          오류: In environment
+c1, c2, c3 : comp
+H : creduce c1 c2
+H0 : mcstep c2 c3
+The term "reduce_implies_mstep_ireduce" has type
+ "forall c c'' : comp,
+  creduce
+   [  1회] In X t : tm Hn : X t X X "…" X X  "…" X it is X to X X "…".
+          원래: apply (e_succ_pred_succ t Hn).
+          변환: assert (tm -> tm -> tm -> tm) as H_asrt0. { exact (e_succ_pred_succ t Hn). }
+          오류: In environment
+t : tm
+Hn : nvalue t
+The term "e_succ_pred_succ t Hn" has type
+ "eval (tm_succ (tm_pred (tm_succ t))) (tm_succ t)"
+while it is expected
+   [  1회] X X: ',' or ')' X X [X X 200] (in [X]).
+          원래: pose proof demorgan_and.
+          변환: assert (SLProp => match a as s return (Implies s s = True) with | True | _ => eq_refl end : forall a
+          오류: Syntax error: ',' or ')' expected after [term level 200] (in [term]).
+   [  1회] X X X to an X X.
+          원래: unfold forall_eq_rect, forall_sig_eq_rect; simpl.
+          변환: eassert (forall (f0 : forall a : _, _ a) (P0 : {g : forall x : _, _ x | forall a : _, f0 a = g a} ->
+          오류: Cannot coerce H_asrt0 to an evaluable reference.
+   [  1회] In X H : X && X = X || X X X "…" X X "…" X it is X to X X "…".
+          원래: rewrite <- fact2.
+          변환: assert (day) as H_asrt0. { exact (fact2). }
+          오류: In environment
+H : false && true = false || true
+The term "fact2" has type "false && true = false"
+while it is expected to have type "day".
+   [  1회] In X t, t' : Tm H : t :: X H0 : t' :: X H1 : t X H2 : X X : Tm, t' |-> X X X "…" X X "…" X
+          원래: pose (lhs := progress_helper_Nat H H1).
+          변환: assert (Tm) as H_asrt0. { exact (progress_helper_Nat H H1). }
+          오류: In environment
+t, t' : Tm
+H : t :: Nat
+H0 : t' :: Nat
+H1 : t val
+H2 : exists t'0 : Tm, t' |-> t'0
+The term "progress_helper_Nat H H1" has type "exists
+   [  1회] In X n : X E : ev n X : X n X X "…" X X  "…" X it is X to X X "…" (X X "…" X  "…").
+          원래: apply MyProp_plustwo.
+          변환: assert (nat -> Prop) as H_asrt0. { exact (MyProp_plustwo). }
+          오류: In environment
+n : nat
+E : ev n
+IHE : MyProp n
+The term "MyProp_plustwo" has type
+ "forall n : nat, MyProp n -> MyProp (S (S n))"
+while it is expected
+   [  1회] No X X X X' (X X X: y0, X, X, X, P0, X, R0, F0 X d0).
+          원래: eapply @construct_fixpoint_sub with (HWf' := HWf'').
+          변환: eassert (forall (d0 : _) (F0 : (_ -> _) -> _ -> _) (R0 : _ -> _ -> Prop) (HWf0 : well_founded R0) (P
+          오류: No such bound variable HWf' (possible names are: y0, P'0, HWf'0, R'0, P0,
+HWf0, R0, F0 and d0).
+   [  1회] X X: [X] X X [X] (in [X]).
+          원래: apply Bool_complete.
+          변환: assert (Prop) : Prop := conj : A -> B -> A /\ B. Arguments and (A B)%type_scope Arguments conj [A B]
+          오류: Syntax error: [ltac_use_default] expected after [tactic] (in [tactic_command]).
+   [  1회] In X t1, t2, t3 : tm X : X t1 X X : X t2 (X t2) X : X t3 (X t3) X X "…" X X  "…" X it is X
+          원래: eapply m_trans.
+          변환: assert (tm -> tm -> tm -> tm) as H_asrt0. { exact (m_trans). }
+          오류: In environment
+t1, t2, t3 : tm
+IHt1 : eval_many t1 tm_false
+IHt2 : eval_many t2 (interp t2)
+IHt3 : eval_many t3 (interp t3)
+The term "m_trans" has typ
