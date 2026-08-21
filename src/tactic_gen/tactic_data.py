@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 import os
 import pickle
@@ -19,7 +20,7 @@ from tactic_gen.data_collator_compat import DataCollatorForCompletionOnlyLM
 from tactic_gen.augment import (selective_types, definitions, project_of,
                                 types_v2, definitions_v2, pick_def)   # rango-augmented: [TYPES]/[DEFINITIONS] canonical 규칙(train/infer 공유)
 import jsonlines
-from data_management.dataset_file import DatasetFile
+from data_management.dataset_file import DatasetFile, Goal
 from data_management.sentence_db import SentenceDB
 from data_management.jsonl_utils import ExampleDB
 from data_management.line_dict import LineDict
@@ -889,7 +890,8 @@ class ProofPremiseCollator:
             _ck = (f"{getattr(example, 'file_name', '')}:"
                    f"{getattr(example, 'proof_idx', '')}:"
                    f"{getattr(example, 'step_idx', '')}")
-            _plan = cut_lookup.plan_for(_ck)
+            _plan = None if getattr(example, "cut_substep", None) else \
+                cut_lookup.plan_for(_ck)
             if _plan:
                 _miss = [(nm, ty) for nm, ty in (_plan.get("lem") or [])
                          if not re.search(r"(?<![\w'])" + re.escape(nm) + r"(?![\w'])",
@@ -1463,6 +1465,51 @@ class ExampleCache:
 _UNCOVERED_SKIPS = [0]
 
 
+_SUB_ASSERT = re.compile(
+    r"(e?assert\s*\((.*?)\)\s*as\s+(H_asrt\w*)\s*\.)\s*\{\s*(.*?)\s*\}", re.S)
+
+
+def _split_substeps(cut: str):
+    """cut → [(tactic, kind, 명제, 가설이름), …].
+
+    kind: "assert" | "close" | "final"
+      assert  `assert (P) as H.`   — 이 다음 goal 이 P 가 된다
+      close   `exact L.`           — goal 이 P. **여기가 검색이 필요한 스텝**이다
+      final   마무리               — 원래 tactic 을 H_asrt 로 바꾼 것
+    """
+    out, body = [], cut
+    for m in _SUB_ASSERT.finditer(cut):
+        out.append((m.group(1), "assert", m.group(2), m.group(3)))
+        out.append((m.group(4), "close", m.group(2), m.group(3)))
+        body = body.replace(m.group(0), "", 1)
+    tail = body.strip()
+    if tail:
+        out.append((tail, "final", None, None))
+    return out
+
+
+def _substep_state(base_state: str, subs, pick: int) -> str:
+    """`pick` 번째 하위스텝의 **proof state**.
+
+    `assert (P) as H.` 는 goal 을 둘로 만든다 — `P` 가 먼저, 그 다음 `H:P` 가 추가된
+    원래 goal. 그래서 앞에서 이미 닫힌 assert 들의 `H_i : P_i` 가 가설로 쌓이고,
+    goal 은 `close` 스텝에서만 `P` 로 바뀐다. **Coq 실행이 필요 없다.**
+    """
+    parts = (base_state or "").split("\n\n")
+    hyps = parts[0] if len(parts) > 1 else ""
+    goal = parts[-1]
+    added = []
+    for i in range(pick):
+        tac, kind, P, H = subs[i]
+        if kind == "close":                   # 그 assert 가 닫혔다 → 가설로 들어온다
+            added.append(f"{H} : {P}")
+    cur_goal = goal
+    if pick < len(subs) and subs[pick][1] == "close":
+        cur_goal = subs[pick][2]              # goal 이 그 명제다
+    hh = "\n".join([x for x in [hyps] if x.strip()] + added)
+    return (hh + "\n\n" + cur_goal) if hh.strip() else ("\n\n" + cur_goal)
+
+
 class LmDataset(Dataset):
     def __init__(
         self,
@@ -1553,6 +1600,80 @@ class LmDataset(Dataset):
             step_id.step_idx, step_id.proof_idx, dp, training=True
         )
 
+    def _example_with_goal(self, index: int, goal: "Goal"):
+        """**합성 goal** 로 다시 만든 예제 — 검색 질의와 `[STATE]` 가 그 goal 이 된다.
+
+        캐시를 쓰지 않는다. 캐시 키가 (file, proof, step) 뿐이라 합성 goal 을 구분하지
+        못하고, 넣으면 원래 예제를 덮어써서 **조용히 오염된다.**
+        """
+        step_id = self.shuffled_idx.get_idx(self.split, index)
+        dp = DatasetFile.load(
+            self.data_loc / DATA_POINTS_NAME / step_id.file, self.sentence_db
+        )
+        return self.formatter.example_from_step(
+            step_id.step_idx, step_id.proof_idx, dp, training=True,
+            goal_override=goal,
+        )
+
+    # ── 하위스텝 (docs/premise/substep.md · 안 B) ───────────────────────
+    def _fit_premises(self, example) -> str:
+        """프롬프트 **예산 안에 실제로 들어가는** premise 본문.
+
+        ★ `example.premises` 전부(100개)를 보면 안 된다 — 프롬프트엔 ~25개만 들어간다.
+          전부로 판정하면 "보인다" 고 낙관해서 cut 을 안 만든다(build_cuts 가 당한 것과
+          같은 버그).
+        """
+        try:
+            n = getattr(self.example_collator, "premise_tokens", 896)
+            return "\n".join(whole_number_allocate(
+                self.tokenizer, example.premises or [], n))
+        except Exception:
+            return "\n".join(example.premises or [])
+
+    def _substep_plan(self, example, index):
+        """이 스텝의 하위스텝 목록과 **선택된 하나**. cut 이 필요 없으면 None.
+
+        missing lemma 가 k 개면 하위스텝은 2k+1 개다.
+            sub 0   assert (P1) as H0.        Γ ⊢ G
+            sub 1   exact L1.                 Γ ⊢ P1          ★ 검색이 L1 을 찾아야 한다
+            sub 2   assert (P2) as H1.        Γ, H0:P1 ⊢ G
+            sub 3   exact L2.                 Γ, H0:P1 ⊢ P2
+            sub 4   <마무리>                   Γ, H0, H1 ⊢ G
+
+        선택은 **결정적**이다(sid 해시) — 캐시·재개가 어긋나면 안 된다.
+        """
+        if os.environ.get("CUT_SUBSTEP", "1") != "1":
+            return None
+        if not os.environ.get("CUTS_PATH", ""):
+            return None
+        from tactic_gen import cut_lookup
+        key = (f"{getattr(example, 'file_name', '')}:"
+               f"{getattr(example, 'proof_idx', '')}:{getattr(example, 'step_idx', '')}")
+        plan = cut_lookup.plan_for(key)
+        if not plan or not plan.get("lem"):
+            return None
+        fit = self._fit_premises(example)
+        miss = [(nm, ty) for nm, ty in plan["lem"]
+                if not re.search(r"(?<![\w'])" + re.escape(nm) + r"(?![\w'])", fit)]
+        if not miss:
+            return None                       # (1) gold 가 전부 보인다 → 원래 tactic
+        try:
+            from tactic_gen.assert_split import transform as _tf
+            cut = _tf(plan.get("tac", ""),
+                      [(nm, f"Lemma {nm} : {ty}.") for nm, ty in miss],
+                      proof_script=getattr(example, "proof_script", "") or "",
+                      state=getattr(example, "proof_state", "") or "",
+                      suffix="".join(getattr(example, "next_steps", [])[1:]))
+        except Exception:
+            cut = None
+        if not cut or not isinstance(cut, str):
+            return None
+        subs = _split_substeps(cut)
+        if not subs:
+            return None
+        h = int(hashlib.sha1(key.encode()).hexdigest()[:8], 16)
+        return {"subs": subs, "pick": h % len(subs), "miss": miss, "cut": cut}
+
     _cut_range = None          # (start, end) — 첫 호출에 채운다
 
     def _hopeless(self, example) -> bool:
@@ -1601,6 +1722,38 @@ class LmDataset(Dataset):
         a, b = self._cut_range
         return not (a <= index < b)
 
+    def _apply_substep(self, example, index: int):
+        """cut 을 하위스텝으로 쪼개고 **하나만** 남긴다 (docs/premise/substep.md).
+
+        하는 일 셋 — 셋이 **함께** 가야 한다(하나라도 빠지면 조용히 망가진다).
+          G1  `close` 스텝이면 **그 명제로 검색을 다시** 한다 (안 하면 L 이 안 보인다)
+          G2  `[STATE]` 도 그 하위스텝 상태로 바꾼다 (안 하면 다른 goal 을 보고 답한다)
+          G3  정답을 그 하위스텝 tactic **하나**로 바꾼다
+        """
+        try:
+            plan = self._substep_plan(example, index)
+        except Exception:
+            return example
+        if not plan:
+            return example
+        subs, pick = plan["subs"], plan["pick"]
+        tac, kind, P, H = subs[pick]
+        st = _substep_state(getattr(example, "proof_state", "") or "", subs, pick)
+
+        if kind == "close":
+            # G1 — 그 명제(P)를 goal 로 삼아 **검색을 다시** 한다.
+            parts = st.split("\n\n")
+            hyps = [x for x in (parts[0].split("\n") if len(parts) > 1 else []) if x.strip()]
+            try:
+                example = self._example_with_goal(index, Goal(hyps, parts[-1]))
+            except Exception:
+                pass                          # 재검색 실패 → 원래 예제로 진행(보수적)
+        example = copy.copy(example)
+        example.proof_state = st              # G2
+        example.next_steps = [tac]            # G3
+        example.cut_substep = (pick, len(subs), kind)   # 진단용
+        return example
+
     def resolved_example(self, index: int):
         """학습이 **실제로 쓰는** 예제. 가망 없거나 판정을 못 받은 스텝은 다음으로 치환한다.
 
@@ -1611,6 +1764,7 @@ class LmDataset(Dataset):
         사전점검 스크립트도 이걸 써야 학습과 같은 예제를 본다.
         """
         example = self.raw_example(index)
+        example = self._apply_substep(example, index)
         if os.environ.get("CUT_DROP_HOPELESS", "0") != "1":
             return example
         n = len(self)

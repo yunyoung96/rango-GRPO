@@ -286,10 +286,24 @@ class GeneralFormatter:
         proof_idx: int,
         dp_obj: DatasetFile,
         training: bool = False,
+        goal_override: Optional[Goal] = None,
         **kwargs: Any,
     ) -> LmExample:
+        """`goal_override` — 검색 질의와 `[STATE]` 를 **합성 goal** 로 바꾼다.
+
+        ★ 왜 필요한가 (docs/premise/substep.md G1):
+          cut 을 하위스텝으로 쪼개면 `exact L` 스텝의 goal 은 원래 goal 이 아니라
+          **assert 한 명제 P** 다. 그 상태로 검색해야 L 이 프롬프트에 들어온다.
+          원래 goal 로 검색하면 L 이 안 나오고, 그러면 쪼갠 의미가 없다.
+        """
         proof = dp_obj.proofs[proof_idx]
         step = proof.steps[step_idx]
+        if goal_override is not None:
+            # 검색·상태 출력이 모두 `step.goals` 를 보므로 **얕은 복사본**을 만들어
+            # goals 만 갈아끼운다. 원본 dp 는 캐시되므로 절대 건드리면 안 된다.
+            import copy as _cp
+            step = _cp.copy(step)
+            step.goals = [goal_override]
         file_repos_path = get_repos_path(dp_obj.file_context.file)
 
         # ── 현재 상태 출력 ──────────────────────────────────────────────
