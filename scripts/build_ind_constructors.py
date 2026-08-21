@@ -12,7 +12,16 @@ import sqlite3, re, json, sys, os
 DB = sys.argv[1] if len(sys.argv) > 1 else "raw-data/coqstoq-test/coqstoq-test-sentences.db"
 OUT = sys.argv[2] if len(sys.argv) > 2 else "data/ind_constructors_clean.json"
 
-IND = re.compile(r'^\s*(?:#\[[^\]]*\]\s*)?Inductive\s+([A-Za-z_][\w\']*)')
+# ★ Inductive 만 보면 CoInductive·Variant·Record·Class 를 통째로 놓친다.
+#   실측: 학습 코퍼스의 고유 inductive 타입 9,356개 중 이 정규식이 잡는 것은 일부뿐이었다.
+IND = re.compile(r'^\s*(?:#\[[^\]]*\]\s*)?'
+                 r'(?:Global\s+|Local\s+|Program\s+|Polymorphic\s+|Monomorphic\s+)*'
+                 r'(?:Co)?Inductive\s+([A-Za-z_][\w\']*)')
+# Record/Variant/Class 도 생성자·필드를 갖는다 — [TYPES] 로 보여줄 가치가 있다.
+REC = re.compile(r'^\s*(?:#\[[^\]]*\]\s*)?'
+                 r'(?:Global\s+|Local\s+|Program\s+|Polymorphic\s+|Monomorphic\s+)*'
+                 r'(?:Record|Variant|Structure|Class)\s+([A-Za-z_][\w\']*)')
+FIELD = re.compile(r'([A-Za-z_][\w\']*)\s*:(?!=)')
 CTOR = re.compile(r'\|\s*([A-Za-z_][\w\']*)')
 # .v 폴백용: 파일 어디서든 Inductive/CoInductive 선언 시작을 찾는다(줄머리 제한 없음).
 IND_ANY = re.compile(r'\b(?:Co)?Inductive\s+([A-Za-z_][\w\']*)')
@@ -40,6 +49,43 @@ def _scan_vfiles(root: str) -> dict:
     return raw
 
 
+
+def _ctors_of(t: str) -> list:
+    """Inductive 본문에서 생성자 이름을 뽑는다.
+
+    ★ `|` 로만 찾으면 **첫 생성자에 막대가 없는 형태**를 통째로 놓친다:
+        Inductive singleton_type : Type := Single.        (막대 0개)
+        Inductive carry A := C0 : A -> carry A | C1 : ... (첫 개에만 없음)
+      실측으로 이 형태가 결손의 큰 부분이었다.
+    """
+    if ":=" not in t:
+        return []
+    body = t.split(":=", 1)[1]
+    out = []
+    for part in body.split("|"):
+        m = re.match(r"\s*([A-Za-z_][\w']*)", part)
+        if m:
+            out.append(m.group(1))
+    return out
+
+
+def _fields_of(t: str) -> list:
+    """Record/Class/Structure 의 필드(사영함수) 이름.
+
+    두 형태를 모두 받는다:
+        Record R := mk { f1 : T; f2 : T }.     ← 중괄호
+        Class C (X : Set) := op : ... .        ← 중괄호 없음(필드 1개)
+    """
+    if "{" in t:
+        body = t[t.index("{") + 1:]
+        return [x for x in FIELD.findall(body)]
+    if ":=" in t:
+        m = re.match(r"\s*([A-Za-z_][\w']*)\s*:(?!=)", t.split(":=", 1)[1])
+        if m:
+            return [m.group(1)]
+    return []
+
+
 def main():
     if os.path.isdir(DB):                                   # ★ 폴백: .v 트리(sentences.db 없는 서버)
         raw = _scan_vfiles(DB)
@@ -47,9 +93,18 @@ def main():
         c = sqlite3.connect(DB)
         raw = {}
         for (text,) in c.execute("SELECT text FROM sentence"):
-            m = IND.match(text)
+            t = text or ""
+            m = IND.match(t)
             if m:
-                raw[m.group(1)] = CTOR.findall(text)
+                cs = _ctors_of(t)
+                if cs:
+                    raw[m.group(1)] = cs
+                continue
+            m = REC.match(t)
+            if m:
+                fs = _fields_of(t)
+                if fs:
+                    raw[m.group(1)] = fs
     # 표준 inductive 보강(코퍼스에 없을 수 있는 stdlib)
     for t, cs in {'and': ['conj'], 'or': ['or_introl', 'or_intror'], 'ex': ['ex_intro'],
                   'nat': ['O', 'S'], 'positive': ['xI', 'xO', 'xH'], 'bool': ['true', 'false'],

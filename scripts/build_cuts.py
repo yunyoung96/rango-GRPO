@@ -70,6 +70,9 @@ from tactic_gen.applicable import decompose  # noqa: E402
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 5000
 SPLIT = (sys.argv[2] if len(sys.argv) > 2 else "train").upper()
 OUT = sys.argv[3] if len(sys.argv) > 3 else f"data/cuts_{SPLIT.lower()}.jsonl"
+# ★ 샤드: [START, START+N) 구간만 훑는다. 예제마다 독립이라 완전 병렬이 된다.
+#   단일 프로세스로 640,000건이면 24시간이지만 10샤드면 2.5시간이다.
+START = int(sys.argv[4]) if len(sys.argv) > 4 else 0
 # ★ cut 대상 판정은 **검색 순위**가 아니라 **프롬프트에 실제로 들어가는가** 다.
 #   `whole_number_allocate` 는 앞에서부터 담다가 예산이 넘으면 break 한다.
 #   실측: 검색이 넘긴 100개 중 17~23개만 들어간다(길이 최소 16 · 중앙 147 · 최대 928 토큰).
@@ -245,7 +248,7 @@ t0 = time.time()
 TMP = OUT + ".building"
 fo = open(TMP, "w")
 
-for i in range(min(N, len(ds))):
+for i in range(START, min(START + N, len(ds))):
     try:
         e = ds.raw_example(i)
     except Exception:
@@ -439,6 +442,15 @@ for i in range(min(N, len(ds))):
         need_coq.append(rec)
     if st["cut 필요 스텝"] % 200 == 0:
         print(f"   … cut {st['cut 필요 스텝']} ({time.time()-t0:.0f}s)", flush=True)
+
+# ★★ 스캔 범위를 파일에 남긴다.
+#   cut 파일은 **범위 제한 산출물**이다(인덱스 [START, START+N) 만 훑는다).
+#   그런데 그 사실이 파일에 없어서, 파일럿 규모 산출물이 본번에 들어가도
+#   아무도 몰랐다(실측: 640,000 중 60,000 만 덮은 채 학습이 돌았다).
+#   조회 쪽(cut_lookup)이 이 값을 읽어 범위 밖 질의를 셀 수 있게 한다.
+fo.write(json.dumps({"kind": "meta", "split": SPLIT,
+                     "scan_start": START, "scan_end": START + N,
+                     "dataset_len": len(ds)}, ensure_ascii=False) + "\n")
 
 for nm, ty in stmts.items():
     fo.write(json.dumps({"kind": "stmt", "name": nm, "ty": ty},

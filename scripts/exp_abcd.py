@@ -60,7 +60,8 @@ from tactic_gen.search_query import local_names  # noqa: E402
 from tactic_gen.applicable import (canon, decompose, match, parse,  # noqa: E402
                                    subterms)
 from tactic_gen.tier_rank import (TierRanker, declname, prem_struct,  # noqa: E402
-                                  goal_struct, sig_hyp_match, head_of)
+                                  goal_struct, sig_hyp_match, head_of, sig_au_dist,
+                                  au_res_gen, sig_au_f)
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--split", default="test",
@@ -84,7 +85,25 @@ RANKERS = [x for x in A.rankers.split(",") if x]
 #   예외로 빠져 결과가 전부 0.0% 로 나왔고, 20분을 버린 뒤에야 알았다.
 _KNOWN = {"tfidf", "rrf", "struct", "eq", "cov", "eqcov",
           "structural", "structural_mmr", "gbdt", "ctr",
-          "hyp", "sub", "cooc", "nsub", "allsig"}
+          "hyp", "sub", "cooc", "nsub", "allsig",
+          # ★ 반유니피케이션 비유사도 D_λ (future-idea.md ⑮-A)
+          #   au      = structural 에서 EQ_W(이진 완전일치) 대신 연속 D_λ
+          #   au_eq   = 둘 다 (완전일치 특례 + 거리)
+          #   au0/au1 = λ 끝점 확인용 (au0 은 옛 붕괴 재현, au1 은 대칭)
+          "au", "au_eq", "au0", "au1",
+          # λ 스윕 (au10 = λ0.10 …) + λ 를 아예 없앤 두 신호 RRF 융합
+          "au10", "au20", "au50", "au75", "au2sig",
+          # ★ F-측도 형태 — λ 대신 β(재현율 가중). β=1 이 정준값.
+          #   `res/|concl| = 1−P`, `gen/|goal| = 1−R` 이므로 D_λ 는 정밀도·재현율의
+          #   가중합이었다. 조화평균으로 합치면 λ 가 사라진다.
+          #   그리고 한쪽이 0 이면 0 이라 **공허한 lemma 가 구조적으로 배제**된다.
+          "auf", "auf05", "auf2",
+          # ★ logit 결합 — `EQ_W=3.0` 을 유도로 대체한다.
+          #   F 를 적용가능성의 **확률**로 보면 증거를 더하는 정준 척도는 로그 오즈다.
+          #   logit 은 F=1 에서 극점을 가지므로 **완전일치가 자동으로 압도**한다 —
+          #   손으로 정한 3.0 이 하던 일이 정의에서 나온다.
+          #   (로그 오즈의 가산 = 독립 증거의 결합, 나이브 베이즈)
+          "aul", "aul05", "aul2"}
 _bad = [r for r in RANKERS if r not in _KNOWN]
 if _bad:
     sys.stderr.write(f"알 수 없는 랭커: {_bad}\n사용 가능: {sorted(_KNOWN)}\n")
@@ -194,6 +213,103 @@ def rank_all(state, texts, pool, tf, tr, kinds, docs=None, names=None,
         elif k == "eqcov":
             eb, cv = eq_bonus(), cov_rrf()
             out[k] = [rrf[j] + cv[j] + 3.0 * eb[j] for j in range(n)]
+        elif k in ("au", "au_eq", "au0", "au1"):
+            # ★ D_λ = (size(concl)−size(⊓)) + λ·(size(goal)−size(⊓))
+            #   λ=0 은 순수 적용가능성(= 예전에 A 를 45.4→18.2% 로 무너뜨린 설정),
+            #   λ=1 은 대칭. 0<λ<1 이 "적용 가능하면서 구체적인 것"을 고른다.
+            lam = {"au0": 0.0, "au10": 0.10, "au20": 0.20, "au50": 0.50,
+                   "au75": 0.75, "au1": 1.0}.get(
+                       k, float(os.environ.get("AU_LAM", "0.35")))
+            gs2 = goal_struct("\n" + state if not state.startswith("\n") else state)
+            av = [0.0] * n
+            if gs2 is not None:
+                for j in cand:
+                    ps = prem_struct(texts[j])
+                    if ps is not None:
+                        av[j] = sig_au_dist(gs2, ps, lam)
+            # RRF 항으로 결합 — 절대값 대신 순위를 쓴다(스케일 손튜닝 회피)
+            o = sorted(range(n), key=lambda j: -av[j])
+            rr = [0] * n
+            for pp, j in enumerate(o):
+                rr[j] = pp
+            au_rrf = [1.0 / (60 + rr[j]) for j in range(n)]
+            cv = cov_rrf()
+            sc = [rrf[j] + cv[j] + au_rrf[j] for j in range(n)]
+            if k == "au_eq":                      # 완전일치 특례도 함께
+                eb = eq_bonus()
+                sc = [sc[j] + 3.0 * eb[j] for j in range(n)]
+            out[k] = sc
+        elif k in ("aul", "aul05", "aul2"):
+            # ★ score = RRF(tfidf) + RRF(cov) + w·logit(F_β)
+            #
+            #   왜 logit 인가: F 를 확률로 보면 로그 오즈가 증거의 정준 척도이고,
+            #   가산은 독립 증거의 결합(나이브 베이즈)이다. logit 은 F=1 에서 극점을
+            #   가지므로 **완전일치가 자동으로 압도**한다 — `EQ_W=3.0` 의 역할이
+            #   손으로 정한 상수가 아니라 **변환의 성질**에서 나온다.
+            #
+            #   ★ 앞선 실험에서 au 계열이 진 이유가 바로 여기다: F 를 RRF 로 넣으면
+            #     F=1.0 이어도 1/60 ≈ 0.017 밖에 못 받는데, structural 의 완전일치
+            #     가산은 3.0 이다(180배). 신호가 나빴던 게 아니라 **눌러서** 진 것이다.
+            beta = {"aul05": 0.5, "aul2": 2.0}.get(k, 1.0)
+            W = float(os.environ.get("AU_LOGIT_W", "0.5"))
+            EPS_F = 1e-3                      # logit 발산 방지 → 최대 ±6.9
+            gs2 = goal_struct("\n" + state if not state.startswith("\n") else state)
+            lv = [0.0] * n
+            if gs2 is not None:
+                for j in cand:
+                    ps = prem_struct(texts[j])
+                    if ps is None:
+                        continue
+                    f = min(max(sig_au_f(gs2, ps, beta), EPS_F), 1 - EPS_F)
+                    lv[j] = math.log(f / (1 - f))
+            cv = cov_rrf()
+            out[k] = [rrf[j] + cv[j] + W * lv[j] for j in range(n)]
+        elif k in ("auf", "auf05", "auf2"):
+            # ★ F_β(P, R) — λ 를 β 로 대체한다.
+            #     P = size(⊓)/size_rigid(concl)   premise 주장 중 쓰인 비율
+            #     R = size(⊓)/size(goal)          goal 중 설명된 비율
+            #   조화평균이라 한쪽이 0 이면 0 → 공허한 lemma(R≈0)가 자동으로 배제된다.
+            #   실측: 공허 케이스가 β=0.5/1/2 **전부에서 0.000** (λ 형태는 λ=0 에서 1.0).
+            beta = {"auf05": 0.5, "auf2": 2.0}.get(k, 1.0)
+            gs2 = goal_struct("\n" + state if not state.startswith("\n") else state)
+            fv = [0.0] * n
+            if gs2 is not None:
+                for j in cand:
+                    ps = prem_struct(texts[j])
+                    if ps is not None:
+                        fv[j] = sig_au_f(gs2, ps, beta)
+            o = sorted(range(n), key=lambda j: -fv[j])
+            rr = [0] * n
+            for pp, j in enumerate(o):
+                rr[j] = pp
+            f_rrf = [1.0 / (60 + rr[j]) for j in range(n)]
+            cv = cov_rrf()
+            out[k] = [rrf[j] + cv[j] + f_rrf[j] for j in range(n)]
+        elif k == "au2sig":
+            # ★ λ 를 **없앤** 안 — res 와 gen 을 각각 신호로 넣고 RRF 로 융합한다.
+            #   RRF 는 순위 기반이라 스케일이 없으므로 "노드 1개가 몇 배" 라는
+            #   질문 자체가 사라진다. 손튜닝 상수가 0개다.
+            #   대가: 두 신호에 같은 가중치가 걸리고 상호작용을 못 잡는다.
+            gs2 = goal_struct("\n" + state if not state.startswith("\n") else state)
+            rv = [0.0] * n
+            gv = [0.0] * n
+            if gs2 is not None:
+                for j in cand:
+                    ps = prem_struct(texts[j])
+                    if ps is None:
+                        continue
+                    r_, g_ = au_res_gen(gs2, ps)
+                    rv[j] = -r_          # 작을수록 좋으므로 부호 반전
+                    gv[j] = -g_
+            def _rr(vals):
+                o = sorted(range(n), key=lambda j: -vals[j])
+                rr = [0] * n
+                for pp, j in enumerate(o):
+                    rr[j] = pp
+                return [1.0 / (60 + rr[j]) for j in range(n)]
+            rres, rgen = _rr(rv), _rr(gv)
+            cv = cov_rrf()
+            out[k] = [rrf[j] + cv[j] + rres[j] + rgen[j] for j in range(n)]
         elif k in ("hyp", "sub", "cooc", "nsub", "allsig"):
             # ★ future-idea 의 미시도 신호들 — A(직접 검색)를 올리려는 시도.
             #   cut 은 생성 실패·문법 오류 위험이 있으므로 A 가 높을수록 안전하다.

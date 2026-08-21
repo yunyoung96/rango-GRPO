@@ -31,6 +31,7 @@ goal 을 고정 항으로 두고 패턴의 메타변수만 대입한다 — Coq 
 """
 from __future__ import annotations
 
+import os
 import collections
 import functools
 import math
@@ -272,6 +273,208 @@ def sig_anti_unify(gs, ps) -> float:
     return best
 
 
+# ══ 반유니피케이션 비유사도 D_λ (future-idea.md ⑮-A) ═══════════════════════
+#
+#  포섭 순서 `s ⊑ t ⟺ ∃σ. σ(s)=t` 에서 반유니피케이션이 meet(⊓) 이다.
+#  `size(t)` = 고정 기호 노드 수(단조: s ⊑ t ⟹ size(s) ≤ size(t)).
+#
+#      res = size(concl) − size(⊓)     불일치  · res=0 ⟺ concl ⊑ goal ⟺ apply 가 맞는다
+#      gen = size(goal)  − size(⊓)     일반성  · 크면 lemma 가 goal 을 설명 못 한다
+#      D_λ = res + λ·gen
+#
+#  ★ 양 끝점이 우리가 아는 두 경우다.
+#      λ=0  순수 적용가능성 — **예전에 A 를 45.4% → 18.2% 로 무너뜨린 그 설정**
+#           (`forall A (x:A), P x` 같은 공허한 lemma 가 res=0 으로 만점을 받는다)
+#      λ=1  대칭 — 트리 완전일치만 0 (지금 EQ_W 가 잡는 경우)
+#      0<λ<1  적용 가능하면서 **구체적인** 것을 선호   ← 여기를 쓴다
+#    λ>0 이면 `D_λ = 0 ⟺ α-동치` 가 유지되고, 공허한 lemma 는 gen 이 커서 자동으로 밀린다.
+#
+#  ※ "거리"가 아니라 **비유사도**다 — 삼각부등식은 증명되지 않았다(모듈러성이 깨진다).
+#    랭킹은 순위 비교만 쓰므로 무관하다. future-idea.md ⑮-A 참조.
+AU_LAM = float(os.environ.get("AU_LAM", "0.35"))     # λ
+AU_DIST_W = float(os.environ.get("AU_DIST_W", "1.0"))  # RRF 항으로 쓰므로 1.0 기본
+
+
+def _rigid_size(t, mv: frozenset) -> int:
+    """고정 기호 노드 수 — **메타변수는 세지 않는다.**
+
+    `size` 는 포섭 순서에 대해 단조여야 한다(`s ⊑ t ⟹ size(s) ≤ size(t)`).
+    메타변수는 치환으로 무엇이든 되므로 "premise 가 주장하는 구조"에 포함되지 않는다.
+    """
+    if t is None:
+        return 0
+    if t[0] == "id":
+        return 0 if t[1].split(".")[-1] in mv else 1
+    if t[0] == "opq":
+        return 1
+    if t[0] == "app":
+        return 1 + _rigid_size(t[1], mv) + _rigid_size(t[2], mv)
+    return 2 + _rigid_size(t[2], mv) + _rigid_size(t[3], mv)
+
+
+def _au_dir(p, g, mv: frozenset, cnt) -> None:
+    """**방향 있는** 반유니피케이션 — premise 의 바인더를 메타변수로 본다.
+
+    ★ 이게 없으면 `Lemma add_comm x y : x+y = y+x` 가 goal `a+b = b+a` 와
+      **안 맞는다**(x ≠ a 이므로). 그러면 `res = 0 ⟺ concl ⊑ goal` 이라는
+      성질 자체가 성립하지 않아 D_λ 의 근거가 무너진다.
+      메타변수는 무엇과도 맞고(=premise 쪽 잔차 0), 그 자리가 삼킨 goal 부분은
+      `gen` 으로 계산되어 "얼마나 일반적인가"의 벌점이 된다.
+    """
+    if p is None or g is None:
+        return
+    if p[0] == "id" and p[1].split(".")[-1] in mv:
+        return                                   # 메타변수 — 맞음(고정 기호 기여 0)
+    if p[0] == g[0] == "id":
+        if p[1].split(".")[-1] == g[1].split(".")[-1]:
+            cnt[0] += 1
+        return
+    if p[0] == g[0] == "app":
+        cnt[0] += 1
+        _au_dir(p[1], g[1], mv, cnt)
+        _au_dir(p[2], g[2], mv, cnt)
+        return
+    if p[0] == g[0] == "op" and p[1] == g[1]:
+        cnt[0] += 2
+        _au_dir(p[2], g[2], mv, cnt)
+        _au_dir(p[3], g[3], mv, cnt)
+        return
+    return                                       # 여기서 일반화 — 더 안 센다
+
+
+def _au_size(a, b) -> int:
+    """size(a ⊓ b) — 대칭 버전(기존 호출부 호환)."""
+    cnt = [0]
+    _au(a, b, cnt)
+    return cnt[0]
+
+
+def sig_au_dist(gs, ps, lam: float = None) -> float:
+    """`1/(1+D_λ/size(goal))` — 크면 상위. D_λ=0(α-동치)이면 정확히 1.0.
+
+    goal 의 **모든 부분항**과 premise 결론(등식이면 양변)을 맞춰 최소 D 를 취한다.
+    부분항 양화가 `rewrite` 를 자연히 포함한다 — `rewrite L` 은 L 의 등식 한쪽이
+    goal 의 부분항과 맞아야 하는데, 결론 전체만 보면 그 질문을 아예 못 던진다
+    (lemma 를 쓰는 tactic 의 45.5% 가 rewrite 다).
+    """
+    if lam is None:
+        lam = AU_LAM
+    c = ps[1]
+    if c is None or not gs[5]:
+        return 0.0
+    mv = ps[0] or frozenset()                # premise 바인더 = 메타변수
+    cands = [c]
+    eq = as_eq(c)
+    if eq:
+        cands.extend(eq)                     # 등식이면 양변도 후보(rewrite)
+    best = None
+    for src in cands:
+        sn = _rigid_size(src, mv)            # 고정 기호만
+        for tgt in gs[5]:
+            gn = shape(tgt)[0]
+            if gn < 1:
+                continue
+            cnt = [0]
+            _au_dir(src, tgt, mv, cnt)
+            m = cnt[0]
+            res = max(sn - m, 0)             # 불일치: res=0 ⟺ concl ⊑ tgt
+            gen = max(gn - m, 0)             # 일반성: lemma 가 못 채운 부분
+            d = res + lam * gen
+            v = 1.0 / (1.0 + d / max(gn, 1))
+            if best is None or v > best:
+                best = v
+    return best or 0.0
+
+
+def au_pr(gs, ps) -> tuple:
+    """`(P, R)` — 항 구조에 대한 **정밀도·재현율**.
+
+        P = size(⊓) / size_rigid(concl)   premise 가 주장하는 것 중 얼마나 쓰였나
+        R = size(⊓) / size(goal)          goal 중 얼마나 설명됐나
+
+    ★ 왜 이 형태인가 (future-idea.md ⑮-A2)
+      앞서 쓴 두 잔차가 정확히 `res/|concl| = 1−P`, `gen/|goal| = 1−R` 이다.
+      즉 `D_λ = res + λ·gen` 은 **정밀도·재현율의 가중합**이었다.
+      그런데 이 둘을 합치는 **정준적인 방법이 이미 있다** — 조화평균(F-측도).
+      그러면 λ 가 사라지고, 튜닝이 필요하면 `F_β` 의 β 로 옮겨간다.
+      β 는 "재현율이 정밀도보다 β배 중요하다"는 **표준 해석**을 갖는다.
+
+      · α-동치        P=1, R=1   → F₁=1
+      · 인스턴스       P=1, R<1   → F₁ 중간
+      · 공허(결론이 변수) P=1, R≈0  → F₁≈0     ← λ 없이도 자동으로 밀린다
+    """
+    c = ps[1]
+    if c is None or not gs[5]:
+        return (0.0, 0.0)
+    mv = ps[0] or frozenset()
+    cands = [c]
+    eq = as_eq(c)
+    if eq:
+        cands.extend(eq)
+    best = None
+    for src in cands:
+        sn = _rigid_size(src, mv)
+        for tgt in gs[5]:
+            gn = shape(tgt)[0]
+            if gn < 1:
+                continue
+            cnt = [0]
+            _au_dir(src, tgt, mv, cnt)
+            m = cnt[0]
+            P = m / sn if sn > 0 else 1.0     # 주장할 고정 구조가 없으면 P=1(공허)
+            R = m / gn
+            if best is None or (P + R) > (best[0] + best[1]):
+                best = (P, R)
+    return best or (0.0, 0.0)
+
+
+def sig_au_f(gs, ps, beta: float = 1.0) -> float:
+    """`F_β(P, R)` — 크면 상위. β=1 이 정준값(조화평균).
+
+    `F_β = (1+β²)·P·R / (β²·P + R)`  — β 가 클수록 **재현율(goal 설명)** 을 중시한다.
+    β→0 이면 P 만 보므로 **공허한 lemma 가 만점**을 받는다(= λ=0 붕괴와 같은 실패).
+    """
+    P, R = au_pr(gs, ps)
+    if P <= 0 and R <= 0:
+        return 0.0
+    b2 = beta * beta
+    den = b2 * P + R
+    if den <= 0:
+        return 0.0
+    return (1.0 + b2) * P * R / den
+
+
+def au_res_gen(gs, ps) -> tuple:
+    """`(res, gen)` 을 정규화해 돌려준다 — λ 로 합치지 않은 **두 신호**.
+
+    λ 를 손으로 정하는 대신 두 신호를 각각 순위로 융합(RRF)하면
+    "노드 1개가 몇 배" 라는 질문 자체가 사라진다(future-idea.md ⑮-A).
+    """
+    c = ps[1]
+    if c is None or not gs[5]:
+        return (1.0, 1.0)
+    mv = ps[0] or frozenset()
+    cands = [c]
+    eq = as_eq(c)
+    if eq:
+        cands.extend(eq)
+    best = None
+    for src in cands:
+        sn = _rigid_size(src, mv)
+        for tgt in gs[5]:
+            gn = shape(tgt)[0]
+            if gn < 1:
+                continue
+            cnt = [0]
+            _au_dir(src, tgt, mv, cnt)
+            m = cnt[0]
+            res = max(sn - m, 0) / max(gn, 1)
+            gen = max(gn - m, 0) / max(gn, 1)
+            if best is None or (res + gen) < (best[0] + best[1]):
+                best = (res, gen)
+    return best or (1.0, 1.0)
+
+
 def sig_head(gs, ps) -> float:
     """B: 결론 최상위 head 일치. head 는 lemma 이름이 아니라 **전역 상수**다."""
     return 1.0 if (ps[2] is not None and ps[2] == gs[2]) else 0.0
@@ -511,7 +714,7 @@ def mmr_reorder(scores: list[float], texts: list[str], k: int = 50,
 def structural_scores(goal_text: str, hyps, texts: list[str], tfidf: list[float],
                  query_ids=None, docs=None, stage1: int = STAGE1,
                  use_eq: bool = True, use_cov: bool = True,
-                 use_def: bool = True, use_mmr: bool = False,
+                 use_def: bool = True, use_mmr: bool = False, use_au: bool = False,
                  mmr_k: int = 50, mmr_lam: float = 0.35) -> list[float]:
     """최종 랭킹 점수. 큰 값이 상위. `tfidf` 는 호출부가 이미 계산한 것을 넘긴다."""
     n = len(texts)
@@ -541,6 +744,18 @@ def structural_scores(goal_text: str, hyps, texts: list[str], tfidf: list[float]
         rc = _rrf_of(c2)
         for j in range(n):
             out[j] += rc[j]
+        # ── au — 반유니피케이션 비유사도 D_λ (⑮-A) ────────────────────────
+        #   `use_au=True` 면 이진 완전일치(EQ_W) **대신** 연속값을 RRF 항으로 넣는다.
+        #   완전일치는 D=0 → 1.0 이라 이 신호가 그 경우를 **포함**한다.
+        if use_au:
+            au = [0.0] * n
+            for j in cand:
+                ps = pss[j]
+                if ps is not None:
+                    au[j] = sig_au_dist(gs, ps)
+            ra = _rrf_of(au)
+            for j in range(n):
+                out[j] += AU_DIST_W * ra[j]
         # eq — 결론 트리 완전일치
         if use_eq:
             g = parse(goal_text or "")
