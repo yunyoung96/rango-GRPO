@@ -76,7 +76,7 @@ fi
 # ── 사전점검 2: cut 파일 ──
 # ★ cut 파일이 없거나 0바이트면 조용히 비활성화되어 v8 과 똑같은 학습이 된다.
 #   그러면 "돌려봤는데 v8 과 같더라" 는 결론을 얻고 원인을 못 찾는다. 여기서 막는다.
-CUTS=data/cuts_train.jsonl
+CUTS=${CUTS:-data/cut_plans_train.jsonl}
 if [ ! -s "$CUTS" ]; then
   echo "[$(TZ=Asia/Seoul date '+%m-%d %H:%M')] ★ 중단: $CUTS 가 없거나 비었다" | tee -a "$LOG"; exit 1
 fi
@@ -96,12 +96,24 @@ echo "[$(TZ=Asia/Seoul date '+%m-%d %H:%M')]   cut 파일 확인: $(wc -l < "$CU
 #   그리고 표본 5곳만 찍었을 때도 640,000 이후 빈틈을 놓쳤다
 #   (CUT_DROP_HOPELESS 가 인덱스를 건너뛰어 도달 인덱스가 671,835 였다).
 #   → verify_cut_range.py 가 도달 인덱스를 **시뮬레이션**하고 전 구간을 훑는다.
-if ! PYTHONPATH=src python3 scripts/verify_cut_range.py "$CONF" "$CUTS" 2>&1 | tee -a "$LOG" | tail -20; then
-  echo "[$(TZ=Asia/Seoul date '+%m-%d %H:%M')] ★ 중단: cut 범위 검증 실패" | tee -a "$LOG"
+#   → `verify_cut_all.py` 가 **전 인덱스에 질의를 날려** 판정을 받고 cut 형태까지 본다
+#     (옛 `verify_cut_range.py` 는 도달 인덱스 시뮬레이션이었는데, cut 이 전 구간을
+#      덮게 된 지금은 질문 자체가 사라져 제거했다).
+if ! CUTS_PATH="$CUTS" PYTHONPATH=src python3 scripts/verify_cut_all.py train 2>&1 \
+     | tee -a "$LOG" | tail -24; then
+  echo "[$(TZ=Asia/Seoul date '+%m-%d %H:%M')] ★ 중단: cut 전 인덱스 검증 실패" | tee -a "$LOG"
   exit 1
 fi
-if ! PYTHONPATH=src python3 scripts/verify_cut_range.py "$CONF" "$CUTS" > /dev/null 2>&1; then
-  echo "[$(TZ=Asia/Seoul date '+%m-%d %H:%M')] ★ 중단: cut 범위 검증 실패 (위 로그 참조)" | tee -a "$LOG"
+# ★ 학습 시점 결정 규칙 (1)(2)(3) — 틀려도 오류가 안 나므로 따로 못박는다
+if ! PYTHONPATH=src python3 scripts/verify_cut_wiring.py 2>&1 | tee -a "$LOG" | tail -8; then
+  echo "[$(TZ=Asia/Seoul date '+%m-%d %H:%M')] ★ 중단: cut 배선 검증 실패" | tee -a "$LOG"
+  exit 1
+fi
+# ★ **랜덤·큰 인덱스** 사전점검 — 학습은 RandomSampler 로 전 구간을 무작위로 돈다.
+#   0 부터 순서대로 도는 것이 아니므로, 큰 인덱스에서만 나는 문제를 미리 잡아야 한다.
+if ! CUTS_PATH="$CUTS" PYTHONPATH=src python3 scripts/preflight_random.py 400 2>&1 \
+     | tee -a "$LOG" | tail -20; then
+  echo "[$(TZ=Asia/Seoul date '+%m-%d %H:%M')] ★ 중단: 랜덤 인덱스 사전점검 실패" | tee -a "$LOG"
   exit 1
 fi
 

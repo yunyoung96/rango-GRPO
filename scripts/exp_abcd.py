@@ -94,7 +94,7 @@ RANKERS = [x for x in A.rankers.split(",") if x]
 #   예외로 빠져 결과가 전부 0.0% 로 나왔고, 20분을 버린 뒤에야 알았다.
 _KNOWN = {"tfidf", "rrf", "struct", "eq", "eqa", "eqx", "cov", "eqcov",
           "f1a", "f1a_only", "f1pure", "f1a95", "f1a90",
-          "jac", "jac_pure", "jac_eqx",
+          "jac", "jac_pure", "jac_eqx", "jac_all", "jac_all_eqx",
           "afh80", "afh90", "afh95", "afh100",
           "structural", "structural_mmr", "gbdt", "ctr",
           "hyp", "sub", "cooc", "nsub", "allsig",
@@ -305,6 +305,28 @@ def rank_all(state, texts, pool, tf, tr, kinds, docs=None, names=None,
         elif k == "eq":
             eb = eq_bonus()
             out[k] = [rrf[j] + 3.0 * eb[j] for j in range(n)]
+        elif k in ("jac_all", "jac_all_eqx"):
+            # ★ **tfidf 를 아예 안 거친다** — 후보 전량에 구조 판정을 건다.
+            #   `stage1=5,000` 은 비용 때문에 둔 절단인데, 실측 후보 풀은
+            #   중앙 7,378 · 최대 14,333 이라 **68% 의 스텝에서 실제로 잘라내고 있다.**
+            #   즉 tfidf 가 조용히 상한을 정하고 있었다 — 그게 없을 때 어떤지 본다.
+            #
+            #   ★ 이게 되면 랭커가 **어휘 정보를 전혀 안 쓴다.**
+            #     tfidf · RRF(K=60) · C' 가 전부 사라지고 격자량 하나만 남는다.
+            gq3 = goal_stmt(state)
+            gp3 = path_set(gq3) if gq3 is not None else frozenset()
+            jv3 = [0.0] * n
+            if gp3:
+                for j in range(n):                     # ← cand 가 아니라 **전량**
+                    pj = prem_stmt(texts[j])
+                    if pj is not None:
+                        jv3[j] = path_sim(path_set(pj), gp3)
+            if k == "jac_all_eqx":
+                W = float(os.environ.get("AU_HINGE_W", "3.0"))
+                out[k] = [jv3[j] + W * (1.0 if jv3[j] >= 1.0 - 1e-9 else 0.0)
+                          for j in range(n)]
+            else:
+                out[k] = list(jv3)
         elif k in ("jac", "jac_pure", "jac_eqx"):
             # ★ 경로집합 Jaccard — **진짜 metric** (arXiv:2608.18194 Theorem 1).
             #   항을 루트→노드 심볼 경로의 집합으로 보내면 멱집합 격자로 옮겨지고,
