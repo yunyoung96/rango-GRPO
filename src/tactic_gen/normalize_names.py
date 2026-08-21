@@ -307,7 +307,20 @@ def build_mapping(injected: dict, seed_key: str, avoid_text: str = "",
     if os.environ.get("NORMALIZE_THEOREM", "0") == "1":
         t = theorem_name(proof_script or "")
         if t and t not in names and t not in ctors:
-            if t in prem_names:
+            # ★★ **동명 선언이 프롬프트에 둘 이상이면 매핑하지 않는다.**
+            #   `apply_mapping` 은 텍스트 치환이라 같은 이름을 전부 바꾼다. [PROOFS] 에
+            #   같은 이름의 **다른** lemma 가 실려 있으면(모듈이 달라 흔하다) 셋 다
+            #   `G0` 이 되어 모델이 구분할 수 없다.
+            #   실측: `Lemma G0 p q : to_nat p = to_nat q -> p = q.` 와
+            #        `Lemma G0 (n m : nat) : n<>0 -> … -> n = m.` 이 같은 이름이 됐다.
+            #   `premise_names` 에는 이 방어가 있었는데(중복 이름은 원래대로 둔다)
+            #   정리 이름 경로에만 빠져 있었다.
+            _ndecl = len(re.findall(
+                r"(?:Lemma|Theorem|Corollary|Remark|Fact|Proposition|Definition|"
+                r"Instance|Axiom)\s+" + re.escape(t) + r"(?![\w'])", avoid_text or ""))
+            if _ndecl > 1:
+                LAST_THM_DECL = t          # 동명 다수 — 선언부 한 곳만 G# 로
+            elif t in prem_names:
                 LAST_THM_DECL = t          # 충돌 — 선언부만 따로 처리
             else:
                 thm = t

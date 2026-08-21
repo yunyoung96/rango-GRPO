@@ -72,11 +72,26 @@ NORM = re.compile(r"(?<![\w'])([TfCLG]\d+)(?![\w'])")
 DECL = re.compile(r"(?:Lemma|Theorem|Definition|Corollary|Remark|Fact|Instance|Axiom|"
                   r"Parameter|Inductive|CoInductive|Variant|Record|Class|Fixpoint|"
                   r"CoFixpoint|Notation)\s+([A-Za-z_][\w']*)")
+# ★ **생성자도 선언이다.** `Inductive f0 … := C0 : … | C1 : …` 의 C0/C1 은 DECL 이
+#   머리 이름(f0)만 잡아서 '선언이 없다' 고 오탐했다(실측 idx=1555508).
+CTOR = re.compile(r":=\s*\|?\s*([A-Za-z_][\w']*)|\|\s*([A-Za-z_][\w']*)")
+
+
+def all_decls(text: str):
+    out = set(DECL.findall(text))
+    for ln in text.split("\n"):
+        if re.search(r"\b(?:Inductive|CoInductive|Variant|Record|Class)\b", ln):
+            for a, b in CTOR.findall(ln):
+                if a: out.add(a)
+                if b: out.add(b)
+    return out
 ALIAS = re.compile(r"^\s*(?:Definition|Notation)\s+[A-Za-z_][\w']*\s*:=\s*"
                    r"[A-Za-z_][\w']*(?:\.[A-Za-z_][\w']*)+\s*\.?\s*$", re.M)
 STR_NORM = re.compile(r'"[^"\n]*(?<![\w])[TfCLG]\d+[^"\n]*"')
 CMT_NORM = re.compile(r"\(\*[^*]*(?<![\w])[TfCLG]\d+", re.S)
-MODPOLL = re.compile(r"(?<![\w'.])[A-Za-z_][\w']*\.(?:tt|nat|list|bool|option|unit)(?![\w'])")
+# ★ `List.list` `Datatypes.tt` 는 **진짜 Coq 이름**이다. 오염은 "모듈 접두사 자체가
+#   정규화 이름으로 바뀐" 경우이므로 접두사 쪽을 본다.
+MODPOLL = re.compile(r"(?<![\w'.])[TfCLG]\d+\.[A-Za-z_]")
 TACWORDS = {"intros", "intro", "apply", "eapply", "exact", "rewrite", "erewrite",
             "destruct", "induction", "simpl", "unfold", "reflexivity", "symmetry",
             "assumption", "auto", "eauto", "trivial", "constructor", "split",
@@ -171,13 +186,14 @@ for c in range(N):
 
     # ── 정규화 ──
     decls = collections.Counter(DECL.findall(prompt))
+    _alld = all_decls(prompt)
     tnorm = set(NORM.findall(target)) - _skip_names
     for nm in tnorm:
         if not re.search(r"(?<![\w'])" + nm + r"(?![\w'])", prompt):
             note("L2 ★ 정답의 정규화 이름이 프롬프트에 없다", f"idx={i} {nm} ← {target[:60]}")
         elif not re.search(r"(?<![\w'])" + nm + r"(?![\w'])", vis_p):
             note("L3 ★ 정답의 이름이 절단 후 안 보인다", f"idx={i} {nm} ← {target[:60]}")
-        elif nm not in decls:
+        elif nm not in _alld:
             note("N1 ★ 정규화 이름의 선언이 프롬프트에 없다", f"idx={i} {nm}")
     for w in set(re.findall(r"(?<![\w'])([A-Za-z_][\w']{3,})(?![\w'])", target)):
         if w in TACWORDS or NORM.fullmatch(w) or w in _skip_names:
