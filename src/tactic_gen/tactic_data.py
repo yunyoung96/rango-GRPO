@@ -948,9 +948,17 @@ class ProofPremiseCollator:
             elif should_normalize(key):
                 # v7: premises 를 넘겨 [PREMISES] lemma 이름도 정규화 대상에 포함
                 #     (NORMALIZE_PREMISES=1 일 때만 실제로 대상이 된다)
+                # ★★ **프롬프트에 실제로 들어간 premise 만** 넘긴다.
+                #   `example.premises` 는 검색 결과 100개인데 예산(896토큰)상 ~25개만
+                #   프롬프트에 들어간다. 전부 넘기면 26~100번째 lemma 도 `L#` 로 이름이
+                #   바뀌는데 **그 선언은 프롬프트에 없다** — 모델은 뜻을 알 수 없는
+                #   `L28` 만 보게 된다(실측: 300건 중 4건).
+                #   `input_str` 은 이미 완성된 프롬프트이므로 거기서 실린 것만 고른다.
+                _in_prompt = [q for q in (getattr(example, "premises", None) or [])
+                              if q and q.strip().split("\n")[0][:60] in input_str]
                 mapping = build_mapping(dict(_LAST_INJECTED), key,
                                         avoid_text=input_str + target,
-                                        premises=list(getattr(example, "premises", None) or []),
+                                        premises=_in_prompt,
                                         proof_script=getattr(example, "proof_script", "") or "")
                 # ★★ 프롬프트에 **실제로 없는 이름**은 매핑에서 뺀다.
                 #   build_mapping 은 `example.premises` 전부를 대상으로 하는데,
