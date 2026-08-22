@@ -86,6 +86,26 @@ os.environ.setdefault("HF_HUB_OFFLINE", "1")
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 os.environ.setdefault("CUTS_ALLOW_PARTIAL", "1")
 
+
+def _strip_comments(t: str) -> str:
+    """Coq 주석 `(* … *)` 를 지운다 — 주석 안 낱말은 **이름이 아니다**.
+
+    실측 오탐: `(* Caso Indutivo *)` 의 Indutivo,
+    `(* move both quantifiers into the context: *)` 의 quantifiers,
+    `(* We choose a preimage by [grp_quotient_map]. *)` 의 preimage·merely
+    를 전부 "프롬프트에 없는 이름" 으로 신고했다. 중첩 주석까지 처리한다.
+    """
+    out, depth, i = [], 0, 0
+    while i < len(t):
+        if t.startswith("(*", i):
+            depth += 1; i += 2; continue
+        if t.startswith("*)", i) and depth:
+            depth -= 1; i += 2; continue
+        if not depth:
+            out.append(t[i])
+        i += 1
+    return "".join(out)
+
 N = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1].isdigit() else 1000
 
 import yaml  # noqa: E402
@@ -287,7 +307,8 @@ for c in range(N):
             note("L3 ★ 정답의 이름이 절단 후 안 보인다", f"idx={i} {nm} ← {target[:60]}")
         elif nm not in _alld:
             note("N1 ★ 정규화 이름의 선언이 프롬프트에 없다", f"idx={i} {nm}")
-    for w in set(re.findall(r"(?<![\w'])([A-Za-z_][\w']{3,})(?![\w'])", target)):
+    for w in set(re.findall(r"(?<![\w'])([A-Za-z_][\w']{3,})(?![\w'])",
+                            _strip_comments(target))):
         if w in TACWORDS or NORM.fullmatch(w) or w in _skip_names or is_core(w):
             continue
         _pw = re.compile(r"(?<![\w'])" + re.escape(w) + r"(?![\w'])")

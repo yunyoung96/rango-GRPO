@@ -83,6 +83,10 @@ for i in idxs:
             os.environ[k] = v
         try:
             full = coll.collate(tok, ds.resolved_example(i))
+        except RuntimeError as _re:
+            # ★ 캐시 스탬프 불일치 같은 설정 오류는 삼키면 안 된다 — 0건으로 조용히 끝난다
+            sys.stderr.write(f"\n★★ 중단: {str(_re)[:300]}\n")
+            sys.exit(3)
         except Exception:
             ok = False
             break

@@ -1464,7 +1464,7 @@ _CACHE_STAMP_KEYS = (
 #     해시는 PYTHONHASHSEED 로 프로세스마다 랜덤화되므로, **같은 인덱스가 실행마다 다른
 #     프롬프트**를 냈다(실측: 7개 중 3개 불일치, 길이까지 달랐다). 원본 순서를 쓰도록
 #     고쳤고 그래서 이전 캐시는 전부 무효다.
-_DATA_PATH_VERSION = "v4-seed-expansion+ltac+cap20"
+_DATA_PATH_VERSION = "v5-seed-expansion+ltac+budget400-600"
 
 
 # ★ stdlib 선언 이름 (data/stdlib_names.json). 없으면 빈 집합 — 가드가 보수적으로 동작한다.

@@ -48,6 +48,26 @@ try:
 except Exception:
     STDLIB = set()
 
+
+def _strip_comments(t: str) -> str:
+    """Coq 주석 `(* … *)` 를 지운다 — 주석 안 낱말은 **이름이 아니다**.
+
+    실측 오탐: `(* Caso Indutivo *)` 의 Indutivo,
+    `(* move both quantifiers into the context: *)` 의 quantifiers,
+    `(* We choose a preimage by [grp_quotient_map]. *)` 의 preimage·merely
+    를 전부 "프롬프트에 없는 이름" 으로 신고했다. 중첩 주석까지 처리한다.
+    """
+    out, depth, i = [], 0, 0
+    while i < len(t):
+        if t.startswith("(*", i):
+            depth += 1; i += 2; continue
+        if t.startswith("*)", i) and depth:
+            depth -= 1; i += 2; continue
+        if not depth:
+            out.append(t[i])
+        i += 1
+    return "".join(out)
+
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 400
 _dk = json.load(open("data/decl_kinds.json"))
 KINDS = _dk.get("kind", {})
@@ -103,7 +123,8 @@ while st["예제"] < N and tried < N * 40:
     # ★ 정답의 **첫 토큰**은 tactic 이름이다 — 프로젝트 정의 Ltac(srapply·eqapply 등)도
     #   여기 온다. 이름이 아니라 문법이므로 외부 참조에서 뺀다. 다만 그 자체가
     #   "볼 수 없는 Ltac" 문제이긴 하므로 **따로 센다.**
-    _first = re.match(r"^\s*([A-Za-z_][\w']*)", target.strip())
+    _tgt = _strip_comments(target)          # ★ 주석 제거 후 판정
+    _first = re.match(r"^\s*([A-Za-z_][\w']*)", _tgt.strip())
     _tacname = _first.group(1) if _first else None
     if _tacname and not is_core(_tacname):
         st["  (참고) 정답 첫 토큰이 비표준 tactic"] += 1
@@ -111,7 +132,7 @@ while st["예제"] < N and tried < N * 40:
             st["  (참고) 그 tactic 이름도 안 보임"] += 1
 
     ext, miss, stdmiss = [], [], []
-    for w in dict.fromkeys(re.findall(r"(?<![\w'.])([A-Za-z_][\w']*(?:\.[A-Za-z_][\w']*)*)", target)):
+    for w in dict.fromkeys(re.findall(r"(?<![\w'.])([A-Za-z_][\w']*(?:\.[A-Za-z_][\w']*)*)", _tgt)):
         base = w.split(".")[-1]
         if is_core(w) or base in local or w in local or base in intro or w in intro:
             continue

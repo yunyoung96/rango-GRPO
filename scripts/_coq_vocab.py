@@ -80,7 +80,15 @@ enough cut admit give_up idtac fail solve first all try repeat progress
 instantiate abstract shelve unshelve typeclasses decide dependent functional
 """.split()
 
-COQ_VOCAB = frozenset(CORE_TYPES + CORE_TERMS + CORE_PREDS + CORE_MODULES
+# ★ Coq **항 문법 키워드** — 이름이 아니다.
+#   실측 오탐: `assert (forall P:Prop, P \/ ~ P)` 의 `forall` 을 "없는 이름" 으로 신고.
+TERM_KW = """
+forall exists exists2 fun let in if then else match with end return as
+fix cofix struct measure wf for at using by where and
+Type Prop Set SProp
+""".split()
+
+COQ_VOCAB = frozenset(CORE_TYPES + CORE_TERMS + CORE_PREDS + CORE_MODULES + TERM_KW
                       + SSR_LTAC + VERNAC + TACTICS)
 
 

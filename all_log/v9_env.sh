@@ -14,6 +14,16 @@ export TOKENIZERS_PARALLELISM=false
 # ── v8 에서 그대로 가져온 것 ──────────────────────────────
 export AUGMENT_V2=1 RERANK_PREMISES=1 INJECT_TYPES=1 INJECT_DEFS=1 DYNAMIC_PADDING=1
 export HARD_SEQ_LEN=2048 TYPES_TOKENS=300 DEFS_TOKENS=300
+#  ★ 400/600 으로 올려 봤다가 **되돌렸다** (2026-08-22):
+#    환각률 17.6% → 17.6% 로 **전혀 안 내려가는데** premise 만 14.4 → 13.5 (−0.9)
+#    잃었다. 예산이 병목이 아니었다. 병목이 무엇인지는 probe_seed_reach 로 판정한다.
+#  ↑ 300/300 → 400/600 (2026-08-22). 근거:
+#    · 프롬프트 중앙이 1,118토큰 / 상한 2,048 — 여유 ~930 을 실측했다
+#    · 주입이 premise 를 **안 밀어낸다**는 것도 실측했다(rango 대비 14.3 → 14.3).
+#      augment_v2_section 이 `room` 을 계산해 자기 블록만 자르기 때문이다.
+#    · 남은 환각(17.6%)이 전부 **풀에서 제외된 종류**(Definition·Constructor·
+#      Field)이고 주입이 유일한 통로인데, 씨앗 8.2개/예제 중 2~5개만 들어가고
+#      있었다 — 예산이 묶고 있었다.
 export FUNC_DEFS_PATH=data/func_defs_v3.json
 # ★ NORMALIZE_RATE=1.0 — 예제를 **전부** 정규화한다.
 #   목적이 "이름 암기 차단 → 미지 프로젝트로 전이"이므로 절반만 정규화하면
