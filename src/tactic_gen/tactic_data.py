@@ -1789,6 +1789,32 @@ class LmDataset(Dataset):
                 example = self._example_with_goal(index, Goal(hyps, parts[-1]))
             except Exception:
                 pass                          # 재검색 실패 → 원래 예제로 진행(보수적)
+            # ★★ G1b — 재검색을 해도 `L` 이 **안 보이면 이 하위스텝은 학습 불가**다.
+            #   하위스텝 셋은 성격이 다르다:
+            #     assert  goal 로부터 **필요한 명제를 추론**한다 → 정당한 학습 신호
+            #     final   `apply H_asrt0.` → 자명
+            #     close   `exact L.` → **순수 이름 회상**. L 을 못 보면 환각 학습이다.
+            #   실측(cut 프롬프트 300건 · close 83건): exact 대상 85개 중 46개(54%)가
+            #   프롬프트에 없었다. 대부분 stdlib 다 —
+            #   PremiseFilter 가 lib/coq/theories 의 LEMMA/THEOREM 을 풀에서 빼므로
+            #   `negb_involutive` · `pos_INR` · `map_length` 는 **검색으로 도달 불가**다.
+            #   (재검색 자체는 정상이었다: goal 이 assert 명제 그대로 들어간다.)
+            #   → 같은 lemma 의 `assert` 스텝(pick-1)으로 물러선다. 그건 명제를 goal 에서
+            #     추론하는 문제라 프롬프트만으로 풀 수 있다.
+            _m = re.search(r"e?exact\s+@?([\w'.]+)", tac)
+            if _m:
+                _base = _m.group(1).rstrip(".").split(".")[-1]
+                _fit = ""
+                try:
+                    _fit = self._fit_premises(example)
+                except Exception:
+                    _fit = ""
+                if _base and not re.search(r"(?<![\w'])" + re.escape(_base) + r"(?![\w'])",
+                                           _fit):
+                    pick = pick - 1 if pick > 0 else len(subs) - 1
+                    tac, kind, P, H = subs[pick]
+                    st = _substep_state(getattr(example, "proof_state", "") or "",
+                                        subs, pick)
         example = copy.copy(example)
         example.proof_state = st              # G2
         example.next_steps = [tac]            # G3

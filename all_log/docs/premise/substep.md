@@ -116,9 +116,39 @@ missing lemma 가 `k` 개면 **2k+1** 개.
 U1 을 측정하지 못한 채 "U1 없음" 이라는 답을 얻는다. `^\{\s*e?exact\b` 도 cut 으로
 인정하도록 고쳤다.
 
-## 왜 close 에서 U1 이 해소되는가
+## close 에서 U1 이 해소되는가 — **절반만**
 
 `close` 스텝은 assert 의 명제 `P` 를 goal 로 삼아 **검색을 다시 돌린다**
 (`_example_with_goal`, 캐시 없음). 찾는 것이 `P` 이고 `L` 의 명제가 `P` 이므로
 `eqx` 의 지시자 `1[⟦p⟧=⟦g⟧]` 가 **바로 이때** 발화한다 — α-동치가 성립하기 때문이다.
-즉 하위스텝 설계와 `eqx` 의 지시자는 **같은 성질(강제성)의 두 얼굴**이다.
+하위스텝 설계와 `eqx` 의 지시자는 **같은 성질(강제성)의 두 얼굴**이다.
+
+### 실측 (cut 프롬프트 300건 · close 83건)
+
+    exact 대상          85
+    ✓ 프롬프트에 있다    39
+    ★ 없다              46      **가시율 45.9%**
+
+원래 값이 52% 였으니 **하위스텝만으로는 U1 이 고쳐지지 않는다.**
+
+원인은 재검색이 아니다. 단계별로 추적하면 재검색은 정확히 작동한다 —
+
+    idx=1796002  'exact negb_involutive.'
+      assert P   forall b : bool, negb (negb b) = b
+      재검색 후  premises 81개 · goal = 'forall b : bool, negb (negb b) = b'   ✓
+      L 이 검색 결과에 있나                                              **아니오**
+
+`negb_involutive` 는 **stdlib** 이고, `PremiseFilter` 가 `lib/coq/theories` 의
+LEMMA/THEOREM 을 풀에서 제외한다(rango 원본 설계). 랭커는 **풀에 없는 것을 올릴 수 없다.**
+
+### 고침 — 하위스텝 셋은 성격이 다르다
+
+    assert  goal 로부터 **필요한 명제를 추론**한다   → 프롬프트만으로 풀 수 있다
+    final   `apply H_asrt0.`                        → 자명
+    close   `exact L.` = **순수 이름 회상**          → L 을 못 보면 환각 학습
+
+close 만 검색에 의존한다. 그래서 재검색 뒤에도 L 이 안 보이면 **같은 lemma 의
+assert 스텝(pick−1)으로 물러선다**(`_apply_substep` G1b).
+
+설계가 틀린 것은 아니다 — 39/85 는 재검색으로 실제로 찾았다. 풀에 있는 lemma 에는
+의도대로 작동하고, 없는 경우의 가드가 빠져 있었을 뿐이다.
