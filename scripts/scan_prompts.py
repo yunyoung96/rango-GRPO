@@ -93,8 +93,24 @@ def all_decls(text: str):
     return out
 ALIAS = re.compile(r"^\s*(?:Definition|Notation)\s+[A-Za-z_][\w']*\s*:=\s*"
                    r"[A-Za-z_][\w']*(?:\.[A-Za-z_][\w']*)+\s*\.?\s*$", re.M)
-STR_NORM = re.compile(r'"[^"\n]*(?<![\w])[TfCLG]\d+[^"\n]*"')
-CMT_NORM = re.compile(r"\(\*[^*]*(?<![\w])[TfCLG]\d+", re.S)
+# ★★ "정규화 이름이 **문자열 안**에 새어 들어갔나" 를 볼 때, 이름을 **요구하는**
+#   정규식으로 문자열을 찾으면 안 된다 — 그러면 이름을 포함하도록 따옴표 짝이
+#   **어긋나게** 잡힌다. 실측 오탐:
+#       (ELit (C0 "io" )) (ELit (C0 "fwrite" ))
+#   여기서 `" )) (ELit (C0 "` 가 문자열 하나로 매칭된다. C0 는 문자열 **밖**이다.
+#   → 리터럴을 **먼저 왼쪽부터 순서대로 짝지어** 찾고, 그 다음 내용만 본다.
+#   (이 패턴 계열의 오탐은 이번이 여섯 번째다.)
+STR_LIT = re.compile(r'"(?:[^"\n]|"")*"')        # Coq 문자열: "" 이 이스케이프
+CMT_LIT = re.compile(r"\(\*.*?\*\)", re.S)        # 주석 (중첩은 무시 — 보수적)
+NORM_IN = re.compile(r"(?<![\w'])[TfCLG]\d+(?![\w'])")
+
+
+def norm_in_literals(text, pat):
+    """`pat` 이 잡는 리터럴들 **안에서만** 정규화 이름을 찾는다. 첫 건을 돌려준다."""
+    for m in pat.finditer(text or ""):
+        if NORM_IN.search(m.group(0)):
+            return m.group(0)
+    return None
 # ★ `List.list` `Datatypes.tt` 는 **진짜 Coq 이름**이다. 오염은 "모듈 접두사 자체가
 #   정규화 이름으로 바뀐" 경우이므로 접두사 쪽을 본다.
 MODPOLL = re.compile(r"(?<![\w'.])[TfCLG]\d+\.[A-Za-z_]")
@@ -244,10 +260,12 @@ for c in range(N):
             break
     if MODPOLL.search(prompt):
         note("N4 ★ 모듈 접두사 오염", f"idx={i} {MODPOLL.search(prompt).group(0)}")
-    if STR_NORM.search(prompt):
-        note("N5 ★ 문자열 안 정규화", f"idx={i} {STR_NORM.search(prompt).group(0)[:50]}")
-    if CMT_NORM.search(prompt):
-        note("N5 ★ 주석 안 정규화", f"idx={i}")
+    _sl = norm_in_literals(prompt, STR_LIT)
+    if _sl:
+        note("N5 ★ 문자열 안 정규화", f"idx={i} {_sl[:60]}")
+    _cl = norm_in_literals(prompt, CMT_LIT)
+    if _cl:
+        note("N5 ★ 주석 안 정규화", f"idx={i} {_cl[:60]}")
 
     # ── cut ──
     if "H_asrt" in target:
