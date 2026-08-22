@@ -57,7 +57,31 @@ lazymatch multimatch match context goal hyp ltac idtac fail assert
 change replace symmetry transitivity reflexivity etransitivity
 """.split()
 
-COQ_VOCAB = frozenset(CORE_TYPES + CORE_TERMS + CORE_PREDS + CORE_MODULES + SSR_LTAC)
+# ★ 증명 종결자·명령어 — 이름이 아니다. (실측 오탐: `Qed` 를 "없는 이름" 으로 신고)
+VERNAC = """
+Qed Defined Admitted Abort Proof Save Goal Theorem Lemma Definition Fixpoint
+CoFixpoint Inductive CoInductive Record Class Instance Variant Axiom Parameter
+Variable Hypothesis Context Section End Module Import Export Require Open Close
+Scope Notation Ltac Hint Resolve Rewrite Arguments Implicit Set Unset Local
+Global Program Obligation Next Time Print Check Search About Compute Eval
+""".split()
+
+# ★ 표준 tactic — TACWORDS 와 겹치지만 어휘 판정은 한 곳에 모은다
+TACTICS = """
+assumption eassumption exact eexact apply eapply refine simple constructor
+econstructor split left right exists eexists intro intros revert generalize
+clear clearbody rename subst destruct edestruct case ecase induction einduction
+elim eelim inversion einversion injection discriminate contradiction absurd
+simpl cbn cbv lazy vm_compute native_compute red hnf unfold fold change
+pattern rewrite erewrite replace symmetry transitivity reflexivity f_equal
+trivial auto eauto tauto intuition firstorder congruence lia nia lra nra ring
+field omega btauto easy now done exfalso specialize pose remember set assert
+enough cut admit give_up idtac fail solve first all try repeat progress
+instantiate abstract shelve unshelve typeclasses decide dependent functional
+""".split()
+
+COQ_VOCAB = frozenset(CORE_TYPES + CORE_TERMS + CORE_PREDS + CORE_MODULES
+                      + SSR_LTAC + VERNAC + TACTICS)
 
 
 def is_core(name: str) -> bool:

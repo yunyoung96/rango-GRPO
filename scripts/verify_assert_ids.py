@@ -44,6 +44,18 @@ sys.path.insert(0, "scripts")
 logging.disable(logging.CRITICAL)
 from _env_from_v9 import apply_v9_env  # noqa: E402
 apply_v9_env(verbose=True)
+# ★ stdlib 은 **모델이 안다고 가정**한다 (2026-08-22 결정).
+#   근거: rango 의 PremiseFilter 가 lib/coq/theories 를 풀에서 통째로 빼므로 검색으로
+#   도달 불가인데, 파일 하나에 stdlib premise 가 11,196개씩 딸려 와 전부 보여 줄 수도
+#   없다(모듈 목록만 넣어도 758토큰 — premise 예산 896을 거의 다 먹는다).
+#   Coq 실측으로 접근성 자체는 문제가 아님도 확인했다: 이미 로드돼 있으면
+#   `Coq.Lists.List.app_nil_r` 같은 정규화 이름이 그대로 통한다. 문제는 **이름을
+#   아느냐**이고, 그건 프롬프트로 못 준다. → 환각 집계에서 분리한다.
+try:
+    _STDLIB = set(_json.load(open("data/stdlib_names.json")))
+except Exception:
+    _STDLIB = set()
+import json as _json  # noqa: E402
 os.environ.setdefault("CACHE_MAX_PAGE", "0")
 os.environ.setdefault("CUTS_ALLOW_PARTIAL", "1")
 
@@ -153,6 +165,8 @@ for i in picked:
         if hit:
             st["  ✓ 보임"] += 1
             where["+".join(hit[:2])] += 1
+        elif nm in _STDLIB or nm.split(".")[-1] in _STDLIB:
+            st["  ○ stdlib (안다고 가정)"] += 1
         else:
             st["★ 안 보임"] += 1
             _miss_here += 1

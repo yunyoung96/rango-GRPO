@@ -42,6 +42,18 @@ logging.disable(logging.CRITICAL)
 sys.path.insert(0, "scripts")
 from _env_from_v9 import apply_v9_env  # noqa: E402
 apply_v9_env(verbose=True)
+# ★ stdlib 은 **모델이 안다고 가정**한다 (2026-08-22 결정).
+#   근거: rango 의 PremiseFilter 가 lib/coq/theories 를 풀에서 통째로 빼므로 검색으로
+#   도달 불가인데, 파일 하나에 stdlib premise 가 11,196개씩 딸려 와 전부 보여 줄 수도
+#   없다(모듈 목록만 넣어도 758토큰 — premise 예산 896을 거의 다 먹는다).
+#   Coq 실측으로 접근성 자체는 문제가 아님도 확인했다: 이미 로드돼 있으면
+#   `Coq.Lists.List.app_nil_r` 같은 정규화 이름이 그대로 통한다. 문제는 **이름을
+#   아느냐**이고, 그건 프롬프트로 못 준다. → 환각 집계에서 분리한다.
+try:
+    _STDLIB = set(_json.load(open("data/stdlib_names.json")))
+except Exception:
+    _STDLIB = set()
+import json as _json  # noqa: E402
 from _coq_vocab import is_core  # noqa: E402
 # ★ `True` · `BoolSpec` 같은 Coq **기본 어휘**를 프로젝트 이름으로 세면
 #   "프롬프트에 없다 → 환각" 이라고 신고해 학습을 막는다(실측 오탐).
@@ -164,8 +176,11 @@ for c, i in enumerate(idxs):
                 note("P4 ★★ 정답이 쓰는 이름이 **잘려서** 안 보인다", f"idx={i} {w}")
         else:
             # ★★ 옛 코드는 "있다가 잘린" 것만 봤다. **어디에도 없는** 이름은 조용했다.
-            note("P8 ★★ 정답이 쓰는 이름이 프롬프트에 **아예 없다**",
-                 f"idx={i} {w} ← {target[:60]}")
+            if w in _STDLIB or w.split(".")[-1] in _STDLIB:
+                st["P8b stdlib (안다고 가정 — 환각 아님)"] += 1
+            else:
+                note("P8 ★★ 정답이 쓰는 이름이 프롬프트에 **아예 없다**",
+                     f"idx={i} {w} ← {target[:60]}")
 
     if os.environ.get("CUTS_PATH", ""):
         from tactic_gen import cut_lookup

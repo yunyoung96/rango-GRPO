@@ -1406,6 +1406,18 @@ _CACHE_STAMP_KEYS = (
 _DATA_PATH_VERSION = "v2-premise-order-deterministic"
 
 
+# ★ stdlib 선언 이름 (data/stdlib_names.json). 없으면 빈 집합 — 가드가 보수적으로 동작한다.
+def _load_stdlib_names():
+    try:
+        with open(os.environ.get("STDLIB_NAMES", "data/stdlib_names.json")) as f:
+            return frozenset(json.load(f))
+    except Exception:
+        return frozenset()
+
+
+_STDLIB_NAMES = _load_stdlib_names()
+
+
 def _cache_stamp(formatter) -> str:
     import hashlib
     parts = [f"{k}={os.environ.get(k, '')}" for k in _CACHE_STAMP_KEYS]
@@ -1848,8 +1860,17 @@ class LmDataset(Dataset):
                 except Exception:
                     _pfs = ""
                 _seen = _fit + "\n" + _pfs
-                if _base and not re.search(r"(?<![\w'])" + re.escape(_base) + r"(?![\w'])",
-                                           _seen):
+                # ★★ **stdlib 은 예외** — 모델이 안다고 가정한다.
+                #   rango 의 PremiseFilter 가 lib/coq/theories 를 풀에서 통째로 빼므로
+                #   stdlib lemma 는 **검색으로 도달 불가**다. 그런데 파일 하나에
+                #   stdlib premise 가 11,196개씩 딸려 와 전부 보여 줄 수도 없다.
+                #   여기서 물러서면 `exact negb_involutive` 같은 정상적인 학습 신호를
+                #   통째로 버리게 된다(실측 U1 결손 46건 중 대부분이 stdlib 이었다).
+                #   → stdlib 이면 close 스텝을 그대로 쓴다.
+                if _base in _STDLIB_NAMES:
+                    pass
+                elif _base and not re.search(r"(?<![\w'])" + re.escape(_base) + r"(?![\w'])",
+                                             _seen):
                     pick = pick - 1 if pick > 0 else len(subs) - 1
                     tac, kind, P, H = subs[pick]
                     # ★ 되돌릴 것 둘:

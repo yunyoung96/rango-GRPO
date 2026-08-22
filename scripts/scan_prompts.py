@@ -51,6 +51,29 @@ logging.disable(logging.CRITICAL)
 sys.path.insert(0, "scripts")
 from _env_from_v9 import apply_v9_env  # noqa: E402
 apply_v9_env(verbose=True)
+# ★ stdlib 은 **모델이 안다고 가정**한다 (2026-08-22 결정).
+#   근거: rango 의 PremiseFilter 가 lib/coq/theories 를 풀에서 통째로 빼므로 검색으로
+#   도달 불가인데, 파일 하나에 stdlib premise 가 11,196개씩 딸려 와 전부 보여 줄 수도
+#   없다(모듈 목록만 넣어도 758토큰 — premise 예산 896을 거의 다 먹는다).
+#   Coq 실측으로 접근성 자체는 문제가 아님도 확인했다: 이미 로드돼 있으면
+#   `Coq.Lists.List.app_nil_r` 같은 정규화 이름이 그대로 통한다. 문제는 **이름을
+#   아느냐**이고, 그건 프롬프트로 못 준다. → 환각 집계에서 분리한다.
+try:
+    _STDLIB = set(_json.load(open("data/stdlib_names.json")))
+except Exception:
+    _STDLIB = set()
+# ★ L6 분류용 사전 — 이름이 lemma 인가 함수인가 Ltac 인가
+import json as _json  # noqa: E402
+try:
+    # ★ 2단 구조다: {"kind": {이름: 종류}, "ctor": {...}}
+    _dk = _json.load(open("data/decl_kinds.json"))
+    _KINDS = _dk.get("kind", _dk) if isinstance(_dk, dict) else {}
+except Exception:
+    _KINDS = {}
+try:
+    _FD = _json.load(open(os.environ.get("FUNC_DEFS_PATH", "data/func_defs_v3.json")))
+except Exception:
+    _FD = {}
 from _coq_vocab import is_core  # noqa: E402
 # ★ `True` · `BoolSpec` 같은 Coq **기본 어휘**를 프로젝트 이름으로 세면
 #   "프롬프트에 없다 → 환각" 이라고 신고해 학습을 막는다(실측 오탐).
@@ -275,8 +298,25 @@ for c in range(N):
             # ★★ **검사기의 구멍이었다.** 옛 코드는 "프롬프트에 있는데 절단으로 사라진"
             #   경우만 신고했다. 애초에 **어디에도 없는** 이름은 조용히 넘어갔는데,
             #   그게 가장 나쁜 경우다 — 모델이 순수하게 지어내야 한다.
+            # ★ **무엇인지 분류**해야 대응이 정해진다.
+            #   lemma  → cut 으로 assert 할 수 있다
+            #   함수/타입 → 명제가 아니라 assert 불가. [DEFINITIONS] 주입 대상
+            #   Ltac   → 주입도 불가. hopeless 로 빼야 한다
+            if w in _STDLIB or w.split(".")[-1] in _STDLIB:
+                st["L6b stdlib (안다고 가정 — 환각 아님)"] += 1
+                continue
+            _kind = "미상"
+            try:
+                _k = _KINDS.get(w) or _KINDS.get(w.split(".")[-1])
+                if _k:
+                    _kind = _k
+                elif w in _FD:
+                    _kind = "정의(func_defs)"
+            except Exception:
+                pass
+            st[f"L6-분류 {_kind}"] += 1
             note("L6 ★ 정답이 쓰는 이름이 프롬프트에 **아예 없다**",
-                 f"idx={i} {w} ← {target[:60]}")
+                 f"idx={i} {w} [{_kind}] ← {target[:55]}")
     # ★★ 위험한 것은 "같은 이름이 두 번" 이 아니라 **"같은 이름 · 다른 명제"** 다.
     #   같은 lemma 가 모듈마다 재수출되면 명제가 **똑같은** 선언이 여러 줄 온다
     #   (실측: `Lemma L6 m x e \`{!Ok m} : find x (add x e m) = Some e.` 가 3줄).

@@ -106,6 +106,11 @@ print(f"   인덱스 {probed:,}개 훑어 cut 후보 {len(picked):,}개 "
 st = collections.Counter()
 bad = collections.defaultdict(list)
 NORMNAME = re.compile(r"^[TfCLG]\d+$")
+# ★ stdlib 은 "모델이 안다고 가정" — 환각에서 분리해 센다 (풀에서 구조적으로 빠져 있다)
+try:
+    STDLIB = set(json.load(open("data/stdlib_names.json")))
+except Exception:
+    STDLIB = set()
 
 
 def note(k, s):
@@ -164,6 +169,8 @@ for i in picked:
         st["exact 대상"] += 1
         if re.search(r"(?<![\w'])" + re.escape(base) + r"(?![\w'])", prompt):
             st["  ✓ 프롬프트에 있다"] += 1
+        elif base in STDLIB:
+            st["  ○ stdlib (안다고 가정)"] += 1
         elif NORMNAME.match(base):
             # 정규화 이름인데 프롬프트에 없다 = 진짜 문제 (이름이 어디에도 안 뜬다)
             note("U1 ★ exact 대상(정규화 이름)이 프롬프트에 없다", f"idx={i} {nm} ← {tg[:80]}")
