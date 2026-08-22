@@ -287,7 +287,7 @@ _ALIAS_DEF = re.compile(r"^\s*(?:Definition|Notation)\s+[A-Za-z_][\w']*\s*:=\s*"
                         r"[A-Za-z_][\w']*(?:\.[A-Za-z_][\w']*)+\s*\.?\s*$")
 
 
-def _expand(seeds, index, project, want_type, ntok, budget, max_items, cap, depth=1):
+def _expand(seeds, index, project, want_type, ntok, budget, max_items=200, cap=60, depth=1):
     """시드에서 시작해 정의를 모으고(재귀 depth), 예산/개수 캡을 적용. [(name, line), ...] 반환."""
     seen, order, frontier, d = set(), [], list(seeds), 0
     while frontier and d <= depth:
@@ -319,12 +319,18 @@ def _expand(seeds, index, project, want_type, ntok, budget, max_items, cap, dept
             continue                      # 예산 초과분은 건너뛰고 짧은 뒤 후보를 계속 시도
         lines.append((name, s))
         tot += t
+        # ★★ **개수가 아니라 토큰으로 끊는다** (2026-08-22 결정).
+        #   개수 상한은 임의값이고, 짧은 정의 여러 개보다 긴 정의 하나를 우대할 이유가
+        #   없다. 예산은 이미 `budget` 이 토큰으로 관리한다 — 개수는 그 위에 얹힌
+        #   **두 번째 제약**이라 어느 쪽이 실제로 묶는지 알 수 없게 만든다.
+        #   (실측에서 상한 8→20 이 아무것도 안 바꿔 진단이 한 번 헛돌았다.)
+        #   max_items 는 폭주 방지용 안전판으로만 남긴다(기본 200).
         if len(lines) >= max_items:
             break
     return lines
 
 
-def types_v2(goal, index, project=None, budget_tok=300, max_types=8, cap=60, ntok=None,
+def types_v2(goal, index, project=None, budget_tok=300, max_types=200, cap=60, ntok=None,
              depth=1, extra_seeds=None):
     # project = LmExample.file_name(경로 전체). pick_def 가 파일→디렉토리→프로젝트 순으로 좁힌다.
     """[TYPES] v2: goal(가설+결론)의 타입 → **정의문**(생성자 인자 포함) + 재귀. 가설 타입 우선."""
@@ -348,7 +354,7 @@ def types_v2(goal, index, project=None, budget_tok=300, max_types=8, cap=60, nto
     return _expand(seeds, index, project, True, ntok, budget_tok, max_types, cap, depth)
 
 
-def definitions_v2(goal, index, project=None, budget_tok=300, max_defs=8, cap=60,
+def definitions_v2(goal, index, project=None, budget_tok=300, max_defs=200, cap=60,
                    ntok=None, depth=1, extra_seeds=None):
     # project = LmExample.file_name(경로 전체).
     """[DEFINITIONS] v2: 시드는 결론의 식별자 + `extra_seeds` + 재귀 depth.

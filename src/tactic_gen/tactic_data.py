@@ -317,8 +317,14 @@ def augment_v2_section(tokenizer: PreTrainedTokenizer, example: LmExample,
             if os.environ.get("TYPES_SEED_SCRIPT", "1") == "1":
                 _tex += re.findall(r"[A-Za-z_][\w']*",
                                    (getattr(example, "proof_script", "") or "")[-1200:])[:60]
+            # ★★ **개수 상한이 진짜 제약이었다.** `_expand` 는 `len(lines) >= max_items`
+            #   에서 끊는데 기본값이 8 이다. 씨앗을 넓혀도 결론에서 8개가 차면 추가
+            #   씨앗이 **아예 못 들어간다** — 실측으로 환각률이 17.2% → 17.6% 로
+            #   전혀 안 내려간 원인이 이것이다(토큰 예산 300 은 남고 있었다).
+            #   → 개수를 env 로 올리고 **토큰 예산이 진짜 제약**이 되게 한다.
             tl = types_v2(goal, idx, project=proj, budget_tok=t_budget, ntok=_ntok,
                           depth=int(os.environ.get("TYPES_DEPTH", "1")),
+                          max_types=int(os.environ.get("TYPES_MAX", "200")),   # 안전판. 실제 제약은 토큰
                           extra_seeds=dict.fromkeys(_tex))
             if tl:
                 blk = TYPES_SEP + "\n".join(l for _, l in tl)
@@ -362,6 +368,7 @@ def augment_v2_section(tokenizer: PreTrainedTokenizer, example: LmExample,
                 _depth = int(os.environ.get("DEFS_DEPTH", "1"))
                 dl = definitions_v2(goal, idx, project=proj, budget_tok=d_budget,
                                     ntok=_ntok, depth=_depth,
+                                    max_defs=int(os.environ.get("DEFS_MAX_V2", "200")),  # 안전판. 실제 제약은 토큰
                                     extra_seeds=dict.fromkeys(_extra))
                 # ★ RAFT distractor: goal 과 무관한 정의를 K개 섞는다.
                 #   distractor 가 없으면 '인용'은 **거기 있는 하나를 베끼기**라 판별 압력이 없다.
@@ -1457,7 +1464,7 @@ _CACHE_STAMP_KEYS = (
 #     해시는 PYTHONHASHSEED 로 프로세스마다 랜덤화되므로, **같은 인덱스가 실행마다 다른
 #     프롬프트**를 냈다(실측: 7개 중 3개 불일치, 길이까지 달랐다). 원본 순서를 쓰도록
 #     고쳤고 그래서 이전 캐시는 전부 무효다.
-_DATA_PATH_VERSION = "v3-seed-expansion+local-ltac"
+_DATA_PATH_VERSION = "v4-seed-expansion+ltac+cap20"
 
 
 # ★ stdlib 선언 이름 (data/stdlib_names.json). 없으면 빈 집합 — 가드가 보수적으로 동작한다.
