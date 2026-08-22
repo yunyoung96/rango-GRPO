@@ -51,6 +51,9 @@ logging.disable(logging.CRITICAL)
 sys.path.insert(0, "scripts")
 from _env_from_v9 import apply_v9_env  # noqa: E402
 apply_v9_env(verbose=True)
+from _coq_vocab import is_core  # noqa: E402
+# ★ `True` · `BoolSpec` 같은 Coq **기본 어휘**를 프로젝트 이름으로 세면
+#   "프롬프트에 없다 → 환각" 이라고 신고해 학습을 막는다(실측 오탐).
 # ★ 표본 측정은 **요청된 예제만** 만든다. 캐시는 파일(페이지) 단위라 미스 한 번이
 #   그 파일의 모든 proof×step 을 짓는데, 표본은 파일당 한두 건만 쓰므로 순 낭비다.
 #   실측: 페이지 빌드 경로 7분에 27건 → 요청 예제만 만들면 56초에 50건.
@@ -243,7 +246,7 @@ for c in range(N):
         elif nm not in _alld:
             note("N1 ★ 정규화 이름의 선언이 프롬프트에 없다", f"idx={i} {nm}")
     for w in set(re.findall(r"(?<![\w'])([A-Za-z_][\w']{3,})(?![\w'])", target)):
-        if w in TACWORDS or NORM.fullmatch(w) or w in _skip_names:
+        if w in TACWORDS or NORM.fullmatch(w) or w in _skip_names or is_core(w):
             continue
         if re.search(r"(?<![\w'])" + re.escape(w) + r"(?![\w'])", prompt) and \
            not re.search(r"(?<![\w'])" + re.escape(w) + r"(?![\w'])", vis_p):

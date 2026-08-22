@@ -1666,8 +1666,17 @@ class LmDataset(Dataset):
         """
         try:
             n = getattr(self.example_collator, "premise_tokens", 896)
-            return "\n".join(whole_number_allocate(
-                self.tokenizer, example.premises or [], n))
+            # ★★ collator 는 예산을 적용하기 **전에** `rerank_premises` 로 재정렬한다
+            #   (RERANK_PREMISES=1). 여기서 그걸 빼먹으면 **모델이 보는 것과 다른 목록**
+            #   으로 "gold 가 보이나" 를 판정하게 된다 — cut 을 넣을지 말지가 어긋난다.
+            #   실측: 표본 200건 중 55건(27.5%)에서 담긴 premise 집합이 달랐다.
+            _prem = example.premises or []
+            if os.environ.get("RERANK_PREMISES", "0") == "1":
+                try:
+                    _prem = rerank_premises(example)
+                except Exception:
+                    _prem = example.premises or []
+            return "\n".join(whole_number_allocate(self.tokenizer, _prem, n))
         except Exception:
             return "\n".join(example.premises or [])
 
