@@ -27,3 +27,11 @@
 [08-21 15:49] 6차 VAL τ스윕 대기 — val n=3000 · C_RENAME=1 · tfidf,rrf,structural,eq,eqx,afh90,afh80,afh70,afh60,afh50
 [08-21 16:20] 6차 VAL τ스윕 완료 → all_log/au_research/round6_val_tau.log
 [08-21 16:20] τ 스윕 체인 종료
+[08-22 01:45] 계획 생성 완료 확인 — metric 실험 시작
+[08-22 01:45] metric 실험 test n=3000 · C_RENAME=1 · tfidf,structural,eqx,jac,jac_eqx,jac_pure
+[08-22 02:49] metric test 완료 → all_log/au_research/metric_test.log
+[08-22 02:49] metric 실험 val n=3000 · C_RENAME=1 · tfidf,structural,eqx,jac,jac_eqx,jac_pure
+[08-22 03:39] metric val 완료 → all_log/au_research/metric_val.log
+[08-22 03:39] LSH 벤치마크 (부하 없는 상태)
+[08-22 03:40] 벤치마크 완료 → all_log/au_research/bench_metric.log
+[08-22 03:40] metric 실험 체인 종료

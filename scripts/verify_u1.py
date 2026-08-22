@@ -128,28 +128,32 @@ for i in picked:
     if "[TACTIC]" not in full:
         continue
     prompt, target = full.rsplit("[TACTIC]", 1)
-    # ★★ `H_asrt` 로 cut 여부를 판정하면 **close 하위스텝을 통째로 놓친다.**
-    #   close 의 정답은 `{ exact L. }` 뿐이라 H_asrt 가 안 들어간다.
-    #   그런데 U1(=exact 대상이 안 보인다)이 사는 자리가 정확히 거기다 —
-    #   놓치면 "U1 3건 중 2건" 같은 무의미한 표본이 나온다(실제로 그렇게 나왔다).
+    # ★★★ 하위스텝 종류를 **텍스트로 추측하지 않는다.** 두 번 틀렸다:
+    #   ① `H_asrt` 유무로 판정 → close 의 정답은 `exact L.` 뿐이라 전부 놓쳤다
+    #   ② `^\{\s*exact` 로 판정 → close 에는 **중괄호가 없다**(`exact Nadd_alt.`)
+    #   학습이 쓰는 것과 **같은 함수**(`_substep_plan`)에 물어 pick 을 그대로 읽는다.
+    #   cut 은 런타임에 "안 보이는 lemma" 만으로 다시 조립되므로 계획 파일만으로는
+    #   pick 을 계산할 수 없다 — 데이터셋에 물어야 한다.
     tg = target.strip()
-    is_close = bool(re.match(r"^\{\s*e?exact\b", tg))
-    is_assert = bool(re.match(r"^e?assert\b", tg))
-    has_h = "H_asrt" in target
-    if not (has_h or is_close):
-        st["계획은 있으나 cut 미적용(gold 가 보였다)"] += 1
-        continue
-    st["cut 프롬프트"] += 1
-
-    # 하위스텝 종류 — 통짜(쪼개지 않은 cut 전체)를 따로 센다
-    if is_close:
-        st["  하위스텝 close  ← exact 가 여기 산다"] += 1
-    elif is_assert and "{" not in tg:
-        st["  하위스텝 assert"] += 1
-    elif is_assert:
-        st["  통짜 cut (쪼개지 않음)  ← exact 가 여기도 산다"] += 1
+    kind = None
+    try:
+        _raw = ds.raw_example(i)
+        _sp = ds._substep_plan(_raw, i)
+        if _sp:
+            kind = _sp["subs"][_sp["pick"]][1]          # assert | close | final
+    except Exception as ex:
+        note(f"P ★ _substep_plan 예외 {type(ex).__name__}", f"idx={i} {ex}")
+    if kind is None:
+        # 하위스텝이 없다 = cut 미적용(gold 가 전부 보였다) 이거나 통짜
+        if "H_asrt" in target:
+            st["  통짜 cut (쪼개지 않음)"] += 1
+            st["cut 프롬프트"] += 1
+        else:
+            st["계획은 있으나 cut 미적용(gold 가 보였다)"] += 1
+            continue
     else:
-        st["  하위스텝 final"] += 1
+        st["cut 프롬프트"] += 1
+        st[f"  하위스텝 {kind}" + ("  ← exact 가 여기 산다" if kind == "close" else "")] += 1
 
     if target.count("(") != target.count(")"):
         note("U2 ★ cut 괄호 불일치", f"idx={i} {tg[:90]}")
