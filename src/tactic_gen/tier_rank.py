@@ -490,6 +490,82 @@ def au_f_alpha(pa, ga, beta: float = 1.0) -> float:
     return (1.0 + b2) * m / den if den > 0 else 0.0
 
 
+def au_jaccard_sim(pa, ga) -> float:
+    """★ 포섭 격자 위의 **Jaccard 유사도** — `au_f_alpha` 의 진짜-metric 판.
+
+        m = |lgg(pa, ga)|   (반유니피케이션 = 격자의 meet)
+        J = m / (c + n − m)     ·     d_AU = 1 − J
+
+    `au_f_alpha`(=Dice, `2m/(c+n)`)와 **같은 정보**를 다르게 정규화한 것이다.
+    차이는 하나뿐이고 그게 중요하다 — Dice 는 삼각부등식을 어기고(verify_au_props P8
+    에서 반례를 실제로 찾았다) **Jaccard 는 만족한다.** 두 경우 모두
+
+        J = 1  ⟺  m = c = n  ⟺  pa ≡α ga
+
+    이므로 **영집합이 같다.** 즉 eqx 의 정리들(강제성·exact 특징짓기·정규화 불변)이
+    그대로 보존된 채, 랭커가 "진짜 거리의 영집합에서 발화한다" 로 진술된다.
+    """
+    if pa is None or ga is None:
+        return 0.0
+    c = [0]
+    _au_rigid(pa, ga, c)
+    m, cc, nn = c[0], _tsize(pa), _tsize(ga)
+    den = cc + nn - m
+    return m / den if den > 0 else 0.0
+
+
+def _first_diff_depth(a, b, d: int = 0) -> int:
+    """두 α-정규형이 **처음 어긋나는 깊이**. 완전히 같으면 -1."""
+    if a is None or b is None:
+        return d
+    if a[0] != b[0]:
+        return d
+    if a[0] == "id":
+        return -1 if a[1] == b[1] else d
+    if a[0] == "app":
+        for k in (1, 2):
+            r = _first_diff_depth(a[k], b[k], d + 1)
+            if r >= 0:
+                return r
+        return -1
+    if a[0] == "op":
+        if a[1] != b[1]:
+            return d
+        for k in (2, 3):
+            r = _first_diff_depth(a[k], b[k], d + 1)
+            if r >= 0:
+                return r
+        return -1
+    return -1 if a == b else d
+
+
+def ultra_sim(pa, ga) -> float:
+    """★ **초거리**(ultrametric) 판.  d_U = 2^(−k),  k = 처음 어긋나는 깊이.
+
+    무한트리·Böhm 트리의 표준 거리다(de Bakker–Zucker 의 metric semantics,
+    Arnold–Nivat). 삼각부등식보다 **강한** 조건을 만족한다:
+
+        d(x, z) ≤ max( d(x, y), d(y, z) )
+
+    (증명 스케치: x,z 가 깊이 k 까지 같으려면 x,y 와 y,z 중 **적어도 하나**가
+     깊이 k 까지 같아야 한다. 첫 불일치 깊이는 min 으로 합성되므로 d 는 max 로 묶인다.)
+
+    우리 용도에 맞는 귀납 편향이 공짜로 딸려 온다 —
+      · 머리 기호가 다르면 k=0 → d=1 (**최대**). `apply`/`exact` 는 머리가 안 맞으면
+        무조건 실패하므로 옳다.
+      · 깊은 잎에서만 다르면 d ≈ 0. 인자 하나 차이는 거의 같은 것으로 본다.
+      · d = 0 ⟺ α-동치 — 영집합이 보존되므로 eqx 의 정리가 전부 살아남는다.
+
+    돌려주는 것은 **유사도** 1 − d_U (다른 신호와 방향을 맞춘다).
+    """
+    if pa is None or ga is None:
+        return 0.0
+    k = _first_diff_depth(pa, ga, 0)
+    if k < 0:
+        return 1.0
+    return 1.0 - 2.0 ** (-k)
+
+
 def hinge(x: float, tau: float) -> float:
     """h_τ(x) = max(0, x−τ)/(1−τ). τ=1 이면 지시자 1[x=1]."""
     if tau >= 1.0:

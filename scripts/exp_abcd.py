@@ -66,7 +66,8 @@ from tactic_gen.tier_rank import (TierRanker, declname, prem_struct,  # noqa: E4
                                   au_res_gen, sig_au_f, goal_alpha, prem_alpha,
                                   goal_stmt, prem_stmt,
                                   au_f_alpha, hinge, _rrf_of,
-                                  path_set, path_sim)
+                                  path_set, path_sim,
+                                  ultra_sim, au_jaccard_sim)
 
 # ★ C 국면 질의의 binder 를 개명할지. 기본 끔(옛 측정과 비교 가능하게).
 #   켜면 "모델이 자기 말로 assert 를 쓴 경우" 를 재는 것이고, 그것이 실전 조건이다.
@@ -133,7 +134,13 @@ _KNOWN = {"tfidf", "rrf", "struct", "eq", "eqa", "eqx", "cov", "eqcov",
 # ★ afh 족은 τ 를 이름에 담는다(`afh80` = τ 0.80). 유효 범위만 확인하고 통과시킨다 —
 #   목록에 일일이 적으면 τ 하나 바꿀 때마다 "알 수 없는 랭커" 로 죽는다(실제로 겪었다).
 _AFH = re.compile(r"^afh([1-9]\d?|100)$")
-_bad = [r for r in RANKERS if r not in _KNOWN and not _AFH.match(r)]
+# ★ 초거리 족 `ult<NN>` — `afh` 와 같은 hinge 구조에 **거리만 바꾼다**.
+#   `ult100` 은 τ=1 이라 지시자가 되고, 초거리의 영집합 = α-동치이므로 **eqx 와 같다**
+#   (자기검사로 확인한다). 즉 여기서도 eqx 는 족의 끝점이다.
+_ULT = re.compile(r"^ult([1-9]\d?|100)$")
+_KNOWN = _KNOWN | {"ultlex", "ultrrf"}
+_bad = [r for r in RANKERS if r not in _KNOWN
+        and not _AFH.match(r) and not _ULT.match(r)]
 if _bad:
     sys.stderr.write(f"알 수 없는 랭커: {_bad}\n사용 가능: {sorted(_KNOWN)}\n")
     sys.exit(2)
@@ -270,6 +277,23 @@ def rank_all(state, texts, pool, tf, tr, kinds, docs=None, names=None,
                     _afv[j] = au_f_alpha(prem_stmt(texts[j]), gq)
         return _afv
 
+    _ultv = None
+
+    def ult_vals():
+        """1 − d_U(p, g) — 초거리 유사도. τ 여러 개가 이 값을 공유한다.
+
+        `af_vals` 와 **완전히 같은 입력**(전체 명제의 α-정규형)을 쓴다.
+        그래야 `afh` 와의 차이가 오로지 **거리**에서 온다.
+        """
+        nonlocal _ultv
+        if _ultv is None:
+            _ultv = [0.0] * n
+            gq = goal_stmt(state)
+            if gq is not None:
+                for j in cand:
+                    _ultv[j] = ultra_sim(prem_stmt(texts[j]), gq)
+        return _ultv
+
     _covv = None
 
     def cov_rrf():
@@ -397,6 +421,53 @@ def rank_all(state, texts, pool, tf, tr, kinds, docs=None, names=None,
             W = float(os.environ.get("AU_HINGE_W", "3.0"))
             fv = af_vals()
             out[k] = [rrf[j] + W * hinge(fv[j], tau) for j in range(n)]
+        elif k == "ultlex":
+            # ★★★ **매개변수 0개** — 초거리의 공이 나무를 이루는 성질을 그대로 쓴다.
+            #
+            #   초거리에서는 두 공이 disjoint 이거나 포함관계다. 그래서 premise 풀이
+            #   goal 을 중심으로 **계층 분할**된다:
+            #       B(g,2^0) ⊋ B(g,2^-1) ⊋ … ⊋ {g 와 α-동치}
+            #   "어느 공에 있는가" = "몇 층까지 일치하는가" = **정수 하나**.
+            #
+            #   그래서 τ(대역폭)를 고를 필요가 없다. **사전식**으로 정렬한다:
+            #       p ≻ q ⟺ 깊이(p) > 깊이(q)  또는  (같은 깊이 ∧ RRF(p) > RRF(q))
+            #
+            #   한 점수로 인코딩하는 상수 A 는 **분리자**다(W=3.0 과 같은 논증):
+            #       RRF 합 ≤ 2/K = 0.0333 · 깊이 D 까지의 최소 등급차 = 2^-(D+1)
+            #       A · 2^-(D+1) > 2/K  ⟹  A > 68.3.  A=100 은 그 위 아무 값.
+            #   즉 손으로 고른 가중치가 아니라 "등급이 RRF 를 이긴다" 를 쓰는 방법이다.
+            uv = ult_vals()
+            out[k] = [100.0 * uv[j] + rrf[j] for j in range(n)]
+        elif k == "ultrrf":
+            # ★ 또 하나의 매개변수 0개 안 — 깊이를 **지배항이 아니라 RRF 입력**으로 넣는다.
+            #   score = RRF(tfidf) + RRF(C') + RRF(깊이).  상수는 K=60 하나뿐이고
+            #   그건 RRF 의 표준값이다. 대신 완전일치도 1/60 밖에 못 받는다 —
+            #   `aul` 주석이 지적한 "눌러서 지는" 형태다. 대조군으로 넣는다.
+            uv = ult_vals()
+            o = sorted(range(n), key=lambda j: -uv[j])
+            rr = [0] * n
+            for pp, j in enumerate(o):
+                rr[j] = pp
+            out[k] = [rrf[j] + 1.0 / (60 + rr[j]) for j in range(n)]
+        elif k.startswith("ult"):
+            # ★★ **초거리**(ultrametric) 족.  d_U = 2^(−k), k = 처음 어긋나는 깊이.
+            #
+            #     score_τ(p) = RRF(tfidf) + W · h_τ( 1 − d_U(⟦p⟧, ⟦g⟧) )
+            #
+            #   `afh` 와 **hinge 구조는 같고 거리만 다르다.** 비교가 깨끗해진다 —
+            #   차이가 나면 그건 거리의 차이지 스코어 형태의 차이가 아니다.
+            #
+            #   왜 초거리인가:
+            #     · d(x,z) ≤ max(d(x,y), d(y,z)) — 삼각부등식보다 **강하다**.
+            #       무한트리·Böhm 트리의 표준 거리다(de Bakker–Zucker, Arnold–Nivat).
+            #     · 머리 기호가 다르면 k=0 → d=1 (최대). `apply`/`exact` 는 머리가
+            #       안 맞으면 무조건 실패하므로 **옳은 귀납 편향**이다.
+            #       (Dice/Jaccard 는 부분항이 많이 겹치면 머리가 달라도 점수를 준다.)
+            #     · d = 0 ⟺ α-동치 — 영집합이 보존되므로 eqx 의 정리가 살아남는다.
+            tau = int(k[3:]) / 100.0
+            W = float(os.environ.get("AU_HINGE_W", "3.0"))
+            uv = ult_vals()
+            out[k] = [rrf[j] + W * hinge(uv[j], tau) for j in range(n)]
         elif k == "eqx":
             # ★ 전체 명제(∀mv. h₁→…→c)의 α-정규형 비교.
             #   `eqa` 는 결론만 봐서 `∀x, P x → Q x` 와 `Q a` 가 맞아버린다 —
@@ -804,6 +875,25 @@ def selftest() -> int:
                     [None] * len(POOL), q_ids=[0, 1])
     _same = _sc2["eqx"] == _sc2["afh100"]
     print(f"   [{'✓' if _same else '✗'}] afh100(τ=1) 점수가 eqx 와 동일한가 (족의 끝점) → {_same}")
+    # ★ 초거리도 영집합이 α-동치이므로 τ=1 이면 **eqx 와 같아야 한다.**
+    #   다르면 `_first_diff_depth` 가 α-정규형을 잘못 훑는 것이다.
+    _sc3 = rank_all(_st2, POOL, POOL, tf, tr, ["eqx", "ult100"], docs,
+                    [None] * len(POOL), q_ids=[0, 1])
+    _su = _sc3["eqx"] == _sc3["ult100"]
+    print(f"   [{'✓' if _su else '✗'}] ult100(τ=1) 점수가 eqx 와 동일한가 (초거리 영집합 = α-동치) → {_su}")
+    # ★ Dice ↔ Jaccard 순서동형 — J = D/(2−D) 이고 t/(2−t) 는 순증가.
+    #   같은 순위를 주므로 "진짜 metric" 표현을 성능 손실 없이 얻는다.
+    import random as _rnd
+    _r = _rnd.Random(3)
+    _ok_oe = True
+    for _ in range(20000):
+        _c = _r.randint(1, 40); _n2 = _r.randint(1, 40); _m = _r.randint(0, min(_c, _n2))
+        _D = 2 * _m / (_c + _n2)
+        _J = _m / (_c + _n2 - _m) if (_c + _n2 - _m) > 0 else 0.0
+        if abs(_J - _D / (2 - _D)) > 1e-12:
+            _ok_oe = False
+            break
+    print(f"   [{'✓' if _ok_oe else '✗'}] Jaccard-AU = Dice/(2−Dice) — 순서동형 (metric 표현이 공짜) → {_ok_oe}")
     bad += (not _same)
     # assert 변환 + 이름 충돌
     from tactic_gen import assert_split as AS
