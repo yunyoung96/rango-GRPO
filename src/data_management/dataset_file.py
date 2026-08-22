@@ -646,22 +646,42 @@ class DatasetFile:
         can have file path ../coq-dataset/... and the file context
         can have file path /coq-dataset/....
         """
-        oof_premises: set[Sentence] = set()
+        # ★★ `set` 에 모아 `list()` 로 꺼내면 **실행마다 순서가 바뀐다.**
+        #   Sentence.__hash__ 는 self.text(문자열)에서 나오는데, 파이썬의 문자열 해시는
+        #   PYTHONHASHSEED 로 프로세스마다 랜덤화된다. 그래서 같은 인덱스가 프로세스마다
+        #   다른 premise 풀 순서를 받고 → 랭킹의 동점이 다르게 깨지고 → **프롬프트가 달라진다.**
+        #   실측(같은 스크립트를 두 번 실행): 7개 인덱스 중 3개의 프롬프트 해시가 불일치
+        #   (길이까지 2888 vs 2874). PYTHONHASHSEED=0 을 고정하면 일치했다.
+        #
+        #   dataloader 워커가 spawn 방식이면 **한 번의 학습 안에서도** 워커마다 다른
+        #   프롬프트가 나온다. 재현도 안 되고, 캐시에 무엇이 들어갔는지도 알 수 없다.
+        #
+        #   고침: 집합은 **중복 판정에만** 쓰고, 순서는 원본(avail_premises)을 따른다.
+        #   정렬이 아니라 원본 순서를 쓰는 이유 — 원본은 파일 내 선언 순서라 의미가 있고,
+        #   정렬은 임의의 새 순서를 도입해 기존 실험과 비교가 끊긴다.
+        seen: set[Sentence] = set()
+        oof_premises: list[Sentence] = []
         norm_file_path = self.fix_path(self.file_context.file)
         for premise in self.file_context.avail_premises:
             norm_prem_path = self.fix_path(premise.file_path)
             if not self.__share_subpath(norm_prem_path, norm_file_path):
-                oof_premises.add(premise)
-        return list(oof_premises)
+                if premise not in seen:
+                    seen.add(premise)
+                    oof_premises.append(premise)
+        return oof_premises
 
     def __get_in_file_avail_premises(self) -> list[Sentence]:
-        in_file_premises: set[Sentence] = set()
+        # ★ 위와 같은 이유로 집합 순회를 쓰지 않는다 (__get_oof_avail_premises 주석 참조).
+        seen: set[Sentence] = set()
+        in_file_premises: list[Sentence] = []
         norm_file_path = self.fix_path(self.file_context.file)
         for premise in self.file_context.avail_premises:
             norm_prem_path = self.fix_path(premise.file_path)
             if self.__share_subpath(norm_prem_path, norm_file_path):
-                in_file_premises.add(premise)
-        return list(in_file_premises)
+                if premise not in seen:
+                    seen.add(premise)
+                    in_file_premises.append(premise)
+        return in_file_premises
 
     def get_in_file_premises_before(self, proof: Proof) -> list[Sentence]:
         return [
