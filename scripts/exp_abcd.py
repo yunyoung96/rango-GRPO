@@ -1069,6 +1069,11 @@ _TOK = AutoTokenizer.from_pretrained(cc["model_name"])
 tdc = copy.deepcopy(cc["tactic_data"])
 tdc["formatter_conf"].pop("proof_ret", None)
 tdc["formatter_conf"].pop("num_proofs", None)
+# ★★ **전용 캐시** — exp_abcd 는 formatter 설정이 학습과 다르다
+#   (`proof_ret`·`num_proofs` 를 뺀다). 공용 캐시를 쓰면 스탬프가 안 맞아
+#   `raw_example` 이 매번 RuntimeError 를 내고, 아래 `except: continue` 가
+#   그걸 삼켜서 **0건으로 조용히 끝난다**(실제로 TRAIN 과 사전식 검증이 그렇게 됐다).
+tdc["cache_loc"] = os.environ.get("EXP_CACHE", "/tmp/exp-abcd-cache")
 conf = TacticDataConf.from_yaml(tdc)
 ds = LmDataset.from_conf(conf, getattr(Split, SPLIT), 200000)
 sdb = SentenceDB.load(conf.sentence_db_loc)
@@ -1095,7 +1100,16 @@ for i in range(200000):
         break
     try:
         e = ds.raw_example(i)
+    except RuntimeError as _re:
+        # ★ 캐시 스탬프 불일치 같은 **설정 오류**는 삼키면 안 된다 — 0건으로 조용히 끝난다.
+        D["★ raw_example RuntimeError"] += 1
+        if D["★ raw_example RuntimeError"] >= 200 and nA == 0:
+            sys.stderr.write("\n★★ 중단: raw_example 이 200회 연속 RuntimeError.\n"
+                             f"   마지막: {str(_re)[:300]}\n")
+            sys.exit(3)
+        continue
     except Exception:
+        D["예제 적재 실패"] += 1
         continue
     st = getattr(e, "proof_state", "") or ""
     tac = (e.next_steps[0] if getattr(e, "next_steps", None) else "").strip()
