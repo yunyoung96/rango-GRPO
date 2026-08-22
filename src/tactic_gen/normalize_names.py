@@ -391,6 +391,20 @@ _INTRO_TAC = re.compile(
 _INTRO_PAT = re.compile(r"\[[^\[\]]*\]")
 
 
+# ★ SSReflect·표준 tactic 중 **이름을 만드는** 형태.
+#   `have NAME: TYPE by TAC` · `set NAME := …` · `pose NAME := …` ·
+#   `remember X as NAME` · `assert (…) as NAME` · `suff NAME: …` · `wlog NAME: …`
+#   실측 오탐: `have srdf: substrate r = f4 f by …` 의 srdf,
+#   `have Tbt: f0 C1 T0 by fprops.` 의 Tbt, `have bgp: …` 의 bgp 를
+#   "프롬프트에 없는 외부 이름" 으로 신고했다 — tactic 자신의 **산출물**인데.
+_INTRO_HAVE = re.compile(
+    r"(?:^|[;\[\]|(){}\s])(?:have|suff|suffices|wlog|gen\s+have)\s+"
+    r"(?:\[[^\]]*\]\s*)?([A-Za-z_][\w']*)\s*[:(]")
+_INTRO_SET = re.compile(
+    r"(?:^|[;\s])(?:set|pose|epose|remember)\s+"
+    r"(?:([A-Za-z_][\w']*)\s*:?=|.*?\bas\s+([A-Za-z_][\w']*))")
+
+
 def introduced_names(tac: str) -> set:
     """이 tactic 이 **새로 만드는** 이름들. 프롬프트에 없어도 정상이다."""
     out: set = set()
@@ -398,7 +412,14 @@ def introduced_names(tac: str) -> set:
         out |= set(re.findall(r"[A-Za-z_][\w']*", m.group(0)))
     for m in _INTRO_TAC.finditer(tac or ""):
         out |= set(re.findall(r"[A-Za-z_][\w']*", m.group(0)))
-    out -= {"as", "intros", "intro", "eintros", "eintro", "move", "rename", "into"}
+    for m in _INTRO_HAVE.finditer(tac or ""):        # ★ SSReflect have/suff/wlog
+        out.add(m.group(1))
+    for m in _INTRO_SET.finditer(tac or ""):         # ★ set/pose/remember
+        for g in m.groups():
+            if g:
+                out.add(g)
+    out -= {"as", "intros", "intro", "eintros", "eintro", "move", "rename", "into",
+            "have", "suff", "suffices", "wlog", "set", "pose", "remember", "by"}
     return out
 
 
