@@ -46,7 +46,18 @@ Coq Datatypes Logic Init Specif Basics Wf Relations Morphisms Setoid
 Pos Zpos Z N Q R Rdefinitions Raxioms RIneq Rfunctions
 """.split()
 
-COQ_VOCAB = frozenset(CORE_TYPES + CORE_TERMS + CORE_PREDS + CORE_MODULES)
+# ★ SSReflect · Ltac **문법 키워드** — 이름이 아니다.
+#   실측 오탐: `have ox := (L19 oix).` 의 `have` 를 "프롬프트에 없는 이름" 으로 신고했다.
+SSR_LTAC = """
+have suff suffices wlog without loss move case elim apply exact congr
+rewrite under over set pose put fold unfold by done first last
+do rep repeat try solve abstract now let2 exists2 esplit eexists
+gen depelim dependent generalizing using with into as in at
+lazymatch multimatch match context goal hyp ltac idtac fail assert
+change replace symmetry transitivity reflexivity etransitivity
+""".split()
+
+COQ_VOCAB = frozenset(CORE_TYPES + CORE_TERMS + CORE_PREDS + CORE_MODULES + SSR_LTAC)
 
 
 def is_core(name: str) -> bool:

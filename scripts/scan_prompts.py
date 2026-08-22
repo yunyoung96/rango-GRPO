@@ -267,9 +267,16 @@ for c in range(N):
     for w in set(re.findall(r"(?<![\w'])([A-Za-z_][\w']{3,})(?![\w'])", target)):
         if w in TACWORDS or NORM.fullmatch(w) or w in _skip_names or is_core(w):
             continue
-        if re.search(r"(?<![\w'])" + re.escape(w) + r"(?![\w'])", prompt) and \
-           not re.search(r"(?<![\w'])" + re.escape(w) + r"(?![\w'])", vis_p):
-            note("L3 ★ 정답이 쓰는 이름이 절단 후 안 보인다", f"idx={i} {w}")
+        _pw = re.compile(r"(?<![\w'])" + re.escape(w) + r"(?![\w'])")
+        if _pw.search(prompt):
+            if not _pw.search(vis_p):
+                note("L3 ★ 정답이 쓰는 이름이 절단 후 안 보인다", f"idx={i} {w}")
+        else:
+            # ★★ **검사기의 구멍이었다.** 옛 코드는 "프롬프트에 있는데 절단으로 사라진"
+            #   경우만 신고했다. 애초에 **어디에도 없는** 이름은 조용히 넘어갔는데,
+            #   그게 가장 나쁜 경우다 — 모델이 순수하게 지어내야 한다.
+            note("L6 ★ 정답이 쓰는 이름이 프롬프트에 **아예 없다**",
+                 f"idx={i} {w} ← {target[:60]}")
     # ★★ 위험한 것은 "같은 이름이 두 번" 이 아니라 **"같은 이름 · 다른 명제"** 다.
     #   같은 lemma 가 모듈마다 재수출되면 명제가 **똑같은** 선언이 여러 줄 온다
     #   (실측: `Lemma L6 m x e \`{!Ok m} : find x (add x e m) = Some e.` 가 3줄).

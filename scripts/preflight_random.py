@@ -158,9 +158,14 @@ for c, i in enumerate(idxs):
     for w in set(re.findall(r"(?<![\w'])([A-Za-z_][\w']{3,})(?![\w'])", target)):
         if w in TACW or NORM.fullmatch(w) or w in _skip_names or is_core(w):
             continue
-        if re.search(r"(?<![\w'])" + re.escape(w) + r"(?![\w'])", prompt) and \
-           not re.search(r"(?<![\w'])" + re.escape(w) + r"(?![\w'])", vp):
-            note("P4 ★★ 정답이 쓰는 이름이 **잘려서** 안 보인다", f"idx={i} {w}")
+        _pw = re.compile(r"(?<![\w'])" + re.escape(w) + r"(?![\w'])")
+        if _pw.search(prompt):
+            if not _pw.search(vp):
+                note("P4 ★★ 정답이 쓰는 이름이 **잘려서** 안 보인다", f"idx={i} {w}")
+        else:
+            # ★★ 옛 코드는 "있다가 잘린" 것만 봤다. **어디에도 없는** 이름은 조용했다.
+            note("P8 ★★ 정답이 쓰는 이름이 프롬프트에 **아예 없다**",
+                 f"idx={i} {w} ← {target[:60]}")
 
     if os.environ.get("CUTS_PATH", ""):
         from tactic_gen import cut_lookup

@@ -455,7 +455,15 @@ def whole_number_allocate(
     tokenizer: PreTrainedTokenizer,
     ss: list[str],
     allowance: int,
-) -> list[str]:
+    return_idx: bool = False,
+):
+    """`return_idx=True` 면 **고른 인덱스**를 돌려준다.
+
+    ★ hybrid 는 접두사가 아니라 **부분집합**을 고르므로, "몇 개까지" 라는 개수로는
+      무엇이 담겼는지 알 수 없다. 측정 스크립트가 프로덕션과 **같은 함수**로
+      판정하려면 인덱스가 필요하다. (문자열 동일성으로 되짚으면 중복 premise 에서
+      어긋난다 — 실측 premise 중복률 4.17%.)
+    """
     # ★ 담기 방식 (`PREMISE_PACK`) — 자세한 근거는 docs/premise/packing.md
     #
     #   premise 길이 편차가 극심하다(최소 16 · 중앙 147 · 최대 928 토큰).
@@ -518,7 +526,7 @@ def whole_number_allocate(
         picked = head + tail
     # ★ 원래 순위 순서를 유지해 돌려준다 — 호출부가 reverse 로 뒤집어 상위를 goal 쪽에 둔다
     picked.sort()
-    return [ss[i] for i in picked]
+    return picked if return_idx else [ss[i] for i in picked]
 
 
 def allocate_and_fmt(
@@ -1419,7 +1427,11 @@ class ExampleCache:
         """캐시가 **지금 설정으로 만들어진 것**인지 확인한다."""
         if self.__stamp_checked:
             return
-        self.__stamp_checked = True
+        # ★★ `__stamp_checked = True` 를 **raise 앞에** 두면 안 된다.
+        #   그러면 첫 호출만 예외를 내고 **그 뒤 전부는 검사를 건너뛰어** 낡은 캐시를
+        #   조용히 쓴다 — 가드가 한 번 터지고 스스로 꺼지는 셈이다.
+        #   실측: 400건 스캔에서 예외 1건 뒤 399건이 `structural` 시절 프롬프트를 썼다.
+        #   성공했을 때만 켠다.
         want = _cache_stamp(formatter)
         loc = self.cache_loc / "CACHE_STAMP.txt"
         if loc.exists():
@@ -1437,6 +1449,7 @@ class ExampleCache:
                 loc.write_text(want + "\n")
             except Exception:
                 pass
+        self.__stamp_checked = True          # ★ 통과했을 때만
 
     def get(
         self,
