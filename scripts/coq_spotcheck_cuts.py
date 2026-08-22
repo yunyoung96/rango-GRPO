@@ -25,7 +25,7 @@ logging.disable(logging.CRITICAL)
 from coqpyt.coq.base_file import CoqFile  # noqa: E402
 
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 40
-CUTS = sys.argv[2] if len(sys.argv) > 2 else "data/cuts_train.jsonl"
+CUTS = sys.argv[2] if len(sys.argv) > 2 else "data/cut_plans_all.jsonl"
 REPOS = Path("/tmp/coq-dataset/repos")
 
 steps = []

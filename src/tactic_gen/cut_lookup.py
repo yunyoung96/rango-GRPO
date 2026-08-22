@@ -20,7 +20,7 @@ cut 의 명제를 정확히 얻으려면 그 증명 지점에서 Coq 에 `Check 
 같은 lemma 가 여러 스텝에서 빠지면 명제가 같으므로 **사전 하나 + 스텝별 목록**으로
 정규화한다(실측 TRAIN: cut 168,000개 · 파일 28MB).
 
-사용: 환경변수 `CUTS_PATH=data/cuts_train.jsonl` 이 있으면 collate 가 자동으로 쓴다.
+사용: 환경변수 `CUTS_PATH=data/cut_plans_all.jsonl` 이 있으면 collate 가 자동으로 쓴다.
 """
 from __future__ import annotations
 

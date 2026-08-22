@@ -33,6 +33,12 @@ import os
 import sys
 import time
 
+# ★ 설정의 출처는 `all_log/v9_env.sh` **하나**다. 여기에 값을 다시 적으면 반드시
+#   어긋나고, 어긋나도 오류가 안 난다 — 조용히 다른 실험을 재게 된다(실제로 겪었다:
+#   옛 CUTS_PATH 로 U1 을 재고, structural 로 "학습과 같은 설정" 감사를 돌렸다).
+sys.path.insert(0, "scripts")
+from _env_from_v9 import apply_v9_env  # noqa: E402
+apply_v9_env(verbose=True)
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 os.environ.setdefault("AUGMENT_V2", "1")
@@ -43,7 +49,7 @@ os.environ.setdefault("TYPES_TOKENS", "300")
 os.environ.setdefault("DEFS_TOKENS", "300")
 os.environ.setdefault("FUNC_DEFS_PATH", "data/func_defs_v3.json")
 os.environ.setdefault("STRIP_TARGET_NL", "1")
-os.environ.setdefault("RETRIEVAL_MODE", "structural")
+os.environ.setdefault("RETRIEVAL_MODE", "eqx")
 sys.path.insert(0, "src")
 import logging  # noqa: E402
 

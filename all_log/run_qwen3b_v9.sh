@@ -2,7 +2,7 @@
 # v9 = v8 에서 **검색 파이프라인만** 바꾼 재학습. conf(하이퍼파라미터)는 v8 과 동일하다.
 #      바뀐 것은 전부 환경변수 4줄이고, 근거는 all_log/docs/premise/final.md §10 에 있다.
 #
-#  ① RETRIEVAL_MODE=structural   (기존: tfidf)
+#  ① RETRIEVAL_MODE=eqx          (기존: tfidf → structural → eqx)
 #     근거: 목표지표 A+(1-A)×C · 프롬프트기준 ALL
 #           TRAIN 80.5→95.6 · TEST 80.3→95.3 · VAL 79.7→96.5
 #           ※ 두 수 모두 cut 포함. cut 없는 v8 원본의 A 는 TEST 27.7% 였다.
@@ -12,7 +12,7 @@
 #           gold 포함률 TRAIN -0.9p / TEST +9.0p / VAL +15.4p (평균 +7.8p).
 #           긴 premise 하나가 짧은 것 여러 개를 밀어내던 문제를 없앤다.
 #
-#  ③ CUTS_PATH=data/cuts_train.jsonl
+#  ③ CUTS_PATH=data/cut_plans_all.jsonl
 #     근거: gold lemma 가 프롬프트에 없으면(=모델이 볼 수 없으면) 그 이름을 외우게 하는 것은
 #           환각을 가르치는 것이다. 대신 `assert (P) as H_asrtN. { exact L. }` 로 **명제를 세우고**
 #           그 다음 스텝에서 쓰게 한다(cut rule). 명제를 세우면 그게 곧 goal 이라
@@ -76,7 +76,10 @@ fi
 # ── 사전점검 2: cut 파일 ──
 # ★ cut 파일이 없거나 0바이트면 조용히 비활성화되어 v8 과 똑같은 학습이 된다.
 #   그러면 "돌려봤는데 v8 과 같더라" 는 결론을 얻고 원인을 못 찾는다. 여기서 막는다.
-CUTS=${CUTS:-data/cut_plans_train.jsonl}
+CUTS=${CUTS:-data/cut_plans_all.jsonl}
+#  ★ `_train` 이 아니라 `_all`(TRAIN+VAL) 이다 — 평가가 VAL 을 돌리는데
+#    cut_lookup 은 CUTS_PATH **한 파일**만 읽는 싱글턴이라, TRAIN 만 넣으면
+#    VAL 스텝이 전부 "무기록" 이 되고 연속 스캔 범위 검사가 걸린다.
 if [ ! -s "$CUTS" ]; then
   echo "[$(TZ=Asia/Seoul date '+%m-%d %H:%M')] ★ 중단: $CUTS 가 없거나 비었다" | tee -a "$LOG"; exit 1
 fi

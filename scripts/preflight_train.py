@@ -31,7 +31,7 @@ import logging  # noqa: E402
 
 logging.disable(logging.CRITICAL)
 
-CUTS = sys.argv[1] if len(sys.argv) > 1 else "data/cuts_train.jsonl"
+CUTS = sys.argv[1] if len(sys.argv) > 1 else "data/cut_plans_all.jsonl"
 NS = int(sys.argv[2]) if len(sys.argv) > 2 else 5000
 _KEY = re.compile(r"^.+:\d+:\d+$")
 

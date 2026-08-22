@@ -370,7 +370,7 @@ class SparseClient:
         # ★ 구조 재랭킹 (all_log/docs/premise/final.md)
         #   RRF(tfidf, 결론구조 C', 질의 포함률) + 3.0×[결론 트리 완전일치]
         #   실측 목표지표 ALL@50: TEST 86.4→95.6 · VAL 86.5→94.9 · TRAIN 87.8→97.2%
-        #   되돌리려면 RETRIEVAL_MODE=tfidf (기본은 structural)
+        #   되돌리려면 RETRIEVAL_MODE=tfidf (기본은 eqx)
         _mode = os.environ.get("RETRIEVAL_MODE", "eqx")
         if _mode == "tfidf" or not premises:
             return base

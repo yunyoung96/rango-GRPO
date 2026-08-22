@@ -31,7 +31,11 @@ export PREMISE_PACK=hybrid             # 담기
 export PREMISE_PACK_TOPK=4             # 상위 K 는 무조건
 export NORMALIZE_SKIP_STDLIB=1         # stdlib 이름은 정규화 안 함
 export INJECT_SKIP_STDLIB=1            # stdlib 정의는 주입 안 함
-export CUTS_PATH=data/cuts_train.jsonl # 미리 만든 cut
+export CUTS_PATH=data/cut_plans_all.jsonl  # ★ 검색-독립 cut **계획** (TRAIN+VAL)
+#  ↑ 옛 `data/cuts_train.jsonl` 은 랭커에 의존해 구워진 것이라 랭커를 바꾸면 무효다.
+#    계획 파일은 검색과 무관하게 만들어지고, cut 을 넣을지는 **학습 시점에** 프롬프트를
+#    보고 결정한다(cut_lookup.plan_for). 진단 스크립트도 전부 이 파일을 봐야 한다 —
+#    옛 파일로 재면 하위스텝이 적용 안 된 수치가 나온다(U1 오측정의 원인이었다).
 
 # ── ★ 환각 제거 ──────────────────────────────────────────
 #  가망 없는 스텝(gold 가 풀에도 없고 cut 도 못 세움)은 **학습에서 뺀다.**

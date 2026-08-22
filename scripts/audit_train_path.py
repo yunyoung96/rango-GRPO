@@ -29,6 +29,12 @@ for a in sys.argv[1:]:
     if a.isdigit():
         N_PER = int(a)
 
+# ★ 설정의 출처는 `all_log/v9_env.sh` **하나**다. 여기에 값을 다시 적으면 반드시
+#   어긋나고, 어긋나도 오류가 안 난다 — 조용히 다른 실험을 재게 된다(실제로 겪었다:
+#   옛 CUTS_PATH 로 U1 을 재고, structural 로 "학습과 같은 설정" 감사를 돌렸다).
+sys.path.insert(0, "scripts")
+from _env_from_v9 import apply_v9_env  # noqa: E402
+apply_v9_env(verbose=True)
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 # ★ 학습과 **같은 설정**으로 태운다. v9_env.sh 를 source 한 셸에서 부르는 것이 정석이고,
@@ -38,7 +44,7 @@ for k, v in dict(AUGMENT_V2="1", RERANK_PREMISES="1", INJECT_TYPES="1", INJECT_D
                  AUG_OUT_TOKENS="128", FUNC_DEFS_PATH="data/func_defs_v3.json",
                  NORMALIZE_NAMES="1", NORMALIZE_RATE="1.0", NORMALIZE_PREMISES="1",
                  NORMALIZE_THEOREM="1", NORMALIZE_SKIP_STDLIB="1", INJECT_SKIP_STDLIB="1",
-                 RETRIEVAL_MODE="structural", RETRIEVAL_STAGE1="5000",
+                 RETRIEVAL_MODE="eqx", RETRIEVAL_STAGE1="5000",
                  PREMISE_PACK="hybrid", PREMISE_PACK_TOPK="4",
                  STRIP_TARGET_NL="1", TFIDF_DOC_CACHE="200000",
                  DP_CACHE_SIZE="2048").items():

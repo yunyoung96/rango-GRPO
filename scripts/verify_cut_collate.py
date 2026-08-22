@@ -33,7 +33,7 @@ os.environ.setdefault("INJECT_TYPES", "1")
 os.environ.setdefault("INJECT_DEFS", "1")
 os.environ.setdefault("HARD_SEQ_LEN", "2048")
 os.environ.setdefault("FUNC_DEFS_PATH", "data/func_defs_v3.json")
-os.environ.setdefault("CUTS_PATH", "data/cuts_train.jsonl")
+os.environ.setdefault("CUTS_PATH", "data/cut_plans_all.jsonl")
 sys.path.insert(0, "src")
 import logging  # noqa: E402
 
