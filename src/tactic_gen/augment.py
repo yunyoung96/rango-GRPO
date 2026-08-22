@@ -324,7 +324,8 @@ def _expand(seeds, index, project, want_type, ntok, budget, max_items, cap, dept
     return lines
 
 
-def types_v2(goal, index, project=None, budget_tok=300, max_types=8, cap=60, ntok=None, depth=1):
+def types_v2(goal, index, project=None, budget_tok=300, max_types=8, cap=60, ntok=None,
+             depth=1, extra_seeds=None):
     # project = LmExample.file_name(경로 전체). pick_def 가 파일→디렉토리→프로젝트 순으로 좁힌다.
     """[TYPES] v2: goal(가설+결론)의 타입 → **정의문**(생성자 인자 포함) + 재귀. 가설 타입 우선."""
     if ntok is None:
@@ -338,12 +339,29 @@ def types_v2(goal, index, project=None, budget_tok=300, max_types=8, cap=60, nto
     for name in sorted(concl_ids):                     # ② 결론 등장 타입
         if name not in seen and not _bad_head(name):
             seen.add(name); seeds.append(name)
+    # ★ ③ 정답과 **무관한** 추가 씨앗 (premise·스크립트 등). 실측: Constructor 12.2% ·
+    #   Field 17.4% 가 프롬프트에 없었다 — RECORD/INDUCTIVE 가 풀에서 빠지기 때문이다.
+    for t in (extra_seeds or []):
+        n2 = t.split('.')[-1]
+        if n2 not in seen and not _bad_head(n2):
+            seen.add(n2); seeds.append(n2)
     return _expand(seeds, index, project, True, ntok, budget_tok, max_types, cap, depth)
 
 
-def definitions_v2(goal, index, project=None, budget_tok=300, max_defs=8, cap=60, ntok=None, depth=1):
+def definitions_v2(goal, index, project=None, budget_tok=300, max_defs=8, cap=60,
+                   ntok=None, depth=1, extra_seeds=None):
     # project = LmExample.file_name(경로 전체).
-    """[DEFINITIONS] v2: 시드는 결론의 모든 식별자(현행 유지 — gold unfold 적중 70.7%) + 재귀 depth1."""
+    """[DEFINITIONS] v2: 시드는 결론의 식별자 + `extra_seeds` + 재귀 depth.
+
+    ★ `extra_seeds` 를 넣은 이유 (2026-08-22 실측):
+      결론만 씨앗으로 쓰면 **정답이 필요로 하는 정의**가 안 들어간다.
+      `Definition` 참조의 23.6%, `Constructor` 12.2%, `Field` 17.4% 가
+      프롬프트 어디에도 없었다 — rango 의 PremiseFilter 가 DEFINITION·INDUCTIVE·
+      RECORD 를 풀에서 통째로 빼기 때문이고, 주입이 유일한 통로인데 씨앗이 좁았다.
+
+      ★★ **정답을 보고 씨앗을 만들면 누출**이다(추론 시점엔 정답이 없다).
+        그래서 정답과 무관한 출처만 쓴다 — 가설 · 검색된 premise · 증명 스크립트.
+    """
     if ntok is None:
         ntok = lambda s: max(1, len(re.findall(r'\S+', s or '')))
     hyp, concl = _split_goal(goal)
@@ -354,4 +372,9 @@ def definitions_v2(goal, index, project=None, budget_tok=300, max_defs=8, cap=60
         if _bad_head(s) or _LOCAL.match(s) or s in local or s in seeds:
             continue
         seeds.append(s)
+    for t in (extra_seeds or []):                 # ★ 정답과 무관한 추가 씨앗
+        s2 = t.split('.')[-1]
+        if _bad_head(s2) or _LOCAL.match(s2) or s2 in local or s2 in seeds:
+            continue
+        seeds.append(s2)
     return _expand(seeds, index, project, False, ntok, budget_tok, max_defs, cap, depth)

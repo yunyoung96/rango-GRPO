@@ -170,6 +170,7 @@ def _fd_index() -> dict:
 
 TYPES_SEP = "\n[TYPES]\n"
 DEFS_SEP = "\n[DEFINITIONS]\n"
+LTAC_SEP = "\n[LTAC]\n"   # 파일 내 Ltac 정의 (검색 풀에서 제외되는 종류)
 # ★ 에러 조건부 학습(ERROR_COND=1): 직전 시도와 Coq 이 준 에러를 프롬프트에 넣는다.
 #   기존 SFT 는 순수 `state -> gold tactic` 이라, 실패 정리당 INVALID 가 중앙 52회 나는데도
 #   **에러에서 아무것도 배우지 않는다**. 에러에는 정답이 들어 있다
@@ -307,7 +308,18 @@ def augment_v2_section(tokenizer: PreTrainedTokenizer, example: LmExample,
         if ab_t:
             parts.append(TYPES_SEP + "(none)")
         else:
-            tl = types_v2(goal, idx, project=proj, budget_tok=t_budget, ntok=_ntok)
+            # ★ [TYPES] 도 같은 씨앗 확장을 받는다 (Constructor·Field 결손 대응).
+            _tex = []
+            if os.environ.get("TYPES_SEED_PREMISES", "1") == "1":
+                for _p in (getattr(example, "premises", None) or [])[:12]:
+                    _tex += re.findall(r"[A-Za-z_][\w']*",
+                                       (_p if isinstance(_p, str) else str(_p))[:400])[:20]
+            if os.environ.get("TYPES_SEED_SCRIPT", "1") == "1":
+                _tex += re.findall(r"[A-Za-z_][\w']*",
+                                   (getattr(example, "proof_script", "") or "")[-1200:])[:60]
+            tl = types_v2(goal, idx, project=proj, budget_tok=t_budget, ntok=_ntok,
+                          depth=int(os.environ.get("TYPES_DEPTH", "1")),
+                          extra_seeds=dict.fromkeys(_tex))
             if tl:
                 blk = TYPES_SEP + "\n".join(l for _, l in tl)
                 parts.append(blk)
@@ -329,7 +341,28 @@ def augment_v2_section(tokenizer: PreTrainedTokenizer, example: LmExample,
         else:
             d_budget = min(int(os.environ.get("DEFS_TOKENS", "300")), max(0, room - used))
             if d_budget > 16:
-                dl = definitions_v2(goal, idx, project=proj, budget_tok=d_budget, ntok=_ntok)
+                # ★★ **씨앗 확장** (2026-08-22) — 전부 정답과 무관한 출처다.
+                #   결론만으로는 정답이 필요로 하는 정의가 안 들어간다:
+                #     Definition 23.6% · Constructor 12.2% · Field 17.4% 가 프롬프트에
+                #     아예 없었다(풀에서 제외된 종류라 주입이 유일한 통로다).
+                #   예산 여유도 확인했다 — 프롬프트 중앙 1,118 / 상한 2,048.
+                #   각 출처는 env 로 끌 수 있게 둔다(절제 실험용).
+                _extra = []
+                if os.environ.get("DEFS_SEED_HYP", "1") == "1":
+                    _st_all = getattr(example, "proof_state", "") or ""
+                    _hy = _st_all.split("\n\n")[0] if "\n\n" in _st_all else ""
+                    _extra += re.findall(r"[A-Za-z_][\w']*", _hy)[:60]
+                if os.environ.get("DEFS_SEED_PREMISES", "1") == "1":
+                    for _p in (getattr(example, "premises", None) or [])[:12]:
+                        _extra += re.findall(r"[A-Za-z_][\w']*",
+                                             (_p if isinstance(_p, str) else str(_p))[:400])[:20]
+                if os.environ.get("DEFS_SEED_SCRIPT", "1") == "1":
+                    _sc = (getattr(example, "proof_script", "") or "")[-1200:]
+                    _extra += re.findall(r"[A-Za-z_][\w']*", _sc)[:60]
+                _depth = int(os.environ.get("DEFS_DEPTH", "1"))
+                dl = definitions_v2(goal, idx, project=proj, budget_tok=d_budget,
+                                    ntok=_ntok, depth=_depth,
+                                    extra_seeds=dict.fromkeys(_extra))
                 # ★ RAFT distractor: goal 과 무관한 정의를 K개 섞는다.
                 #   distractor 가 없으면 '인용'은 **거기 있는 하나를 베끼기**라 판별 압력이 없다.
                 #   섞으면 goal 과 맞는 것을 **골라야** 하므로 실제로 읽고 매칭해야 한다.
@@ -361,6 +394,27 @@ def augment_v2_section(tokenizer: PreTrainedTokenizer, example: LmExample,
                     parts.append(DEFS_SEP + "\n".join(l for _, l in dl))
                     injected.update(dict(dl))
     _LAST_INJECTED.update(injected)      # collate 가 바로 뒤에서 읽는다(같은 스레드·같은 예제)
+    # ★ **파일 내 Ltac** — 그 파일에 정의된 tactic 은 정답과 무관하게 다 넣을 수 있다.
+    #   rango 의 PremiseFilter 가 TACTIC 을 풀에서 빼므로 검색으로는 절대 안 온다.
+    #   실측 비용: 파일 내 Ltac 중앙 **0개** · p90 108토큰 (파일 밖은 중앙 138개라 못 넣는다).
+    if os.environ.get("INJECT_LTAC", "1") == "1":
+        _lt = []
+        for _p in (getattr(example, "local_ltac", None) or []):
+            _t = (_p if isinstance(_p, str) else str(_p)).strip()
+            if _t:
+                _lt.append(_t)
+        if _lt:
+            _lb = min(int(os.environ.get("LTAC_TOKENS", "160")), max(0, room - used))
+            _acc, _n = [], 0
+            for _t in _lt:
+                _c = _ntok(_t)
+                if _n + _c > _lb:
+                    continue
+                _acc.append(_t)
+                _n += _c
+            if _acc:
+                parts.append(LTAC_SEP + "\n".join(_acc))
+
     return "".join(parts)
 
 
@@ -1403,7 +1457,7 @@ _CACHE_STAMP_KEYS = (
 #     해시는 PYTHONHASHSEED 로 프로세스마다 랜덤화되므로, **같은 인덱스가 실행마다 다른
 #     프롬프트**를 냈다(실측: 7개 중 3개 불일치, 길이까지 달랐다). 원본 순서를 쓰도록
 #     고쳤고 그래서 이전 캐시는 전부 무효다.
-_DATA_PATH_VERSION = "v2-premise-order-deterministic"
+_DATA_PATH_VERSION = "v3-seed-expansion+local-ltac"
 
 
 # ★ stdlib 선언 이름 (data/stdlib_names.json). 없으면 빈 집합 — 가드가 보수적으로 동작한다.

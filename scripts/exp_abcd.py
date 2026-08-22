@@ -1074,6 +1074,11 @@ tdc["formatter_conf"].pop("num_proofs", None)
 #   `raw_example` 이 매번 RuntimeError 를 내고, 아래 `except: continue` 가
 #   그걸 삼켜서 **0건으로 조용히 끝난다**(실제로 TRAIN 과 사전식 검증이 그렇게 됐다).
 tdc["cache_loc"] = os.environ.get("EXP_CACHE", "/tmp/exp-abcd-cache")
+# ★★ 그리고 **페이지를 짓지 않는다.** exp_abcd 는 20만 인덱스에서 3,000건을 흩어서
+#   뽑는다 — 파일당 한두 건만 쓰는데 캐시 미스마다 그 파일의 모든 proof×step 을 짓는
+#   것은 순 낭비다. 실측: 페이지 빌드 1.61 s/건 vs 요청 예제만 ~0.9 s/건.
+#   (같은 이유로 verify_u1·preflight_random·scan_prompts 도 0 으로 뒀다.)
+os.environ.setdefault("CACHE_MAX_PAGE", "0")
 conf = TacticDataConf.from_yaml(tdc)
 ds = LmDataset.from_conf(conf, getattr(Split, SPLIT), 200000)
 sdb = SentenceDB.load(conf.sentence_db_loc)

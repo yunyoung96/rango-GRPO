@@ -161,7 +161,7 @@ for i in picked:
         st["자유 식별자"] += 1
         pat = re.compile(r"(?<![\w'])" + re.escape(nm.split(".")[-1]) + r"(?![\w'])")
         hit = [sec for sec in ("STATE", "TYPES", "DEFINITIONS", "PREMISES",
-                               "PROOFS", "SCRIPT") if pat.search(body.get(sec, ""))]
+                               "PROOFS", "SCRIPT", "LTAC") if pat.search(body.get(sec, ""))]
         if hit:
             st["  ✓ 보임"] += 1
             where["+".join(hit[:2])] += 1

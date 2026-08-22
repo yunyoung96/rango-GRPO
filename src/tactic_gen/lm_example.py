@@ -463,7 +463,7 @@ class GeneralFormatter:
         script = proof.proof_prefix_to_string(step)
         goals = fmt_goals(step.goals)
         next_steps = [s.step.text for s in proof.steps[step_idx:]]
-        return LmExample(
+        _ex = LmExample(
             script,
             goals,
             next_steps,
@@ -473,6 +473,22 @@ class GeneralFormatter:
             proof_idx,
             step_idx,
         )
+        # ★ **파일 내 Ltac** — rango 의 PremiseFilter 가 TACTIC 을 풀에서 빼므로 검색으로는
+        #   절대 오지 않는다. 그런데 정답이 그걸 부르면(`srapply`·`aw` 등) 모델은 볼 수
+        #   없는 이름을 써야 한다. 그 파일에 정의된 것은 **정답과 무관하게** 다 넣을 수
+        #   있고 비용도 싸다(실측: 파일 내 중앙 0개 · p90 108토큰. 파일 밖은 중앙 138개라 못 넣는다).
+        try:
+            _lt = []
+            for _p in dp_obj.in_file_avail_premises:
+                if str(getattr(_p, "sentence_type", "")).split(".")[-1] != "TACTIC":
+                    continue
+                _t = (getattr(_p, "text", "") or "").strip()
+                if _t and getattr(_p, "line", 0) < proof.theorem.term.line:
+                    _lt.append(_t)
+            _ex.local_ltac = _lt
+        except Exception:
+            _ex.local_ltac = []
+        return _ex
 
     def close(self):
         if self.proof_retriever is not None:
