@@ -61,6 +61,7 @@ from tactic_gen.search_query import local_names  # noqa: E402
 from tactic_gen.applicable import (canon, decompose, match, parse,  # noqa: E402
                                    parse_toks, subterms)
 from tactic_gen.assert_split import statement_of  # noqa: E402
+from tactic_gen.tactic_data import whole_number_allocate  # noqa: E402
 from tactic_gen.tier_rank import (TierRanker, declname, prem_struct,  # noqa: E402
                                   goal_struct, sig_hyp_match, head_of, sig_au_dist,
                                   au_res_gen, sig_au_f, goal_alpha, prem_alpha,
@@ -139,8 +140,9 @@ _AFH = re.compile(r"^afh([1-9]\d?|100)$")
 #   (자기검사로 확인한다). 즉 여기서도 eqx 는 족의 끝점이다.
 _ULT = re.compile(r"^ult([1-9]\d?|100)$")
 _KNOWN = _KNOWN | {"ultlex", "ultrrf"}
+_ADA = re.compile(r"^(ultada|afada)(\d{1,4})?$")
 _bad = [r for r in RANKERS if r not in _KNOWN
-        and not _AFH.match(r) and not _ULT.match(r)]
+        and not _AFH.match(r) and not _ULT.match(r) and not _ADA.match(r)]
 if _bad:
     sys.stderr.write(f"알 수 없는 랭커: {_bad}\n사용 가능: {sorted(_KNOWN)}\n")
     sys.exit(2)
@@ -421,6 +423,71 @@ def rank_all(state, texts, pool, tf, tr, kinds, docs=None, names=None,
             W = float(os.environ.get("AU_HINGE_W", "3.0"))
             fv = af_vals()
             out[k] = [rrf[j] + W * hinge(fv[j], tau) for j in range(n)]
+        elif k.startswith("afada"):
+            # ★★★ **적응 대역폭** — τ 를 손으로 고르지 않고 **데이터가 정한다.**
+            #   거리는 `afh` 와 같은 AU-Dice(=순서동형인 Jaccard)를 쓴다.
+            #   초거리로도 해 봤는데(`ultada`) 초거리 자체가 너무 거칠어 실패했다:
+            #   VAL A·P 26.3 → 17.0. 후보의 73% 가 깊이 ≤2 **한 등급**에 뭉치기 때문이다.
+            #
+            #       r(g) = |B(g, r)| ≤ m 을 만족하는 **가장 큰** 반지름
+            #       m    = 프롬프트가 담는 premise 수 (토큰 예산이 정한다 — 자유변수 아님)
+            #
+            #   구현은 간단하다 — F₁ 을 내림차순으로 정렬해 m 번째 값을 τ 로 삼으면
+            #   그게 곧 "공에 m 개만 담기는 반지름" 이다.
+            #
+            #   동작이 자기게이팅과 자동으로 일치한다:
+            #     A 국면 — gold 의 F₁ 이 낮아 공 밖 → 커널 0 → RRF 가 결정 → A 보존
+            #     C 국면 — gold 가 α-동치(F₁=1) → 어떤 반지름에서도 공 안 → 발화
+            m_cap = int(k[5:]) if len(k) > 5 else 25
+            W = float(os.environ.get("AU_HINGE_W", "3.0"))
+            fv = af_vals()
+            _srt = sorted((fv[j] for j in range(n)), reverse=True)
+            _tau = _srt[m_cap] if len(_srt) > m_cap else 0.0
+            if _tau >= 1.0 - 1e-9:        # 완전일치는 항상 들어와야 한다
+                _tau = 1.0 - 1e-9
+            out[k] = [rrf[j] + W * hinge(fv[j], _tau) for j in range(n)]
+        elif k.startswith("ultada"):
+            # ★★★ **적응 대역폭** — τ 를 손으로 고르지 않고 **데이터가 정한다.**
+            #
+            #   실측(A 국면 질의 60건 · 후보 78,745개)에서 깊이 분포는
+            #       깊이 ≥1  87.45%   ≥2  73.29%   ≥3  10.11%   ≥4  3.80%   ≥5  0.67%
+            #   이다. Coq 결론은 대부분 등식/적용이라 **최상위 한두 층은 자동으로 맞는다.**
+            #   그래서 깊이 1·2 의 공은 후보의 3/4 를 담는 **혼잡한** 공이고, 거기서
+            #   사전식으로 정렬하면 gold 가 4,209개에 파묻힌다(`ultlex` 가 A 를 깨는 기전).
+            #
+            #   τ=0.80(깊이 ≥3)이 잘 되는 이유가 여기 보인다 — **거기서 공이 처음으로
+            #   희소해진다**(73% → 10%). 즉 임계는 임의가 아니라 "공이 혼잡하지 않게
+            #   되는 반지름" 이다. 그러면 그걸 **질의마다 데이터에서 읽으면** 된다:
+            #
+            #       r(g) = |B(g, r)| ≤ m 을 만족하는 **가장 큰** 반지름
+            #       m    = 프롬프트가 담는 premise 수 (토큰 예산이 정한다 — 자유변수 아님)
+            #
+            #   초거리는 공이 중첩이라 이게 잘 정의되고, 깊이를 세기만 하면 된다.
+            #
+            #   동작이 자기게이팅과 **자동으로** 일치한다:
+            #     A 국면 — 공이 작고 gold 는 깊이 ≤2 라 공 밖 → 커널 0 → RRF 가 결정
+            #     C 국면 — gold 가 α-동치(깊이 ∞)라 어떤 반지름에서도 공 안 → 발화
+            m_cap = int(k[6:]) if len(k) > 6 else 25
+            W = float(os.environ.get("AU_HINGE_W", "3.0"))
+            uv = ult_vals()
+            # 깊이별 개수 → 가장 큰(=얕은) 공 중 |B| ≤ m 인 것을 고른다
+            import math as _m
+            def _dep(x):
+                if x >= 1.0 - 1e-12:
+                    return 99
+                if x <= 0.0:
+                    return 0
+                return int(round(_m.log2(1.0 / (1.0 - x))))
+            dep = [_dep(uv[j]) for j in range(n)]
+            cnt = collections.Counter(dep)
+            kk, acc = 99, 0
+            for _d in sorted(cnt, reverse=True):        # 깊은 것부터 누적
+                acc += cnt[_d]
+                if acc > m_cap:
+                    break
+                kk = _d
+            # 공 안(깊이 ≥ kk)에서만 커널을 켠다. 커널 값은 초거리 사다리 그대로.
+            out[k] = [rrf[j] + (W * uv[j] if dep[j] >= kk else 0.0) for j in range(n)]
         elif k == "ultlex":
             # ★★★ **매개변수 0개** — 초거리의 공이 나무를 이루는 성질을 그대로 쓴다.
             #
@@ -746,16 +813,34 @@ def _tlen(t: str) -> int:
     return v
 
 
+def fit_set(texts, order, budget: int):
+    """랭킹 순서로 늘어놓고 **프로덕션과 같은 방식**으로 담았을 때 들어가는 인덱스 집합.
+
+    ★★ 예전에는 greedy-break(넘치면 중단)로 셌다. 그런데 프로덕션은
+      `PREMISE_PACK=hybrid` 다 — 상위 K 개는 순위대로 담고(긴 gold 를 지킨다),
+      남은 예산을 knapsack 으로 채운다(짧은 것을 더 건진다).
+      실측 차이가 크다: 같은 896토큰에 greedy-break 중앙 **10개** vs hybrid 중앙 **22개**
+      (60/60 에서 hybrid 가 더 담는다). 즉 옛 기준은 실제보다 훨씬 빡빡했고
+      `[프롬프트]` 수치를 체계적으로 낮게 만들었다.
+
+    ★ hybrid 는 **접두사가 아니라 부분집합**을 고른다. 그래서 "몇 개까지" 라는
+      개수로는 표현할 수 없고 **선택된 집합**을 돌려줘야 한다.
+      (옛 코드는 `pos[j] < nfit` 로 판정해서 접두사를 가정하고 있었다.)
+
+    반환: (선택된 원본 인덱스 집합, 개수)
+    """
+    seq = [texts[j] for j in order]
+    try:
+        idx = whole_number_allocate(_TOK, seq, budget, return_idx=True)
+    except Exception:
+        return set(), 0
+    sel = {order[r] for r in idx}
+    return sel, len(sel)
+
+
 def n_in_prompt(texts, order, budget: int) -> int:
-    """랭킹 순서대로 담았을 때 **프롬프트에 들어가는 개수**."""
-    left = budget
-    k = 0
-    for j in order:
-        left -= _tlen(texts[j])
-        if left < 0:
-            break
-        k += 1
-    return k
+    """호환용 — 개수만 필요할 때."""
+    return fit_set(texts, order, budget)[1]
 
 
 def recall_prompt(sc, gset, names, texts, budget):
@@ -772,14 +857,14 @@ def recall_prompt(sc, gset, names, texts, budget):
     반환: (순위_best, 순위_worst, 프롬프트_best, 프롬프트_worst, nfit)
     """
     order = sorted(range(len(sc)), key=lambda j: -sc[j])
-    nfit = n_in_prompt(texts, order, budget)
+    sel, nfit = fit_set(texts, order, budget)          # ★ 집합으로 판정 (hybrid)
     pos = {j: r for r, j in enumerate(order)}
     BIG = 10 ** 9
     per_rank, per_pr = {}, {}
     for j in gset:
         nm = names[j]
         per_rank[nm] = min(per_rank.get(nm, BIG), pos[j])
-        per_pr[nm] = min(per_pr.get(nm, BIG), pos[j] if pos[j] < nfit else BIG)
+        per_pr[nm] = min(per_pr.get(nm, BIG), pos[j] if j in sel else BIG)
     return (min(per_rank.values()), max(per_rank.values()),
             min(per_pr.values()), max(per_pr.values()), nfit)
 

@@ -382,8 +382,17 @@ class SparseClient:
             #       목표 ALL·P  structural 85.7 → eqx 92.8   A 30.7 → 36.4
             #   cov 는 A 를 −5.7pp 해치고 C 에 기여가 없다(2차 절제 실험).
             #   def 는 정규식 휴리스틱이라 논문에서 정당화가 안 된다.
-            _kw = (dict(use_eq=False, use_cov=False, use_def=False, use_eqx=True)
-                   if _mode == "eqx" else {})
+            # ★ `eqx` = 지시자(τ=1) · `afh<NN>` = 커널(τ=NN/100). 같은 경로를 쓴다.
+            #   afh100 은 eqx 와 **완전히 같다**(족의 끝점 — 자기검사로 못박음).
+            _kw = {}
+            if _mode == "eqx" or _mode.startswith("afh"):
+                _kw = dict(use_eq=False, use_cov=False, use_def=False, use_eqx=True)
+                if _mode.startswith("afh"):
+                    try:
+                        from tactic_gen import tier_rank as _tr
+                        _tr.EQX_TAU = int(_mode[3:]) / 100.0
+                    except Exception:
+                        pass
             return structural_scores(
                 getattr(context, "goal", "") or "", getattr(context, "hyps", []) or [],
                 texts, base, query_ids=query_ids, docs=premise_docs,

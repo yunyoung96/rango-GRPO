@@ -1015,6 +1015,9 @@ class TierRanker:
 #   상한이 +8.2pp 오르고 비용은 구조 판정 2.5배(스텝당 ~57ms → ~140ms).
 STAGE1 = 5000            # 구조 판정을 걸 tfidf 상위 개수
 EQ_W = 3.0               # 트리 완전일치 가산. RRF 한 항의 최대(1/60)보다 훨씬 커야 한다
+# ★ 커널 대역폭. `RETRIEVAL_MODE=afh80` 처럼 이름으로 넘어온다.
+#   1.0 이면 지시자(=eqx). 0.8 이면 r=0.2 삼각 커널.
+EQX_TAU = float(os.environ.get("EQX_TAU", "1.0"))
 
 
 def _rrf_of(vals) -> list[float]:
@@ -1152,9 +1155,36 @@ def structural_scores(goal_text: str, hyps, texts: list[str], tfidf: list[float]
             _st = ("\n".join(hyps or []) + "\n\n" + (goal_text or "")).strip("\n")
             gq = goal_stmt("\n" + _st if not _st.startswith("\n") else _st)
             if gq is not None:
-                for j in cand:
-                    if prem_stmt(texts[j]) == gq:
-                        out[j] += EQ_W
+                # ★★ `eqx_tau < 1` 이면 **커널**로 켠다 (afh 족).
+                #   h_τ(1−d) = max(0, 1 − d/r),  r = 1−τ  — 삼각 커널이다.
+                #   지시자(τ=1)는 r→0 퇴화 경우이고, 실측으로 τ≈0.8 이 더 낫다:
+                #     TEST ALL·P  eqx 94.5 → afh80 95.2  (McNemar b=20 c=2 p=0.0001)
+                #     VAL  ALL·P  eqx 95.9 → afh80 97.9
+                #     A·ALL 은 동일(36.4 / 26.3) — 커널 항은 A 에 기여하지 않는다.
+                #   τ ∈ [0.6, 0.8] 은 **통계적으로 구분되지 않는다**(고원) — 민감하지 않다.
+                if EQX_TAU >= 1.0:
+                    for j in cand:              # 빠른 경로: 트리 동일성만 본다
+                        if prem_stmt(texts[j]) == gq:
+                            out[j] += EQ_W
+                else:
+                    # ★ **크기 사전필터** — 오탐 없는 정확한 가지치기.
+                    #     F₁ = 2m/(c+n) 이고  m ≤ min(c,n)  이므로
+                    #     F₁ ≥ τ  ⟹  2·min(c,n)/(c+n) ≥ τ
+                    #   즉 크기만 보고 **반유니피케이션을 돌리기 전에** 버릴 수 있다.
+                    #   `_tsize` 는 `prem_stmt` 와 함께 캐시되므로 사실상 공짜다.
+                    #   (τ=0.8 이면 c ∈ [2n/3, 3n/2] 밖은 전부 탈락한다.)
+                    _n = _tsize(gq)
+                    for j in cand:
+                        pq = prem_stmt(texts[j])
+                        if pq is None:
+                            continue
+                        _c = _tsize(pq)
+                        _den = _c + _n
+                        if _den <= 0 or 2.0 * min(_c, _n) < EQX_TAU * _den:
+                            continue                     # 상한이 τ 에 못 미친다
+                        h = hinge(au_f_alpha(pq, gq), EQX_TAU)
+                        if h > 0.0:
+                            out[j] += EQ_W * h
         # eq — 결론 트리 완전일치
         if use_eq:
             g = parse(goal_text or "")
