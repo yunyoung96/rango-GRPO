@@ -113,11 +113,30 @@ CMT_LIT = re.compile(r"\(\*.*?\*\)", re.S)        # 주석 (중첩은 무시 —
 NORM_IN = re.compile(r"(?<![\w'])[TfCLG]\d+(?![\w'])")
 
 
+# 우리 정규화가 만든 이름은 프롬프트 어딘가에 **선언**으로 나타난다
+#   premise → `Lemma L3 …` · 타입 → `Inductive T0 :=` · 함수 → `Definition f2 …`
+_OUR_DECL = re.compile(
+    r"^\s*(?:Lemma|Theorem|Definition|Corollary|Remark|Fact|Fixpoint|Instance|"
+    r"Axiom|Proposition|Example|Let|Inductive|Record|Class|Variant)\s+"
+    r"([TfCLG]\d+)(?![\w'])", re.M)
+
+
 def norm_in_literals(text, pat):
-    """`pat` 이 잡는 리터럴들 **안에서만** 정규화 이름을 찾는다. 첫 건을 돌려준다."""
+    """`pat` 이 잡는 리터럴들 **안에서만** 정규화 이름을 찾는다. 첫 건을 돌려준다.
+
+    ★★ 그 이름이 **우리가 만든 것인지** 확인한다. `[TfCLG]\d+` 꼴은 실제 Coq 코드에
+      흔하다 — 실측 오탐: `Lemma … forall T1 T2, eqb_ty T1 T2 = true -> T1 = T2` 의
+      주석 `(* T1=Bool *)`. 여기서 T1 은 **저자의 변수명**이다.
+      우리 정규화가 만든 이름은 프롬프트 어딘가에 **선언**(`Lemma L3 …`)으로 나타나므로
+      그걸 표지로 쓴다. (이 계열 오탐은 이번이 여덟 번째다.)
+    """
+    ours = set(_OUR_DECL.findall(text or ""))
+    if not ours:
+        return None
     for m in pat.finditer(text or ""):
-        if NORM_IN.search(m.group(0)):
-            return m.group(0)
+        for nm in NORM_IN.findall(m.group(0)):
+            if nm in ours:
+                return m.group(0)
     return None
 # ★ `List.list` `Datatypes.tt` 는 **진짜 Coq 이름**이다. 오염은 "모듈 접두사 자체가
 #   정규화 이름으로 바뀐" 경우이므로 접두사 쪽을 본다.
@@ -251,12 +270,32 @@ for c in range(N):
         if re.search(r"(?<![\w'])" + re.escape(w) + r"(?![\w'])", prompt) and \
            not re.search(r"(?<![\w'])" + re.escape(w) + r"(?![\w'])", vis_p):
             note("L3 ★ 정답이 쓰는 이름이 절단 후 안 보인다", f"idx={i} {w}")
-    for nm, c in decls.items():
-        if NORM.fullmatch(nm) and c > 1:
-            # [PREMISES] 안에서만 세야 한다 — [PROOFS] 는 같은 lemma 의 증명을 보여준다
-            if len(DECL.findall(body.get("PREMISES", ""))) and \
-               collections.Counter(DECL.findall(body.get("PREMISES", "")))[nm] > 1:
-                note("N2 ★ 같은 정규화 이름이 두 번 선언됐다", f"idx={i} {nm}")
+    # ★★ 위험한 것은 "같은 이름이 두 번" 이 아니라 **"같은 이름 · 다른 명제"** 다.
+    #   같은 lemma 가 모듈마다 재수출되면 명제가 **똑같은** 선언이 여러 줄 온다
+    #   (실측: `Lemma L6 m x e \`{!Ok m} : find x (add x e m) = Some e.` 가 3줄).
+    #   그건 `apply L6` 이 어느 것으로 읽혀도 맞으므로 해롭지 않다.
+    #   명제가 **다르면** 모델이 뜻이 다른 둘을 한 이름으로 배운다 — 그게 진짜 N2 다.
+    #   (이름만 다른 선언은 `premise_names` 가 이미 매핑에서 뺀다. 뚫리는 것은
+    #    `add_spec1` 과 `add_spec1'` 처럼 **이름이 실제로 다른** 경우다.)
+    _prem_body = body.get("PREMISES", "")
+    _by_name = collections.defaultdict(set)
+    for _ln in _prem_body.split("\n"):
+        _m = DECL.match(_ln.strip())
+        if not _m or not NORM.fullmatch(_m.group(1)):
+            continue
+        # 명제 = `:` 뒤. 다만 **바인더 블록을 먼저 지운다** — `{Hm:Ok m}` 안에도
+        # 콜론이 있어서, 먼저 split 하면 `Ok m}: …` 이 명제가 되어 같은 명제를
+        # 서로 다르다고 신고한다(실측: L9 두 줄이 그 형태였다).
+        _st = re.sub(r"[{`(\[][^{}()\[\]]*[}\)\]]", "", _ln)
+        _st = _st.split(":", 1)[-1]
+        _by_name[_m.group(1)].add(re.sub(r"\s+", "", _st))
+    for nm, sts in _by_name.items():
+        if len(sts) > 1:
+            note("N2 ★ 같은 정규화 이름이 **서로 다른 명제** 둘에 붙었다",
+                 f"idx={i} {nm}  ({len(sts)}종)")
+        elif len(DECL.findall(_prem_body)) and \
+                collections.Counter(DECL.findall(_prem_body))[nm] > 1:
+            st["N2b 같은 이름·같은 명제가 여러 줄 (무해)"] += 1
     stmts = collections.Counter()
     for ln in body.get("PREMISES", "").split("\n"):
         m = DECL.match(ln.strip())
