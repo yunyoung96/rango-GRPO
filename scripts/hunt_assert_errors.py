@@ -58,6 +58,24 @@ SPLIT = (sys.argv[2] if len(sys.argv) > 2 else "test").upper()
 REPOS = (Path("/tmp/coq-dataset/repos") if SPLIT == "TRAIN"
          else Path(f"CoqStoq/{SPLIT.lower()}-repos"))
 
+# ★ PLANS=<jsonl> 을 주면 **계획 파일에 적힌 cut 을 그대로** 검증한다.
+#   런타임 `Check` 로 타입을 캐내는 옛 경로는 Coq **출력**을 다시 파싱하므로 깨진다 —
+#   실측으로 `assert (string)`, `assert (= (not x) : type_scope (default interpretation))`
+#   같은 쓰레기가 나왔다. 계획 파일은 premise 풀의 **원문 명제**를 그대로 쓰므로
+#   그 경로가 없다. 우리가 학습에 넣을 것도 계획 파일 쪽이니, 검증 대상도 그쪽이어야 한다.
+PLANS = os.environ.get("PLANS", "")
+PLAN = {}
+if PLANS:
+    import json
+    for _ln in open(PLANS):
+        try:
+            _d = json.loads(_ln)
+        except Exception:
+            continue
+        if _d.get("kind") == "plan" and _d.get("cut"):
+            PLAN[_d["sid"]] = _d
+    print(f"■ 계획 파일 {PLANS} → cut {len(PLAN):,}건 적재", flush=True)
+
 _NAME = re.compile(r"^\s*(?:Lemma|Theorem|Definition|Corollary|Remark|Fact|Fixpoint|"
                    r"Instance|Axiom|Proposition|Example|Let|Program\s+\w+)\s+"
                    r"([A-Za-z_][\w']*(?:\.[A-Za-z_][\w']*)*)")
@@ -229,11 +247,12 @@ for i in range(20000):
             vf.rename(bak)
             pass  # ★ 원본 vf 를 tmp_files 에 넣으면 스크립트 끝에서 삭제된다
             f.write_text(src[:at] + body)
+            cf = None
             cf = CoqFile(str(f), timeout=180, workspace=ws)
             cf.run()
             msgs = [getattr(d, "message", "") for d in cf.diagnostics
                     if getattr(d, "severity", 0) == 3]
-            cf.close()
+            cf.close(); cf = None
             got = []
             for m in msgs:
                 mm = re.match(r"\s*(.+?)\s*:\s*(.+)$", m, re.S)
@@ -244,6 +263,14 @@ for i in range(20000):
         except Exception:
             pass
         finally:
+            # ★ close 를 try 안에서만 하면 **예외 시 coq-lsp 가 살아남는다.**
+            #   실측: 250스텝에서 27개가 새고 마지막에 15시간 멈췄다(각 2GB vlimit).
+            #   종료는 finally 에서 보장한다.
+            if cf is not None:
+                try:
+                    cf.close()
+                except Exception:
+                    pass
             f.unlink(missing_ok=True)
             if bak.exists():
                 bak.rename(vf)
@@ -270,11 +297,12 @@ for i in range(20000):
             vf.rename(bak)
             pass  # ★ 원본 vf 를 tmp_files 에 넣으면 스크립트 끝에서 삭제된다
             f.write_text(src[:at] + body)
+            cf = None
             cf = CoqFile(str(f), timeout=180, workspace=ws)
             cf.run()
             msgs = [getattr(d, "message", "") for d in cf.diagnostics
                     if getattr(d, "severity", 0) == 3]
-            cf.close()
+            cf.close(); cf = None
             # `Check (t).` 순서대로 답이 온다고 보고 매칭 (': ' 뒤가 타입)
             got = []
             for m in msgs:
@@ -286,6 +314,14 @@ for i in range(20000):
         except Exception:
             pass
         finally:
+            # ★ close 를 try 안에서만 하면 **예외 시 coq-lsp 가 살아남는다.**
+            #   실측: 250스텝에서 27개가 새고 마지막에 15시간 멈췄다(각 2GB vlimit).
+            #   종료는 finally 에서 보장한다.
+            if cf is not None:
+                try:
+                    cf.close()
+                except Exception:
+                    pass
             f.unlink(missing_ok=True)
             if bak.exists():
                 bak.rename(vf)
@@ -308,11 +344,12 @@ for i in range(20000):
             vf.rename(bak)
             pass  # ★ 원본 vf 를 tmp_files 에 넣으면 스크립트 끝에서 삭제된다
             f.write_text(src[:at] + "\n".join(f"Check @{n}." for n in names) + "\n")
+            cf = None
             cf = CoqFile(str(f), timeout=180, workspace=ws)
             cf.run()
             msgs = [getattr(d, "message", "") for d in cf.diagnostics
                     if getattr(d, "severity", 0) == 3]
-            cf.close()
+            cf.close(); cf = None
             for m in msgs:
                 mm = re.match(r"\s*@?([A-Za-z_][\w'.]*)\s*:\s*(.+)$", m, re.S)
                 if mm:
@@ -320,6 +357,14 @@ for i in range(20000):
         except Exception:
             pass
         finally:
+            # ★ close 를 try 안에서만 하면 **예외 시 coq-lsp 가 살아남는다.**
+            #   실측: 250스텝에서 27개가 새고 마지막에 15시간 멈췄다(각 2GB vlimit).
+            #   종료는 finally 에서 보장한다.
+            if cf is not None:
+                try:
+                    cf.close()
+                except Exception:
+                    pass
             f.unlink(missing_ok=True)
             if bak.exists():
                 bak.rename(vf)
@@ -332,14 +377,23 @@ for i in range(20000):
             vf.rename(bak)
             pass  # ★ 원본 vf 를 tmp_files 에 넣으면 스크립트 끝에서 삭제된다
             vf.write_text(src[:at] + body + "\n")
+            cf = None
             cf = CoqFile(str(vf), timeout=180, workspace=ws)
             cf.run()
             out = [getattr(d, "message", "") for d in cf.errors]
-            cf.close()
+            cf.close(); cf = None
             return out
         except Exception as ex:
             return [f"예외: {ex}"]
         finally:
+            # ★ close 를 try 안에서만 하면 **예외 시 coq-lsp 가 살아남는다.**
+            #   실측: 250스텝에서 27개가 새고 마지막에 15시간 멈췄다(각 2GB vlimit).
+            #   종료는 finally 에서 보장한다.
+            if cf is not None:
+                try:
+                    cf.close()
+                except Exception:
+                    pass
             vf.unlink(missing_ok=True)
             if bak.exists():
                 bak.rename(vf)
@@ -362,7 +416,21 @@ for i in range(20000):
             terms.append(r[0])
     A.WHY.clear()
     tr = None
-    if terms:
+    # ── ⓪ 계획 파일에 이 스텝의 cut 이 있으면 **그것을** 검증한다 ──
+    if PLAN:
+        _key = f"{getattr(e, 'file_name', '')}:{getattr(e, 'proof_idx', -1)}:{getattr(e, 'step_idx', -1)}"
+        _pl = PLAN.get(_key)
+        if _pl is None:
+            stat["계획 없음(스킵)"] += 1
+            continue
+        # 계획의 tac 이 지금 스텝과 다르면 매칭이 어긋난 것 — 조용히 넘기면 안 된다
+        if re.sub(r"\s+", " ", (_pl.get("tac") or "")).strip() != \
+                re.sub(r"\s+", " ", tac).strip():
+            stat["★ 계획 tac 불일치"] += 1
+            continue
+        tr = _pl["cut"]
+        stat["계획 cut 사용"] += 1
+    if tr is None and terms:
         tt = check_terms(terms)
         apps = [(t, tt.get(t)) for t in terms if tt.get(t)]
         stat["Check(항) 타입 획득"] += len(apps)
@@ -370,7 +438,7 @@ for i in range(20000):
             tr = transform_with_types(tac, apps, state=st, proof_script=script,
                                       suffix=(suffix or ""), premises=ptexts)
     # ── ② 실패하면 lemma 이름만으로 (기존 방식) ──
-    if tr is None:
+    if tr is None and not PLAN:
         types = check_types([n for n, _ in pick])
         pick2 = [(nm, f"Lemma {nm.split('.')[-1]} : {ty}." if
                   (ty := types.get(nm.split('.')[-1])) else pt) for nm, pt in pick]

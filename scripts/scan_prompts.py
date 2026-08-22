@@ -45,6 +45,12 @@ import sys
 
 sys.path.insert(0, "src")
 logging.disable(logging.CRITICAL)
+# ★ 설정의 출처는 `all_log/v9_env.sh` **하나**다. 여기에 값을 다시 적으면 반드시
+#   어긋나고, 어긋나도 오류가 안 난다 — 조용히 다른 실험을 재게 된다(실제로 겪었다:
+#   옛 CUTS_PATH 로 U1 을 재고, structural 로 "학습과 같은 설정" 감사를 돌렸다).
+sys.path.insert(0, "scripts")
+from _env_from_v9 import apply_v9_env  # noqa: E402
+apply_v9_env(verbose=True)
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 os.environ.setdefault("CUTS_ALLOW_PARTIAL", "1")
@@ -175,6 +181,26 @@ for c in range(N):
         _skip_names = _intro(target)
     except Exception:
         _skip_names = set()
+    # ★★ [STATE] 의 **가설 이름**도 정규화 이름이 아니다 — 원본 파일의 지역 변수다.
+    #   `[TfCLG]\d+` 는 우리 정규화 이름을 잡으라고 만든 패턴인데, 실제 Coq 코드에
+    #   `f1, f2 : Set` · `C0 : ...` 같은 변수가 흔하다(gaia 계열에서 실측).
+    #   그걸 "선언이 프롬프트에 없는 정규화 이름"으로 신고하면 학습이 막힌다 —
+    #   이 패턴의 오탐은 이번이 **다섯 번째**다. 이제 지역 이름 출처를 셋 다 본다:
+    #     ① 이 tactic 이 도입하는 이름 (introduced_names)
+    #     ② [STATE] 의 가설 이름
+    #     ③ 정규화가 실제로 만든 이름이면 선언이 프롬프트에 있다 (아래 _alld 검사)
+    try:
+        _st_body = re.search(r"\[STATE\]\n(.*?)(?=\n\[[A-Z]+\]|\Z)", prompt, re.S)
+        if _st_body:
+            for _ln in _st_body.group(1).split("\n"):
+                _m = re.match(r"^([A-Za-z_][\w', ]*?)\s*:", _ln)
+                if _m:
+                    for _nm in _m.group(1).split(","):
+                        _nm = _nm.strip()
+                        if _nm:
+                            _skip_names.add(_nm)
+    except Exception:
+        pass
     enc = tok(s, max_length=HARD, truncation=True)
     vis = tok.decode(enc["input_ids"], skip_special_tokens=True)
     vis_p = vis.rsplit("[TACTIC]", 1)[0] if "[TACTIC]" in vis else vis
