@@ -39,6 +39,11 @@ logging.disable(logging.CRITICAL)
 sys.path.insert(0, "scripts")
 from _env_from_v9 import apply_v9_env  # noqa: E402
 apply_v9_env(verbose=True)
+# ★ 표본 측정은 **요청된 예제만** 만든다. 캐시는 파일(페이지) 단위라 미스 한 번이
+#   그 파일의 모든 proof×step 을 짓는데, 표본은 파일당 한두 건만 쓰므로 순 낭비다.
+#   실측: 페이지 빌드 경로 7분에 27건 → 요청 예제만 만들면 56초에 50건.
+#   (학습은 한 파일을 여러 번 쓰므로 페이지 빌드가 이득이다 — 거기선 바꾸지 않는다.)
+os.environ.setdefault("CACHE_MAX_PAGE", "0")
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 os.environ.setdefault("CUTS_ALLOW_PARTIAL", "1")
@@ -70,7 +75,13 @@ print(f"■ 계획 cut {len(plan_key):,}건  ({CUTS})", flush=True)
 
 CONF = os.environ.get("CONF", "all_log/ft_qwen3b_v9_conf.yaml")
 cc = yaml.safe_load(open(CONF))
-conf = TacticDataConf.from_yaml(copy.deepcopy(cc["tactic_data"]))
+_td = copy.deepcopy(cc["tactic_data"])
+# ★ 측정 스크립트는 **전용 캐시**를 쓴다. 학습 캐시를 같이 쓰면 두 가지가 깨진다:
+#   ① 코드를 고친 뒤 옛 프로세스가 남아 있으면 옛 내용을 새 스탬프 아래에 써 넣는다
+#      (실제로 겪었다 — 캐시를 지운 직후 옛 코드 프로세스가 계속 쓰고 있었다).
+#   ② 측정하려고 만든 페이지가 학습 캐시에 섞인다.
+_td["cache_loc"] = os.environ.get("VERIFY_CACHE", "/tmp/verify-u1-cache")
+conf = TacticDataConf.from_yaml(_td)
 tok = get_tokenizer(cc["model_name"])
 ds = LmDataset.from_conf(conf, Split.TRAIN, None)
 coll = example_collator_from_conf(conf.collator_conf)
