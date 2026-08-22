@@ -954,8 +954,28 @@ class ProofPremiseCollator:
                 #   바뀌는데 **그 선언은 프롬프트에 없다** — 모델은 뜻을 알 수 없는
                 #   `L28` 만 보게 된다(실측: 300건 중 4건).
                 #   `input_str` 은 이미 완성된 프롬프트이므로 거기서 실린 것만 고른다.
+                # ★★ 더 나아가 **절단 후에도 보이는** 부분으로 판정한다.
+                #   학습은 `tok(s, max_length=HARD, truncation=True)` 에 truncation_side
+                #   ="left" 라 **앞쪽(=하위 premise)부터 잘려 나간다.** 그래서 input_str
+                #   에는 있지만 모델은 못 보는 premise 가 생긴다. 그걸 `L14` 로 바꾸면
+                #   정답이 `apply L14` 인데 L14 의 선언이 어디에도 없다 — 환각 학습이다.
+                #   실측 1,200건 중 2건(0.17%)이 정확히 이 형태였다.
+                #   이름을 안 바꾸면 정답은 **진짜 이름**을 쓰게 되고, 그게 그나마 낫다
+                #   (hopeless 스텝에서 정규화를 끄는 것과 같은 논리).
+                _vis = input_str
+                _hard = int(os.environ.get("HARD_SEQ_LEN", "0") or 0)
+                # 문자 길이로 먼저 걸러 낸다 — 안 넘치는 91% 에서 토크나이즈를 아낀다
+                if _hard and len(input_str) + len(target) > _hard * 2:
+                    try:
+                        _ids = tokenizer(input_str + target,
+                                         add_special_tokens=False)["input_ids"]
+                        if len(_ids) > _hard:
+                            _vis = tokenizer.decode(_ids[len(_ids) - _hard:],
+                                                    skip_special_tokens=True)
+                    except Exception:
+                        _vis = input_str
                 _in_prompt = [q for q in (getattr(example, "premises", None) or [])
-                              if q and q.strip().split("\n")[0][:60] in input_str]
+                              if q and q.strip().split("\n")[0][:60] in _vis]
                 mapping = build_mapping(dict(_LAST_INJECTED), key,
                                         avoid_text=input_str + target,
                                         premises=_in_prompt,
