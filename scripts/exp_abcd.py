@@ -90,6 +90,8 @@ ap.add_argument("--out", default="")
 A = ap.parse_args()
 SPLIT = A.split.upper()
 BUDGET = A.budget or 896      # conf 의 premise_tokens
+# ★ formatter 가 받는 premise 수 (conf 의 num_premises). 담기는 이 안에서만 일어난다.
+NPREM = int(os.environ.get("NUM_PREMISES", "100"))
 CTR_TOP = A.ctr_top
 RANKERS = [x for x in A.rankers.split(",") if x]
 # ★ 랭커 이름 오타/구버전 이름을 **시작 전에** 잡는다. 예전엔 잘못된 이름이 매 스텝
@@ -829,13 +831,19 @@ def fit_set(texts, order, budget: int):
 
     반환: (선택된 원본 인덱스 집합, 개수)
     """
-    seq = [texts[j] for j in order]
+    # ★ 프로덕션은 검색 결과 **상위 num_premises(=100)** 만 formatter 에 넘기고
+    #   거기서 담는다. 여기서 후보 전량(최대 5,000)을 넘기면
+    #     ① 프로덕션과 다른 것을 재고
+    #     ② whole_number_allocate 가 전량을 토큰화해 **10배 느려진다**
+    #       (실측: 1.0 s/건 → 9.7 s/건. 옛 `n_in_prompt` 는 길이 캐시로 조기 중단했다)
+    #   → 상위 NPREM 개로 자른다. 프로덕션과 같아지고 속도도 돌아온다.
+    top = order[:NPREM]
+    seq = [texts[j] for j in top]
     try:
         idx = whole_number_allocate(_TOK, seq, budget, return_idx=True)
     except Exception:
         return set(), 0
-    sel = {order[r] for r in idx}
-    return sel, len(sel)
+    return {top[r] for r in idx}, len(idx)
 
 
 def n_in_prompt(texts, order, budget: int) -> int:
