@@ -83,6 +83,7 @@ HARD = int(os.environ.get("HARD_SEQ_LEN", "2048"))
 TOTAL = ds.shuffled_idx.split_length(Split.TRAIN)
 
 st = collections.Counter()
+tac_kind = collections.defaultdict(collections.Counter)
 kind_miss = collections.Counter()
 kind_seen = collections.Counter()
 unk = []
@@ -147,10 +148,17 @@ while st["예제"] < N and tried < N * 40:
                 stdmiss.append(w)
             else:
                 miss.append(w)
+    # ★ tactic 종류별 분해 — 어떤 tactic 에서 환각이 나는지
+    _tk = (_tacname or "?").lower()
+    if _tk.startswith("e") and _tk[1:] in ("apply", "xact", "assumption", "destruct",
+                                           "induction", "constructor", "exists"):
+        _tk = _tk[1:]                      # eapply → apply
     if not ext:
         st["  외부 참조 없음"] += 1
+        tac_kind[_tk]["없음"] += 1
         continue
     st["★ 외부 참조를 쓰는 예제"] += 1
+    tac_kind[_tk]["씀"] += 1
     st["  외부 참조 이름 수"] += len(ext)
     for w in ext:
         k = KINDS.get(w) or KINDS.get(w.split(".")[-1]) or "미상"
@@ -159,6 +167,7 @@ while st["예제"] < N and tried < N * 40:
         st["  (참고) stdlib 포함하면 결손 있는 예제"] += 1
     if miss:
         st["★★ 그중 환각(하나라도 안 보임)"] += 1
+        tac_kind[_tk]["환각"] += 1
         st["  안 보이는 이름 수"] += len(miss)
         for w in miss:
             if (KINDS.get(w) or KINDS.get(w.split(".")[-1])) is None and len(unk) < 12:
@@ -184,6 +193,14 @@ for k in sorted(allk, key=lambda x: -kind_miss[x]):
           f"({kind_miss[k]/max(tot,1)*100:5.1f}% 안 보임)  "
           f"결손 중 {kind_miss[k]/NM*100:5.1f}%")
 if unk:
+    print("\n   ■ tactic 종류별  (외부참조 쓰는 예제 / 환각 / 비율)")
+    rows = sorted(tac_kind.items(), key=lambda kv: -kv[1]["씀"])
+    print(f"     {'tactic':16s} {'씀':>7} {'환각':>7} {'환각률':>8}   {'외부참조 없음':>10}")
+    for k, c in rows[:22]:
+        if c["씀"] < 3:
+            continue
+        print(f"     {k[:16]:16s} {c['씀']:7d} {c['환각']:7d} "
+              f"{c['환각']/max(c['씀'],1)*100:7.1f}% {c['없음']:12d}")
     print("\n   ■ '미상' 실제 예 (오탐 확인용)")
     for x in unk:
         print(f"     {x}")

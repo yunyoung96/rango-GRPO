@@ -317,6 +317,10 @@ def augment_v2_section(tokenizer: PreTrainedTokenizer, example: LmExample,
             if os.environ.get("TYPES_SEED_SCRIPT", "1") == "1":
                 _tex += re.findall(r"[A-Za-z_][\w']*",
                                    (getattr(example, "proof_script", "") or "")[-1200:])[:60]
+            if os.environ.get("TYPES_SEED_PROOFS", "1") == "1":   # ★ 같은 이유
+                for _q in (getattr(example, "proofs", None) or [])[:12]:
+                    _tex += re.findall(r"[A-Za-z_][\w']*",
+                                       (_q if isinstance(_q, str) else str(_q))[:1500])[:40]
             # ★★ **개수 상한이 진짜 제약이었다.** `_expand` 는 `len(lines) >= max_items`
             #   에서 끊는데 기본값이 8 이다. 씨앗을 넓혀도 결론에서 8개가 차면 추가
             #   씨앗이 **아예 못 들어간다** — 실측으로 환각률이 17.2% → 17.6% 로
@@ -365,6 +369,15 @@ def augment_v2_section(tokenizer: PreTrainedTokenizer, example: LmExample,
                 if os.environ.get("DEFS_SEED_SCRIPT", "1") == "1":
                     _sc = (getattr(example, "proof_script", "") or "")[-1200:]
                     _extra += re.findall(r"[A-Za-z_][\w']*", _sc)[:60]
+                # ★★ **`proofs`(유사 증명) 본문** — 결손 이름의 **대부분이 여기 있다.**
+                #   실측(600건): 씨앗으로 닿는 결손 9건 중 **8건이 PROOFS 본문**이었다.
+                #   `[PROOFS]` 섹션은 proof_tokens(256) 예산에 잘려 프롬프트엔 일부만
+                #   들어가지만, `example.proofs` 원본에는 다 있다. 씨앗은 원본에서 뽑으면
+                #   되고(정답과 무관하다), 그 정의를 `[DEFINITIONS]` 로 올려 주면 된다.
+                if os.environ.get("DEFS_SEED_PROOFS", "1") == "1":
+                    for _q in (getattr(example, "proofs", None) or [])[:12]:
+                        _extra += re.findall(r"[A-Za-z_][\w']*",
+                                             (_q if isinstance(_q, str) else str(_q))[:1500])[:40]
                 _depth = int(os.environ.get("DEFS_DEPTH", "1"))
                 dl = definitions_v2(goal, idx, project=proj, budget_tok=d_budget,
                                     ntok=_ntok, depth=_depth,
@@ -1464,7 +1477,7 @@ _CACHE_STAMP_KEYS = (
 #     해시는 PYTHONHASHSEED 로 프로세스마다 랜덤화되므로, **같은 인덱스가 실행마다 다른
 #     프롬프트**를 냈다(실측: 7개 중 3개 불일치, 길이까지 달랐다). 원본 순서를 쓰도록
 #     고쳤고 그래서 이전 캐시는 전부 무효다.
-_DATA_PATH_VERSION = "v5-seed-expansion+ltac+budget400-600"
+_DATA_PATH_VERSION = "v6-seed+proofs"
 
 
 # ★ stdlib 선언 이름 (data/stdlib_names.json). 없으면 빈 집합 — 가드가 보수적으로 동작한다.
@@ -1490,8 +1503,24 @@ def _cache_stamp(formatter) -> str:
 
 
 class ExampleCache:
+    """★★ 캐시를 **설정 해시로 나눈 하위 디렉터리**에 둔다.
+
+    예전에는 한 디렉터리를 공유하고 스탬프가 다르면 예외를 냈다. 그런데 설정이
+    바뀔 때마다(랭커·주입 씨앗·데이터 경로 버전) **사람이 수동으로 지워야** 했고,
+    안 지우면 전부 예외로 죽었다. 하루에 다섯 번 그렇게 헛돌았다:
+      · scan_prompts / preflight_random / audit_train_path 가 rc=1 로 전멸
+      · 랭커 실험 5개가 rc=3 으로 전멸
+      · exp_abcd 가 0건으로 조용히 종료(가드를 고치기 전)
+
+    설정 해시를 경로에 넣으면 **불일치 자체가 성립하지 않는다** — 다른 설정은 다른
+    디렉터리를 쓰고, 옛 디렉터리는 그냥 남아 있다가 필요 없으면 지우면 된다.
+    (`CACHE_FLAT=1` 이면 옛 방식(한 디렉터리 + 스탬프 검사)으로 돌아간다.)
+    """
+
     def __init__(self, cache_loc: Path):
         self.cache_loc = cache_loc
+        self.__root = cache_loc
+        self.__flat = os.environ.get("CACHE_FLAT", "0") == "1"
         os.makedirs(self.cache_loc, exist_ok=True)
         self.num_cached = 0
         self.__stamp_checked = False
@@ -1506,6 +1535,16 @@ class ExampleCache:
         #   실측: 400건 스캔에서 예외 1건 뒤 399건이 `structural` 시절 프롬프트를 썼다.
         #   성공했을 때만 켠다.
         want = _cache_stamp(formatter)
+        if not self.__flat:
+            # ★ 설정 해시로 하위 디렉터리를 가른다 — 불일치가 원천적으로 없다
+            self.cache_loc = self.__root / want.split()[0]
+            os.makedirs(self.cache_loc, exist_ok=True)
+            try:
+                (self.cache_loc / "CACHE_STAMP.txt").write_text(want + "\n")
+            except Exception:
+                pass
+            self.__stamp_checked = True
+            return
         loc = self.cache_loc / "CACHE_STAMP.txt"
         if loc.exists():
             have = loc.read_text().strip()

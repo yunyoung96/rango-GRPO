@@ -400,6 +400,14 @@ _INTRO_PAT = re.compile(r"\[[^\[\]]*\]")
 _INTRO_HAVE = re.compile(
     r"(?:^|[;\[\]|(){}\s])(?:have|suff|suffices|wlog|gen\s+have)\s+"
     r"(?:\[[^\]]*\]\s*)?([A-Za-z_][\w']*)\s*[:(]")
+# ★ SSReflect **intro 패턴** — `move: X => [a b c]` · `case: X => [|n IH]` 의
+#   대괄호 안 이름은 전부 **새로 도입되는** 것이다.
+#   실측 오탐: `move: (cg _ ya) => [z zf lzg]` 의 lzg 를 외부 참조로 셌다.
+_INTRO_SSR_PAT = re.compile(r"=>\s*((?:[\[\]|/\s]|[A-Za-z_][\w']*)+)")
+# ★ `assert (H := e)` · `have (H := e)` 형태의 이름
+#   실측 오탐: `assert (H3':= H3).` 의 H3'
+_INTRO_ASSIGN = re.compile(r"[(\s]([A-Za-z_][\w']*)\s*:=")
+
 _INTRO_SET = re.compile(
     r"(?:^|[;\s])(?:set|pose|epose|remember)\s+"
     r"(?:([A-Za-z_][\w']*)\s*:?=|.*?\bas\s+([A-Za-z_][\w']*))")
@@ -411,13 +419,24 @@ def introduced_names(tac: str) -> set:
     for m in _INTRO_AS.finditer(tac or ""):
         out |= set(re.findall(r"[A-Za-z_][\w']*", m.group(0)))
     for m in _INTRO_TAC.finditer(tac or ""):
-        out |= set(re.findall(r"[A-Za-z_][\w']*", m.group(0)))
+        # ★ `/name` 은 SSReflect **view**(외부 lemma 적용)라 도입 이름이 아니다.
+        #   `move=> a b /andP[c d]` 에서 andP 는 외부 참조다 — 도입으로 세면 환각을 놓친다.
+        out |= set(re.findall(r"[A-Za-z_][\w']*",
+                              re.sub(r"/\s*[A-Za-z_][\w']*", " ", m.group(0))))
     for m in _INTRO_HAVE.finditer(tac or ""):        # ★ SSReflect have/suff/wlog
         out.add(m.group(1))
     for m in _INTRO_SET.finditer(tac or ""):         # ★ set/pose/remember
         for g in m.groups():
             if g:
                 out.add(g)
+    for m in _INTRO_SSR_PAT.finditer(tac or ""):     # ★ SSReflect `=> [a b c]`
+        # ★ 단 `/name` 은 **view**(외부 lemma 적용)이지 도입 이름이 아니다.
+        #   `move=> a b /andP[c d]` 에서 a·b·c·d 는 도입, andP 는 **외부 참조**다.
+        #   그걸 도입으로 세면 진짜 환각을 놓친다.
+        _seg = re.sub(r"/\s*[A-Za-z_][\w']*", " ", m.group(1))
+        out |= set(re.findall(r"[A-Za-z_][\w']*", _seg))
+    for m in _INTRO_ASSIGN.finditer(tac or ""):      # ★ `(H := e)`
+        out.add(m.group(1))
     out -= {"as", "intros", "intro", "eintros", "eintro", "move", "rename", "into",
             "have", "suff", "suffices", "wlog", "set", "pose", "remember", "by"}
     return out
