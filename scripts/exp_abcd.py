@@ -136,7 +136,7 @@ _KNOWN = {"tfidf", "rrf", "struct", "eq", "eqa", "eqx", "cov", "eqcov",
           "gate", "gate80", "gate95"}
 # ★ afh 족은 τ 를 이름에 담는다(`afh80` = τ 0.80). 유효 범위만 확인하고 통과시킨다 —
 #   목록에 일일이 적으면 τ 하나 바꿀 때마다 "알 수 없는 랭커" 로 죽는다(실제로 겪었다).
-_AFH = re.compile(r"^afh([1-9]\d?|100)$")
+_AFH = re.compile(r"^(afh|afx)([1-9]\d?|100)$")
 # ★ 초거리 족 `ult<NN>` — `afh` 와 같은 hinge 구조에 **거리만 바꾼다**.
 #   `ult100` 은 τ=1 이라 지시자가 되고, 초거리의 영집합 = α-동치이므로 **eqx 와 같다**
 #   (자기검사로 확인한다). 즉 여기서도 eqx 는 족의 끝점이다.
@@ -425,6 +425,22 @@ def rank_all(state, texts, pool, tf, tr, kinds, docs=None, names=None,
             W = float(os.environ.get("AU_HINGE_W", "3.0"))
             fv = af_vals()
             out[k] = [rrf[j] + W * hinge(fv[j], tau) for j in range(n)]
+        elif k.startswith("afx"):
+            # ★★ **사전식 구현** — `afh<τ>` 와 같은 순서를 주는지 실측으로 확인한다.
+            #
+            #     p ≻ q ⟺ (1[p∈B], −d(p), RRF(p)) >lex (1[q∈B], −d(q), RRF(q))
+            #
+            #   `afh` 는 이걸 한 점수 `W·K_r(d) + RRF` 로 인코딩한 것이다. W 가 충분히
+            #   크면 둘이 같은 순서를 준다 — 해석적으로 |Δd| < (2/K)/(W/r) = 0.0022 인
+            #   near-tie 에서만 갈린다(무작위 300,000쌍 중 2건). **실측으로 못박는다.**
+            #
+            #   여기서는 정수 등급을 쓴다: 공 안이면 큰 상수를 주고 d 로 정렬,
+            #   RRF 는 그 아래에서만 작동하게 한다. (인코딩 상수는 분리자다.)
+            tau = int(k[3:]) / 100.0
+            fv = af_vals()                       # F₁ = 1 − d
+            BIG = 10.0 ** 6
+            out[k] = [(BIG + BIG * fv[j] if fv[j] > tau else 0.0) + rrf[j]
+                      for j in range(n)]
         elif k.startswith("afada"):
             # ★★★ **적응 대역폭** — τ 를 손으로 고르지 않고 **데이터가 정한다.**
             #   거리는 `afh` 와 같은 AU-Dice(=순서동형인 Jaccard)를 쓴다.
