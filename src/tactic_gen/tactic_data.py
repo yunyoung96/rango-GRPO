@@ -1783,6 +1783,8 @@ class LmDataset(Dataset):
 
         if kind == "close":
             # G1 — 그 명제(P)를 goal 로 삼아 **검색을 다시** 한다.
+            _orig_example = example                      # 폴백 시 되돌릴 원본
+            _base_state = getattr(example, "proof_state", "") or ""
             parts = st.split("\n\n")
             hyps = [x for x in (parts[0].split("\n") if len(parts) > 1 else []) if x.strip()]
             try:
@@ -1804,17 +1806,37 @@ class LmDataset(Dataset):
             _m = re.search(r"e?exact\s+@?([\w'.]+)", tac)
             if _m:
                 _base = _m.group(1).rstrip(".").split(".")[-1]
+                # ★ premise 만 보면 안 된다 — `[PROOFS]`(유사 증명)에 그 lemma 를 쓰는
+                #   줄이 있으면 모델은 이름을 **읽을 수 있다.** premise 만으로 판정하면
+                #   실제로는 보이는 39건까지 물러서게 된다(실측: exact 대상 85 → 2,
+                #   즉 39건을 헛되이 버렸다). 프롬프트에 실리는 것을 다 본다.
                 _fit = ""
                 try:
                     _fit = self._fit_premises(example)
                 except Exception:
                     _fit = ""
+                # ★ proofs 도 **예산 안에 들어가는 것만** 센다. 통째로 믿으면
+                #   `[PROOFS]` 가 예산에 밀려 0자가 되는 경우까지 "보인다" 고 판정한다
+                #   (실측: pos_INR·CRplus_0_r 는 proofs 원본엔 있는데 [PROOFS] 는 0자였다).
+                #   collator 와 **같은 함수·같은 예산**을 쓴다.
+                _pf = getattr(example, "proofs", None) or []
+                try:
+                    _pn = getattr(self.example_collator, "proof_tokens", 0)
+                    _pfs = allocate_and_fmt(self.tokenizer, _pf, _pn) if _pn else ""
+                except Exception:
+                    _pfs = ""
+                _seen = _fit + "\n" + _pfs
                 if _base and not re.search(r"(?<![\w'])" + re.escape(_base) + r"(?![\w'])",
-                                           _fit):
+                                           _seen):
                     pick = pick - 1 if pick > 0 else len(subs) - 1
                     tac, kind, P, H = subs[pick]
-                    st = _substep_state(getattr(example, "proof_state", "") or "",
-                                        subs, pick)
+                    # ★ 되돌릴 것 둘:
+                    #   ① 예제 — 재검색은 goal=P 로 한 것이라 `assert` 스텝에는 안 맞는다.
+                    #     (원래 goal 로 뽑힌 premise 를 봐야 다른 assert 스텝과 조건이 같다)
+                    #   ② 기준 상태 — `_substep_state` 는 **원래** proof_state 를 받아야
+                    #     한다. 바뀐 예제에서 읽으면 이미 한 번 가공된 상태가 들어간다.
+                    example = _orig_example
+                    st = _substep_state(_base_state, subs, pick)
         example = copy.copy(example)
         example.proof_state = st              # G2
         example.next_steps = [tac]            # G3
