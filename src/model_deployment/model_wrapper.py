@@ -254,7 +254,11 @@ class DecoderLocalWrapper:
         )
         use_beam = beam and 1 < n
         generate_kwargs = dict(
-            max_new_tokens=128,
+            # ★ 정답 자리. cut 의 `assert (P) as H_asrt0.` 는 명제 전체를 쓰므로
+            #   보통 tactic(중앙 4토큰)보다 훨씬 길다. 상한을 올리는 비용은 **0** 이다
+            #   — 생성은 EOS 에서 멈추므로 실제로 그만큼 뽑을 때만 시간이 든다
+            #   (실측: 생성 ≈ 354ms + 16.1ms × 실제 출력토큰, 3B·n=8).
+            max_new_tokens=_D.num("OUT_TOKENS"),
             return_dict_in_generate=True,
             output_scores=True,
             num_return_sequences=n,
