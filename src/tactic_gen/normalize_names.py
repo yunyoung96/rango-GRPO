@@ -247,7 +247,8 @@ def theorem_name(proof_script: str) -> Optional[str]:
 def build_mapping(injected: dict, seed_key: str, avoid_text: str = "",
                   premises: Optional[list] = None,
                   proof_script: Optional[str] = None,
-                  ltac_names: Optional[list] = None) -> dict:
+                  ltac_names: Optional[list] = None,
+                  decl_text: Optional[str] = None) -> dict:
     """**실제로 주입된 정의**의 이름과 그 생성자만 치환 대상으로 삼는다.
 
     ★ 왜 좁히나 (실측 실패): 처음엔 텍스트의 모든 식별자 중 인덱스에 있는 것을 바꿨더니
@@ -341,9 +342,19 @@ def build_mapping(injected: dict, seed_key: str, avoid_text: str = "",
             #        `Lemma G0 (n m : nat) : n<>0 -> … -> n = m.` 이 같은 이름이 됐다.
             #   `premise_names` 에는 이 방어가 있었는데(중복 이름은 원래대로 둔다)
             #   정리 이름 경로에만 빠져 있었다.
+            # ★★ 이 검사는 "**프롬프트에** 같은 이름 선언이 둘 이상인가" 이지,
+            #   "이 이름이 어딘가에 두 번 나오는가" 가 아니다. 두 목적을 섞으면 안 된다.
+            #   `avoid_text` 는 이름 **할당 충돌**을 피하려고 추론에서 프롬프트 너머까지
+            #   넓혔다(premise 전량·유사 증명·스크립트). 그 넓힌 텍스트로 선언을 세면
+            #   **같은 선언이 중복 집계**되어 `_ndecl>1` 이 되고, 정리가 매핑에서 빠진다.
+            #   그러면 프롬프트에 선언부가 없어 `substitute_theorem_decl` 도 못 바꿔,
+            #   학습은 `Theorem _G0 …` 인데 추론은 실명이 남는다.
+            #   실측(TRAIN 265): 4건 전부 이 형태 — 학습 bm=N/LAST=None,
+            #   추론 bm=N-1/LAST='fin_reif' → std '★안바뀜'.
+            _decl_src = decl_text if decl_text is not None else (avoid_text or "")
             _ndecl = len(re.findall(
                 r"(?:Lemma|Theorem|Corollary|Remark|Fact|Proposition|Definition|"
-                r"Instance|Axiom)\s+" + re.escape(t) + r"(?![\w'])", avoid_text or ""))
+                r"Instance|Axiom)\s+" + re.escape(t) + r"(?![\w'])", _decl_src))
             if _ndecl > 1:
                 LAST_THM_DECL = t          # 동명 다수 — 선언부 한 곳만 G# 로
             elif t in prem_names:

@@ -37,12 +37,13 @@ os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 os.environ.setdefault("AUGMENT_V2", "1")
 os.environ.setdefault("INJECT_TYPES", "1")
 os.environ.setdefault("INJECT_DEFS", "1")
-os.environ.setdefault("HARD_SEQ_LEN", "2048")
+# ★ HARD_SEQ_LEN 은 rango_defaults 기본값(3072)을 따른다 — 여기서 못 박지 않는다
 os.environ.setdefault("TYPES_TOKENS", "300")
 os.environ.setdefault("DEFS_TOKENS", "300")
 os.environ.setdefault("FUNC_DEFS_PATH", "data/func_defs_v3.json")
 os.environ.setdefault("STRIP_TARGET_NL", "1")
 sys.path.insert(0, "src")
+import rango_defaults as _D
 import logging  # noqa: E402
 
 logging.disable(logging.CRITICAL)
@@ -57,7 +58,7 @@ from tactic_gen.tier_rank import declname  # noqa: E402
 
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 600
 SPLIT = (sys.argv[2] if len(sys.argv) > 2 else "train").upper()
-HARD = int(os.environ["HARD_SEQ_LEN"])
+HARD = _D.num("HARD_SEQ_LEN")
 
 cc = yaml.safe_load(open("all_log/ft_qwen3b_v8_conf.yaml"))
 tok = AutoTokenizer.from_pretrained(cc["model_name"])

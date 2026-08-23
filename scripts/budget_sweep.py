@@ -32,12 +32,13 @@ os.environ.setdefault("AUGMENT_V2", "1")
 os.environ.setdefault("RERANK_PREMISES", "1")
 os.environ.setdefault("INJECT_TYPES", "1")
 os.environ.setdefault("INJECT_DEFS", "1")
-os.environ.setdefault("HARD_SEQ_LEN", "2048")
+# ★ HARD_SEQ_LEN 은 rango_defaults 기본값을 따른다 — 여기서 2048 로 못 박지 않는다
 os.environ.setdefault("TYPES_TOKENS", "300")
 os.environ.setdefault("DEFS_TOKENS", "300")
 os.environ.setdefault("FUNC_DEFS_PATH", "data/func_defs_v3.json")
 os.environ.setdefault("STRIP_TARGET_NL", "1")
 sys.path.insert(0, "src")
+import rango_defaults as _D
 import logging  # noqa: E402
 
 logging.disable(logging.CRITICAL)

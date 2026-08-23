@@ -35,6 +35,7 @@ import sys
 import time
 
 sys.path.insert(0, "src")
+import rango_defaults as _D
 logging.disable(logging.CRITICAL)
 # ★ 설정의 출처는 `all_log/v9_env.sh` **하나**다. 여기에 값을 다시 적으면 반드시
 #   어긋나고, 어긋나도 오류가 안 난다 — 조용히 다른 실험을 재게 된다(실제로 겪었다:
@@ -104,7 +105,7 @@ ds = LmDataset.from_conf(conf, Split.TRAIN, None)
 coll = example_collator_from_conf(conf.collator_conf)
 dc = DataCollatorForCompletionOnlyLM(MASK_TEMPLATE, tokenizer=tok)
 TOTAL = ds.shuffled_idx.split_length(Split.TRAIN)
-HARD = int(os.environ.get("HARD_SEQ_LEN", "2048"))
+HARD = _D.num("HARD_SEQ_LEN")
 
 random.seed(SEED)
 # ★ 전 구간 균등 + **끝쪽을 일부러 더** 뽑는다. 큰 인덱스가 늦게 채워지므로.

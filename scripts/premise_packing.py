@@ -34,9 +34,10 @@ os.environ.setdefault("HF_HUB_OFFLINE", "1")
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 os.environ.setdefault("AUGMENT_V2", "1")
 os.environ.setdefault("RERANK_PREMISES", "1")
-os.environ.setdefault("HARD_SEQ_LEN", "2048")
+# ★ HARD_SEQ_LEN 은 rango_defaults 기본값을 따른다 — 여기서 2048 로 못 박지 않는다
 os.environ.setdefault("FUNC_DEFS_PATH", "data/func_defs_v3.json")
 sys.path.insert(0, "src")
+import rango_defaults as _D
 import logging  # noqa: E402
 
 logging.disable(logging.CRITICAL)

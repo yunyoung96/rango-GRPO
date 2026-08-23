@@ -22,6 +22,7 @@ import re
 import sys
 
 sys.path.insert(0, "src")
+import rango_defaults as _D
 logging.disable(logging.CRITICAL)
 
 N_PER = 60
@@ -40,7 +41,7 @@ os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 # ★ 학습과 **같은 설정**으로 태운다. v9_env.sh 를 source 한 셸에서 부르는 것이 정석이고,
 #   빠진 값은 여기서 기본값으로 채운다(감사 스크립트가 조용히 다른 설정을 쓰면 의미가 없다).
 for k, v in dict(AUGMENT_V2="1", RERANK_PREMISES="1", INJECT_TYPES="1", INJECT_DEFS="1",
-                 TYPES_TOKENS="300", DEFS_TOKENS="300", HARD_SEQ_LEN="2048",
+                 TYPES_TOKENS="300", DEFS_TOKENS="300", HARD_SEQ_LEN=str(_D.num("HARD_SEQ_LEN")),
                  AUG_OUT_TOKENS="128", FUNC_DEFS_PATH="data/func_defs_v3.json",
                  NORMALIZE_NAMES="1", NORMALIZE_RATE="1.0", NORMALIZE_PREMISES="1",
                  NORMALIZE_THEOREM="1", NORMALIZE_SKIP_STDLIB="1", INJECT_SKIP_STDLIB="1",

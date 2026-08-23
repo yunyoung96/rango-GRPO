@@ -44,6 +44,7 @@ import re
 import sys
 
 sys.path.insert(0, "src")
+import rango_defaults as _D
 logging.disable(logging.CRITICAL)
 # ★ 설정의 출처는 `all_log/v9_env.sh` **하나**다. 여기에 값을 다시 적으면 반드시
 #   어긋나고, 어긋나도 오류가 안 난다 — 조용히 다른 실험을 재게 된다(실제로 겪었다:
@@ -121,7 +122,7 @@ assert tok.truncation_side == "left"
 ds = LmDataset.from_conf(conf, Split.TRAIN, None)
 coll = example_collator_from_conf(conf.collator_conf)
 TOTAL = ds.shuffled_idx.split_length(Split.TRAIN)
-HARD = int(os.environ.get("HARD_SEQ_LEN", "2048"))
+HARD = _D.num("HARD_SEQ_LEN")
 
 SECS = ["PREMISES", "PROOFS", "STATE", "SCRIPT", "TYPES", "DEFINITIONS"]
 HDR = re.compile(r"\[(" + "|".join(SECS) + r"|GOAL|TACTIC)\]")

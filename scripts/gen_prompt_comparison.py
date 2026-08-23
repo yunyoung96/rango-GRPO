@@ -36,6 +36,7 @@ import re
 import sys
 
 sys.path.insert(0, "src")
+import rango_defaults as _D
 logging.disable(logging.CRITICAL)
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
@@ -63,7 +64,7 @@ V9_ENV = dict(CUTS_PATH=CUTS, AUGMENT_V2="1", RERANK_PREMISES="1", INJECT_TYPES=
               RETRIEVAL_STAGE1="5000",   # ★ RETRIEVAL_MODE 는 안 박는다 —
                  #   premise_client.DEFAULT_RETRIEVAL_MODE 가 단일 출처다.
               PREMISE_PACK="hybrid", PREMISE_PACK_TOPK="4", STRIP_TARGET_NL="1",
-              HARD_SEQ_LEN="2048")
+              HARD_SEQ_LEN=str(_D.num("HARD_SEQ_LEN")))
 # ★ rango 원본 = 증강 3종·정규화·cut 을 **전부 끈다**. 끄는 것을 빠뜨리면 비교가 거짓이 된다.
 RANGO_ENV = dict(AUGMENT_V2="0", RERANK_PREMISES="0", INJECT_TYPES="0", INJECT_DEFS="0",
                  NORMALIZE_NAMES="0", NORMALIZE_RATE="0.0", NORMALIZE_PREMISES="0",

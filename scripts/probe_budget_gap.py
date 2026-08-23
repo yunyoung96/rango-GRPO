@@ -29,6 +29,7 @@ import statistics
 import sys
 
 sys.path.insert(0, "src")
+import rango_defaults as _D
 logging.disable(logging.CRITICAL)
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
@@ -49,7 +50,7 @@ ds = LmDataset.from_conf(conf, Split.TRAIN, None)
 coll = example_collator_from_conf(conf.collator_conf)
 
 TOTAL = ds.shuffled_idx.split_length(Split.TRAIN)
-HARD = int(os.environ.get("HARD_SEQ_LEN", "2048"))
+HARD = _D.num("HARD_SEQ_LEN")
 SPOTS = [0, TOTAL // 6, TOTAL // 3, TOTAL // 2, TOTAL * 2 // 3, TOTAL * 5 // 6,
          TOTAL - N_PER - 2]
 print(f"■ 예산 어긋남 실측   TRAIN {TOTAL:,} · {len(SPOTS)}곳 × {N_PER}건\n", flush=True)

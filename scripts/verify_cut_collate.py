@@ -31,7 +31,7 @@ os.environ.setdefault("AUGMENT_V2", "1")
 os.environ.setdefault("RERANK_PREMISES", "1")
 os.environ.setdefault("INJECT_TYPES", "1")
 os.environ.setdefault("INJECT_DEFS", "1")
-os.environ.setdefault("HARD_SEQ_LEN", "2048")
+# ★ HARD_SEQ_LEN 은 rango_defaults 기본값(3072)을 따른다 — 여기서 못 박지 않는다
 os.environ.setdefault("FUNC_DEFS_PATH", "data/func_defs_v3.json")
 os.environ.setdefault("CUTS_PATH", "data/cut_plans_all.jsonl")
 sys.path.insert(0, "src")

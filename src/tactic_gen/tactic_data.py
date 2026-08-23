@@ -272,13 +272,24 @@ def _maybe_normalize_input(text: str, example, tokenizer=None,
         m = build_mapping(dict(_LAST_INJECTED), key, avoid_text=_avoid,
                           premises=_in_prompt,
                           proof_script=getattr(example, "proof_script", "") or "",
-                          ltac_names=list(getattr(example, "local_ltac", None) or []))
+                          ltac_names=list(getattr(example, "local_ltac", None) or []),
+                          # ★ 동명 선언 개수는 **프롬프트만** 보고 센다. 넓힌 `_avoid`
+                          #   로 세면 같은 선언이 중복 집계되어 정리가 매핑에서 빠지고,
+                          #   학습은 `_G0` 인데 추론은 실명이 남는다(실측 8/371=2.2%).
+                          decl_text=text)
     except Exception:
         return text
-    if not m:
-        return text
+    # ★★ 매핑이 **비어 있어도 조기 반환하면 안 된다.**
+    #   바로 아래 선언부 익명화(`_G#`)를 건너뛰게 되고, 학습(`collate`)은 매핑이
+    #   비어도 그 처리를 **무조건** 하므로 프롬프트가 어긋난다.
+    #   실측(TRAIN 400): 불일치 8/371 = 2.2%, **전부 `_G0`** —
+    #     학습  build_mapping→1개, LAST_THM_DECL=None    → `Lemma _G0 n p : ...`
+    #     추론  build_mapping→0개, LAST_THM_DECL='ltb_lt' → 조기 반환 → `Lemma ltb_lt n p : ...`
+    #   추론 쪽 avoid_text 가 더 넓어(premise·proofs·script 전량) 정리 이름이 충돌로
+    #   판정되면 매핑에 안 들어가고 LAST_THM_DECL 로만 넘어온다. 그 신호를 놓쳤다.
     _LAST_INFER_MAPPING = m
-    text = apply_mapping(text, m)
+    if m:
+        text = apply_mapping(text, m)
     # ★ 학습(`collate`)과 **같은 처리**를 해야 프롬프트가 어긋나지 않는다.
     #   증명 중인 정리 이름이 [PREMISES] 에도 있으면(동명 충돌, 실측 1.3%)
     #   매핑에 넣지 않고 **선언부만** G# 로 바꾼다. 이 처리가 추론 경로에만
@@ -469,7 +480,10 @@ def augment_v2_section(tokenizer: PreTrainedTokenizer, example: LmExample,
         return len(tokenizer(s or "", add_special_tokens=False)["input_ids"])
 
     hard = _D.num("HARD_SEQ_LEN")
-    out_tokens = int(os.environ.get("AUG_OUT_TOKENS", "128"))   # 정답(tactic) 자리
+    # ★ 정답(tactic) 자리. **collator 의 out_tokens 와 반드시 같아야 한다** —
+    #   여기서 128 을 잡아두고 실제 정답이 256 까지 붙으면 combined 가 hard_seq_len 을
+    #   넘겨 좌측(=[PREMISES]) 이 다시 잘린다. 예전엔 둘 다 128 이라 우연히 맞았다.
+    out_tokens = _D.num("OUT_TOKENS")
     margin = 16
     room = hard - _ntok(base_str) - out_tokens - margin
     if room <= 32:

@@ -32,6 +32,7 @@ import re
 import sys
 
 sys.path.insert(0, "src")
+import rango_defaults as _D
 sys.path.insert(0, "scripts")
 logging.disable(logging.CRITICAL)
 from _env_from_v9 import apply_v9_env  # noqa: E402
@@ -52,7 +53,7 @@ conf = TacticDataConf.from_yaml(_td)
 tok = get_tokenizer(cc["model_name"])
 ds = LmDataset.from_conf(conf, Split.TRAIN, None)
 coll = example_collator_from_conf(conf.collator_conf)
-HARD = int(os.environ.get("HARD_SEQ_LEN", "2048"))
+HARD = _D.num("HARD_SEQ_LEN")   # ★ 프로덕션 단일 출처. 2048 하드코딩은 기본값이 3072 로 오른 뒤 조용히 틀린 수치를 냈다
 TOTAL = ds.shuffled_idx.split_length(Split.TRAIN)
 DECL = re.compile(r"^\s*(?:Lemma|Theorem|Definition|Corollary|Remark|Fact|Fixpoint|"
                   r"Instance|Axiom|Parameter|Proposition|Example|Let)\s+"
