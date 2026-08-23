@@ -1,0 +1,16 @@
+
+★ cut 파일 커버리지 부족 — 조용히 기능이 죽는다.
+   파일        data/cut_plans_all.jsonl
+   스캔 범위    [0, 0)
+   필요 범위    [0, 177,207)   (Split.TEST)
+   범위 밖 스텝은 cut 치환도 CUT_DROP_HOPELESS 도 작동하지 않는다.
+   메우려면:  python3 scripts/build_cuts.py 197207 test <out> 0
+   (의도한 부분 실행이면 CUTS_ALLOW_PARTIAL=1)
+
+■ T1 이 어디에 있나 (추론 시점에 볼 수 있는 것들)
+   premises(100 전량)     있음   (19,452자)
+   proofs(유사증명)         있음   (23,579자)
+   proof_script         없음   (484자)
+   proof_state          없음   (639자)
+
+  → 이 중 하나라도 avoid_text 에 넣으면 T1 을 피할 수 있다

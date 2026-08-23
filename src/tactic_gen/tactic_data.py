@@ -256,7 +256,20 @@ def _maybe_normalize_input(text: str, example, tokenizer=None,
                 _vis = text
         _in_prompt = [q for q in (getattr(example, "premises", None) or [])
                       if q and str(q).strip().split("\n")[0][:60] in _vis]
-        m = build_mapping(dict(_LAST_INJECTED), key, avoid_text=text,
+        # ★★ **avoid_text 를 프롬프트 너머로 넓힌다.**
+        #   학습은 `avoid_text=input_str + target` 이라, 정답에 있는 실명을 보고
+        #   그것과 겹치는 익명 토큰을 피한다. 추론에는 정답이 없어 그 보호가 사라진다.
+        #   실측 사고(idx=161315): 그 프로젝트에 **진짜 `T1`** 이 있는데 추론 매핑이
+        #   `Reducef → T1` 을 배정했다. 모델이 옳게 `T1` 을 뱉어도 역매핑이
+        #   `Reducef` 로 바꿔 **틀린 tactic** 이 된다(학습 매핑은 T2 를 골라 안전했다).
+        #   → 검색 결과 전량·유사 증명·스크립트까지 회피 집합에 넣는다(비용 ~1ms).
+        _avoid = "\n".join([
+            text,
+            "\n".join(str(q) for q in (getattr(example, "premises", None) or [])),
+            "\n".join(str(q) for q in (getattr(example, "proofs", None) or [])),
+            getattr(example, "proof_script", "") or "",
+        ])
+        m = build_mapping(dict(_LAST_INJECTED), key, avoid_text=_avoid,
                           premises=_in_prompt,
                           proof_script=getattr(example, "proof_script", "") or "",
                           ltac_names=list(getattr(example, "local_ltac", None) or []))

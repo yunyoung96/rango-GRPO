@@ -1,0 +1,32 @@
+
+★ cut 파일 커버리지 부족 — 조용히 기능이 죽는다.
+   파일        data/cut_plans_all.jsonl
+   스캔 범위    [0, 0)
+   필요 범위    [0, 177,207)   (Split.TEST)
+   범위 밖 스텝은 cut 치환도 CUT_DROP_HOPELESS 도 작동하지 않는다.
+   메우려면:  python3 scripts/build_cuts.py 197207 test <out> 0
+   (의도한 부분 실행이면 CUTS_ALLOW_PARTIAL=1)
+
+■ CompCert 사례 수집 (목표 20건)
+
+   … 수집 5 (시도 14)
+   … 수집 10 (시도 64)
+   … 수집 15 (시도 92)
+   … 수집 20 (시도 128)
+
+■ Coq 확인 (20건)
+
+   … 5/20
+     ✗ TransfInstr (K0) @ compcert.backend.Constpropproof
+   … 10/20
+   … 15/20
+   … 20/20
+
+   검증                                           20
+   문자열 왕복 정확                                    20
+   ✅ 원래이름 찾음 · 익명이름 없음 (기대대로)                   16
+   ★ 익명이름도 존재(우연 충돌)                            2
+   ★ 원래이름을 못 찾음                                 1
+   판정 불가(Require 실패 등)                          1
+
+   ✅ 기대대로 16/19 = 84.2%

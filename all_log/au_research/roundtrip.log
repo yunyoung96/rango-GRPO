@@ -1,0 +1,28 @@
+
+★ cut 파일 커버리지 부족 — 조용히 기능이 죽는다.
+   파일        data/cut_plans_all.jsonl
+   스캔 범위    [0, 0)
+   필요 범위    [0, 177,207)   (Split.TEST)
+   범위 밖 스텝은 cut 치환도 CUT_DROP_HOPELESS 도 작동하지 않는다.
+   메우려면:  python3 scripts/build_cuts.py 197207 test <out> 0
+   (의도한 부분 실행이면 CUTS_ALLOW_PARTIAL=1)
+
+■ 1단계 — 왕복 정확성 (TEST 800 예제)
+
+     gold 가 안 바뀜(시험 공허)                 638
+     ✓ 왕복 정확                            160
+     ✗ 왕복 실패                              1
+     매핑 없음                                1
+     매핑 있음                              799
+   ★★ gold 가 익명화됨                       161
+   예제                                   800
+
+   왕복 정확률  160/161 = 99.4%
+     [왕복] 'apply\n CombLinear_comp\n  with\n    (p := pluspf (A:=A) A0 (eq' ↔ 'apply\n CombLinear_comp\n  with\n    (p := pluspf (A:=A) A0 (eq'
+
+■ 2단계 — Coq 이름 해석 (대조군 포함 · 후보 160건 중 24건)
+
+
+   소스 없음                                        155
+
+   ✅ 기대대로 0/1 = 0.0%

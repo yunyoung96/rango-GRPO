@@ -1,0 +1,44 @@
+
+★ cut 파일 커버리지 부족 — 조용히 기능이 죽는다.
+   파일        data/cut_plans_all.jsonl
+   스캔 범위    [0, 0)
+   필요 범위    [0, 177,207)   (Split.TEST)
+   범위 밖 스텝은 cut 치환도 CUT_DROP_HOPELESS 도 작동하지 않는다.
+   메우려면:  python3 scripts/build_cuts.py 197207 test <out> 0
+   (의도한 부분 실행이면 CUTS_ALLOW_PARTIAL=1)
+
+■ idx=161315  파일 repos/coq-community-buchberger/theories/Pcomb.v
+
+[gold]
+apply
+ CombLinear_comp
+  with
+    (p := pluspf (A:=A) A0 (eqA:=eqA) plusA eqA_dec (n:=n) (ltM:=ltM) ltM_dec
+            p
+            (mults (A:=A) multA (n:=n) (invTerm (A:=A) invA (n:=n) (T1 A1 n))
+               q)); auto.
+
+[anon]
+apply
+ CombLinear_comp
+  with
+    (p := f8 (A:=A) A0 (eqA:=eqA) plusA eqA_dec (n:=n) (ltM:=ltM) ltM_dec
+            p
+            (f9 (A:=A) multA (n:=n) (invTerm (A:=A) invA (n:=n) (T1 A1 n))
+               q)); auto.
+
+[back]
+apply
+ CombLinear_comp
+  with
+    (p := pluspf (A:=A) A0 (eqA:=eqA) plusA eqA_dec (n:=n) (ltM:=ltM) ltM_dec
+            p
+            (mults (A:=A) multA (n:=n) (invTerm (A:=A) invA (n:=n) (Reducef A1 n))
+               q)); auto.
+
+첫 차이 위치 190:  gold …'A) multA (n:=n) (invTerm (A:=A) invA (n:=n) (T1 A1 n))\n               '
+                    back …'A) multA (n:=n) (invTerm (A:=A) invA (n:=n) (Reducef A1 n))\n          '
+
+관련 매핑: {'T1': 'Reducef', 'f8': 'pluspf', 'f9': 'mults'}
+매핑 크기: 31 · 값 중복: False
+키∩값 (연쇄 위험): 없음

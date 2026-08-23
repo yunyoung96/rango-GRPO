@@ -1,0 +1,18 @@
+
+★ cut 파일 커버리지 부족 — 조용히 기능이 죽는다.
+   파일        data/cut_plans_all.jsonl
+   스캔 범위    [0, 0)
+   필요 범위    [0, 177,207)   (Split.TEST)
+   범위 밖 스텝은 cut 치환도 CUT_DROP_HOPELESS 도 작동하지 않는다.
+   메우려면:  python3 scripts/build_cuts.py 197207 test <out> 0
+   (의도한 부분 실행이면 CUTS_ALLOW_PARTIAL=1)
+
+■ idx=161315
+  gold 에 T1 있나        : True
+  프롬프트(정규화전)에 T1  : False []
+  추론 매핑에 Reducef→   : T1
+  학습 매핑에 Reducef→   : T2
+  추론 매핑 값에 T1 있나  : True
+  학습 매핑 값에 T1 있나  : False
+
+  → 학습은 avoid_text=input+target 이라 T1 을 피했나? 피함
