@@ -6,7 +6,7 @@ eval_accumulation_steps: 1
 eval_steps: 100000
 example_collator:
   alias: proof-premise
-  out_tokens: 128
+  out_tokens: 256
   premise_tokens: 896
   proof_tokens: 256
   script_tokens: 512
@@ -37,7 +37,7 @@ tactic_data:
   cache_loc: /tmp/smoke-3072
   collator_conf:
     alias: proof-premise
-    out_tokens: 128
+    out_tokens: 256
     premise_tokens: 896
     proof_tokens: 256
     script_tokens: 512
