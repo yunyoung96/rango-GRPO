@@ -52,7 +52,7 @@ tok = get_tokenizer(cc["model_name"])
 ds = LmDataset.from_conf(conf, getattr(Split, SPLIT), None)
 coll = example_collator_from_conf(conf.collator_conf)
 TOTAL = ds.shuffled_idx.split_length(getattr(Split, SPLIT))
-_ANON = re.compile(r"(?<![\w'])([TfCLGK]\d+)(?![\w'])")
+_ANON = re.compile(r"(?<![\w'])(_[TfCLGK]\d+)(?![\w'])")
 _DECLKW = (r"(?:Lemma|Theorem|Definition|Fixpoint|Corollary|Fact|Axiom|Proposition|"
            r"Instance|Notation|Remark|Property|Inductive|Record|Class|Ltac)\s+")
 

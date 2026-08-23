@@ -285,12 +285,12 @@ def _maybe_normalize_input(text: str, example, tokenizer=None,
     #   빠져 있어서, 그 경우 학습은 `Lemma G0 :` 를 보고 추론은 실명을 봤다.
     import tactic_gen.normalize_names as _nn
     if _nn.LAST_THM_DECL:
-        _used = set(re.findall(r"\bG(\d+)\b", text))
+        _used = set(re.findall(r"(?<![\w\x27])_G(\d+)(?![\w\x27])", text))
         _k = 0
         while str(_k) in _used:
             _k += 1
         _cur = m.get(_nn.LAST_THM_DECL, _nn.LAST_THM_DECL)
-        text = _nn.substitute_theorem_decl(text, _cur, f"G{_k}")
+        text = _nn.substitute_theorem_decl(text, _cur, f"_G{_k}")
     return text
 
 # distractor 샘플링용 키 목록(1회만 생성 — 예제마다 만들면 8만 원소 리스트가 매번 생긴다)
@@ -1313,14 +1313,14 @@ class ProofPremiseCollator:
                 #   구분할 수 없다. 선언부 한 곳만 G# 로 바꿔 분리한다.
                 import tactic_gen.normalize_names as _nn
                 if _nn.LAST_THM_DECL:
-                    used = set(re.findall(r"\bG(\d+)\b", input_str))
+                    used = set(re.findall(r"(?<![\w\x27])_G(\d+)(?![\w\x27])", input_str))
                     k = 0
                     while str(k) in used:
                         k += 1
                     # apply_mapping 이 이미 원래 이름을 L# 로 바꿔놨으므로,
                     # **바뀐 이름**을 기준으로 선언부만 다시 G# 로 바꾼다.
                     cur = mapping.get(_nn.LAST_THM_DECL, _nn.LAST_THM_DECL)
-                    input_str = _nn.substitute_theorem_decl(input_str, cur, f"G{k}")
+                    input_str = _nn.substitute_theorem_decl(input_str, cur, f"_G{k}")
 
         if STRIP_TARGET_NL:
             target = target.lstrip("\n")     # 개행은 프롬프트 쪽 "[TACTIC]\n" 이 이미 갖고 있다

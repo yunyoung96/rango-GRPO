@@ -1,0 +1,94 @@
+##### ① 잔여 충돌 (수정 전 56/160 = 35.0%) #####
+■ 익명형 실명 보유 프로젝트 0개
+
+
+★ cut 파일 커버리지 부족 — 조용히 기능이 죽는다.
+   파일        data/cut_plans_all.jsonl
+   스캔 범위    [0, 0)
+   필요 범위    [0, 177,207)   (Split.TEST)
+   범위 밖 스텝은 cut 치환도 CUT_DROP_HOPELESS 도 작동하지 않는다.
+   메우려면:  python3 scripts/build_cuts.py 197207 test <out> 0
+   (의도한 부분 실행이면 CUTS_ALLOW_PARTIAL=1)
+
+
+■ TEST · 예제 500
+
+     그 프로젝트에 익명형 실명 없음                        495
+   매핑 있음                                      495
+   예제                                         500
+
+   잔여 충돌률  0/1 = 0.00%  (전체 예제 대비 0.00%)
+
+##### ② 왕복 정확성 #####
+
+★ cut 파일 커버리지 부족 — 조용히 기능이 죽는다.
+   파일        data/cut_plans_all.jsonl
+   스캔 범위    [0, 0)
+   필요 범위    [0, 177,207)   (Split.TEST)
+   범위 밖 스텝은 cut 치환도 CUT_DROP_HOPELESS 도 작동하지 않는다.
+   메우려면:  python3 scripts/build_cuts.py 197207 test <out> 0
+   (의도한 부분 실행이면 CUTS_ALLOW_PARTIAL=1)
+
+■ 1단계 — 왕복 정확성 (TEST 600 예제)
+
+     gold 가 안 바뀜(시험 공허)                 475
+     ✓ 왕복 정확                            121
+     매핑 없음                                4
+     매핑 있음                              596
+   ★★ gold 가 익명화됨                       121
+   예제                                   600
+
+   왕복 정확률  121/121 = 100.0%
+
+■ 2단계 — Coq 이름 해석 (대조군 포함 · 후보 121건 중 0건)
+
+
+
+   ✅ 기대대로 0/1 = 0.0%
+
+##### ③ 누수 검증 TRAIN #####
+
+■ TRAIN · 예제 120
+
+     └ 프롬프트에 선언 있음                            20
+   A 학습 프롬프트 env 무관 (동일)                     120
+   B normalize=False 는 매핑 없음                 120
+   C (매핑할 이름 없음/꺼짐)                            9
+   C 기본값이 정규화 켬                              111
+   D 정답의 익명 토큰                                20
+   예제                                        120
+
+   ✅ 이상 없음
+
+##### ④ 데이터 경로 스모크 #####
+   [v9_env] 3개 적용: HF_HUB_OFFLINE=1 PYTORCH_ALLOC_CONF=expandable_segments:True TOKENIZERS_PARALLELISM=false
+■ TRAIN 총 2,009,606 스텝 · 표본 250 · hard_seq_len 2048
+
+   … 100/250 (34s)
+   … 200/250 (84s)
+
+■ 결과 (예제 250 · 99s)
+
+       └ final (H_asrt 를 쓴다)              11  (  4.4%)
+       ├ assert (명제를 세운다)                  6  (  2.4%)
+     §DEFINITIONS                        204  ( 81.6%)
+     §LTAC                                47  ( 18.8%)
+     §NOTATION                           108  ( 43.2%)
+     §PREMISES                           250  (100.0%)
+     §PROOFS                             250  (100.0%)
+     §SCRIPT                             250  (100.0%)
+     §STATE                              250  (100.0%)
+     §TYPES                              132  ( 52.8%)
+     ⚠ hard_seq_len 초과                    37  ( 14.8%)
+   ★ cut — assert/final                   17  (  6.8%)
+   ★ cut 후보 — close(exact L) 형태            6  (  2.4%)
+   예제                                    250  (100.0%)
+   정규화 적용                                244  ( 97.6%)
+
+   ■ 무작위성 — 서로 다른 파일 **236개** / 예제 250개  (한 파일 최다 2회)
+      방문 순서 앞 12개: sset19.v · String.v · RewriteLaws.v · LibSet.v · subset.v · Lists.v · Poly.v · Basics.v · Basics.v · chap6.v · StandardResults.v · Logic.v
+
+   ■ 길이  중앙 1619 · p90 2115 · p99 2707 · 최대 2730   (상한 2048)
+
+   ■ 폐기  DROP_HALLUC 9건 · uncovered 0건
+[US_DONE]

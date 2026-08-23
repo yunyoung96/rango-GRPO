@@ -59,7 +59,7 @@ _td["cache_loc"] = os.environ.get("VERIFY_CACHE", "/tmp/infer-smoke")
 conf = TacticDataConf.from_yaml(_td)
 ds = LmDataset.from_conf(conf, Split.TEST, None)
 TOTAL = ds.shuffled_idx.split_length(Split.TEST)
-_ANON = re.compile(r"(?<![\w'])([TfCLGK]\d+)(?![\w'])")
+_ANON = re.compile(r"(?<![\w'])(_[TfCLGK]\d+)(?![\w'])")
 
 st = collections.Counter()
 random.seed(97)

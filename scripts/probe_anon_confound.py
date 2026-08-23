@@ -44,7 +44,7 @@ from _coq_vocab import is_core  # noqa: E402
 
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 2000
 STDLIB = set(json.load(open("data/stdlib_names.json")))
-_ANON = re.compile(r"^[TfCLGK]\d+$")
+_ANON = re.compile(r"^_[TfCLGK]\d+$")
 
 cc = yaml.safe_load(open("all_log/ft_qwen3b_v9_conf.yaml"))
 _td = copy.deepcopy(cc["tactic_data"])

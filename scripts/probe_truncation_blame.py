@@ -124,7 +124,7 @@ while st["예제"] < N and tried < N * 40:
         if re.search(pat, vp):
             continue
         st["★ 결손 이름"] += 1
-        st["  (형태) 익명토큰" if re.match(r"^[TfCLGK]\d+$", base)
+        st["  (형태) 익명토큰" if re.match(r"^_[TfCLGK]\d+$", base)
            else "  (형태) 실명"] += 1
         if len(samples) < 14:
             samples.append((base, tgt.strip()[:60]))

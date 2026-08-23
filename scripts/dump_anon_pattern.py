@@ -52,7 +52,7 @@ ds = LmDataset.from_conf(conf, sp, None)
 coll = example_collator_from_conf(conf.collator_conf)
 TOTAL = ds.shuffled_idx.split_length(sp)
 _DECL = re.compile(r"(?:Lemma|Theorem|Definition|Fixpoint|Corollary|Fact|Axiom|"
-                   r"Proposition|Instance|Notation|Remark|Property)\s+([TfCLGK]\d+)\b")
+                   r"Proposition|Instance|Notation|Remark|Property)\s+(_[TfCLGK]\d+)\b")
 
 PROJ = os.environ.get("PROJ_FILTER", "")     # 예: AbsInt-CompCert
 st = collections.Counter()
@@ -77,7 +77,7 @@ while st["예제"] < N and tried < N * 40 and len(out) < DUMP * 3:
     anon = set(m.values())
     prompt, target = full.rsplit("[TACTIC]", 1)
     tgt = _strip_coq_comments(target).strip()
-    hits = [w for w in re.findall(r"(?<![\w'])([TfCLGK]\d+)(?![\w'])", tgt) if w in anon]
+    hits = [w for w in re.findall(r"(?<![\w'])(_[TfCLGK]\d+)(?![\w'])", tgt) if w in anon]
     if not hits:
         continue
     st["익명 참조를 쓰는 예제"] += 1

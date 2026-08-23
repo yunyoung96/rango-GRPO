@@ -1,0 +1,30 @@
+■ 익명형 실명 보유 프로젝트 91개
+
+
+★ cut 파일 커버리지 부족 — 조용히 기능이 죽는다.
+   파일        data/cut_plans_all.jsonl
+   스캔 범위    [0, 0)
+   필요 범위    [0, 177,207)   (Split.TEST)
+   범위 밖 스텝은 cut 치환도 CUT_DROP_HOPELESS 도 작동하지 않는다.
+   메우려면:  python3 scripts/build_cuts.py 197207 test <out> 0
+   (의도한 부분 실행이면 CUTS_ALLOW_PARTIAL=1)
+
+   … 300/500
+
+■ TEST · 예제 500
+
+     그 프로젝트에 익명형 실명 없음                        335
+     익명형 실명이 있는 프로젝트                          160
+   ★ 잔여 충돌 (실명이 매핑값으로 할당됨)                     56
+   매핑 있음                                      495
+   예제                                         500
+
+   잔여 충돌률  56/160 = 35.00%  (전체 예제 대비 11.20%)
+     coq-community-math-classes       실명 ['T0'] ← 원래 ['Plus']
+     coq-community-math-classes       실명 ['T0'] ← 원래 ['Plus']
+     coq-community-buchberger         실명 ['T1'] ← 원래 ["H'"]
+     coq-community-math-classes       실명 ['T0'] ← 원래 ['Decision']
+     coq-community-math-classes       실명 ['T0'] ← 원래 ['Apart']
+     coq-community-math-classes       실명 ['T0'] ← 원래 ['Setoid_Morphism']
+     coq-community-math-classes       실명 ['T0'] ← 원래 ['Plus']
+     coq-community-fourcolor          실명 ['f1'] ← 원래 ['hdr_hrd']

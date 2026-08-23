@@ -363,7 +363,7 @@ def build_mapping(injected: dict, seed_key: str, avoid_text: str = "",
     #   여기서는 **가벼운 모드** — 프롬프트가 8KB 라 매 예제마다 일반 식별자 정규식으로
     #   훑으면 비용이 크다. 정해진 형태(`[TfCLG]\d+`)만 본다.
     alloc = NameAllocator.from_pattern(
-        avoid_text or "", r"\b[TfCLGK]\d+\b",
+        avoid_text or "", r"(?<![\w'])_[TfCLGK]\d+(?![\w'])",
         extra=(set(names) | set(ctors) | set(prem_names) | set(ltac_ns)
                | ({thm} if thm else set())))
 
@@ -372,28 +372,39 @@ def build_mapping(injected: dict, seed_key: str, avoid_text: str = "",
         nm = alloc.alloc(prefix, start=k)
         return nm, int(nm[len(prefix):]) + 1
 
+    # ★★ **접두사에 `_` 를 붙인다.** `T1`·`f0`·`L3` 는 실제 Coq 선언 이름과 **같은 꼴**이라
+    #   충돌한다. 코퍼스 전수: 익명형 실명 873개 · 120종 · 91개 프로젝트
+    #   (L1 73회 · L2 56 · L3 49 · f1 27 …). 할당기는 낮은 인덱스부터 쓰므로
+    #   정확히 겹치는 구간이다. 실측 잔여 충돌률 **56/160 = 35.0%**(TEST).
+    #
+    #   충돌하면 역익명화가 **옳은 이름을 틀린 이름으로** 바꾼다 —
+    #   실측: gold 의 진짜 `T1` 이 `Reducef` 로 오염됐다(idx=161315).
+    #
+    #   `_` 접두사는 그 부류를 통째로 없앤다:
+    #     · Coq 이 `_L0`·`_T1`·`_f2` 를 정상 식별자로 받는다 (coqc 8.18 확인)
+    #     · 코퍼스 582,037 문장에 `_[TfCLGK]\d+` 꼴이 **0개** (선언도 본문도)
     # 결정적 순서(등장순) — 해시로 섞으면 예제마다 달라져 학습이 불안정
     mapping = {}
     n_t = n_f = n_c = 0
     for n in names:
         if n[0].isupper():
-            mapping[n], n_t = fresh("T", n_t)
+            mapping[n], n_t = fresh("_T", n_t)
         else:
-            mapping[n], n_f = fresh("f", n_f)
+            mapping[n], n_f = fresh("_f", n_f)
     for c in ctors:
-        mapping[c], n_c = fresh("C", n_c)
+        mapping[c], n_c = fresh("_C", n_c)
     # ★ premise lemma 는 **L** 접두사 — 타입(T)·함수(f)·생성자(C)와 구분해 모델이
     #   "이건 인용할 lemma 다"를 형태로 알 수 있게 한다.
     n_l = 0
     for pn in prem_names:
-        mapping[pn], n_l = fresh("L", n_l)
+        mapping[pn], n_l = fresh("_L", n_l)
     # ★ 파일 내 Ltac 은 **K** 접두사 — tactic 자리에 오는 것이라 lemma(L) 와 구분한다.
     n_k = 0
     for ln in ltac_ns:
-        mapping[ln], n_k = fresh("K", n_k)
+        mapping[ln], n_k = fresh("_K", n_k)
     # 증명 중인 정리는 **G**(goal) — 하나뿐이라 번호는 0 에서 시작
     if thm:
-        mapping[thm], _ = fresh("G", 0)
+        mapping[thm], _ = fresh("_G", 0)
     return mapping
 
 
