@@ -1,0 +1,75 @@
+########## EQX_TAU=1.0  (eqx) ##########
+   [v9_env] 38개 적용: ADMIT_MIN_FILES=2 AUGMENT_V2=1 CUTS_PATH=data/cut_plans_all.jsonl CUT_DROP_HOPELESS=1 DEFS_TOKENS=300 DP_CACHE_SIZE=2048 …
+■ 검색 비용 분해   data_points 13,896 파일 · stage1=5,000
+
+   [compcert] 파일 214개
+   ── compcert  (스텝 60)
+      풀 크기   중앙 2,544 · 최소 0 · 최대 4,209
+      ① 풀 조립                   6.80 ms    21.5%
+      ② premise 토큰화            6.45 ms    20.4%
+      ③ tfidf                  6.46 ms    20.5%
+      ④ eqx 재랭킹               11.86 ms    37.6%
+      합계                      31.57 ms   (중앙 23.6 ms)
+
+   ── 전체 무작위(대조)  (스텝 60)
+      풀 크기   중앙 0 · 최소 0 · 최대 2,255
+      ① 풀 조립                   0.87 ms    17.8%
+      ② premise 토큰화            0.61 ms    12.5%
+      ③ tfidf                  0.66 ms    13.6%
+      ④ eqx 재랭킹                2.73 ms    56.1%
+      합계                       4.86 ms   (중앙 0.2 ms)
+
+■ 캐시 워밍 후 (추론 조건)
+
+   ── compcert (캐시 워밍 후)
+      스텝 38 × 2회
+      1회차  전체  23.30 ms · eqx   5.83 ms
+      2회차  전체  19.31 ms · eqx   5.41 ms   ← 추론의 실제 조건
+      eqx 비중  1회차 25.0%  →  2회차 28.0%
+
+■ 요약
+   프로젝트                        풀(중앙)    ③ tfidf      ④ eqx         합계  eqx 비중
+   compcert                    2,544      6.46ms     11.86ms     31.57ms    37.6%
+   전체 무작위(대조)                      0      0.66ms      2.73ms      4.86ms    56.1%
+
+   ※ ④ 는 stage1 상한이 걸려 풀이 커져도 안 는다. ②③ 은 풀에 비례한다.
+     → 풀이 클수록 eqx 비중은 **줄어든다**. eqx 를 빼도 그만큼밖에 못 줄인다.
+
+########## EQX_TAU=0.7  (afh70) ##########
+   [v9_env] 38개 적용: ADMIT_MIN_FILES=2 AUGMENT_V2=1 CUTS_PATH=data/cut_plans_all.jsonl CUT_DROP_HOPELESS=1 DEFS_TOKENS=300 DP_CACHE_SIZE=2048 …
+■ 검색 비용 분해   data_points 13,896 파일 · stage1=5,000
+
+   [compcert] 파일 214개
+   ── compcert  (스텝 60)
+      풀 크기   중앙 2,544 · 최소 0 · 최대 4,209
+      ① 풀 조립                   6.99 ms    17.9%
+      ② premise 토큰화            6.56 ms    16.8%
+      ③ tfidf                  6.62 ms    16.9%
+      ④ eqx 재랭킹               18.88 ms    48.4%
+      합계                      39.05 ms   (중앙 30.9 ms)
+
+   ── 전체 무작위(대조)  (스텝 60)
+      풀 크기   중앙 0 · 최소 0 · 최대 2,255
+      ① 풀 조립                   0.90 ms    16.2%
+      ② premise 토큰화            0.60 ms    10.7%
+      ③ tfidf                  0.68 ms    12.2%
+      ④ eqx 재랭킹                3.39 ms    60.8%
+      합계                       5.57 ms   (중앙 0.2 ms)
+
+■ 캐시 워밍 후 (추론 조건)
+
+   ── compcert (캐시 워밍 후)
+      스텝 38 × 2회
+      1회차  전체  31.72 ms · eqx  13.84 ms
+      2회차  전체  27.73 ms · eqx  13.34 ms   ← 추론의 실제 조건
+      eqx 비중  1회차 43.6%  →  2회차 48.1%
+
+■ 요약
+   프로젝트                        풀(중앙)    ③ tfidf      ④ eqx         합계  eqx 비중
+   compcert                    2,544      6.62ms     18.88ms     39.05ms    48.4%
+   전체 무작위(대조)                      0      0.68ms      3.39ms      5.57ms    60.8%
+
+   ※ ④ 는 stage1 상한이 걸려 풀이 커져도 안 는다. ②③ 은 풀에 비례한다.
+     → 풀이 클수록 eqx 비중은 **줄어든다**. eqx 를 빼도 그만큼밖에 못 줄인다.
+
+[BENCH_DONE]

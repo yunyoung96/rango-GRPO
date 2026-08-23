@@ -1,0 +1,64 @@
+##### ① 데이터 경로 스모크 (v9_env 없이) #####
+   [v9_env] 3개 적용: HF_HUB_OFFLINE=1 PYTORCH_ALLOC_CONF=expandable_segments:True TOKENIZERS_PARALLELISM=false
+■ TRAIN 총 2,009,606 스텝 · 표본 300 · hard_seq_len 2048
+
+   … 100/300 (51s)
+   … 200/300 (91s)
+   … 300/300 (127s)
+
+■ 결과 (예제 300 · 127s)
+
+       └ final (H_asrt 를 쓴다)               4  (  1.3%)
+       ├ assert (명제를 세운다)                  6  (  2.0%)
+     §DEFINITIONS                        241  ( 80.3%)
+     §LTAC                                40  ( 13.3%)
+     §NOTATION                           113  ( 37.7%)
+     §PREMISES                           300  (100.0%)
+     §PROOFS                             300  (100.0%)
+     §SCRIPT                             300  (100.0%)
+     §STATE                              300  (100.0%)
+     §TYPES                              186  ( 62.0%)
+     ⚠ hard_seq_len 초과                    39  ( 13.0%)
+   ★ cut — assert/final                   10  (  3.3%)
+   ★ cut 후보 — close(exact L) 형태            6  (  2.0%)
+   예제                                    300  (100.0%)
+   정규화 적용                                295  ( 98.3%)
+
+   ■ 무작위성 — 서로 다른 파일 **284개** / 예제 300개  (한 파일 최다 3회)
+      방문 순서 앞 12개: Picinae_slogic.v · Rat.v · ListLemma.v · interval_discr.v · Regular.v · Fib.v · SemEquiv.v · CRabs.v · Aczel_CE.v · ValidPTy.v · nat_bin_nat.v · Intervals.v
+
+   ■ 길이  중앙 1656 · p90 2105 · p99 2670 · 최대 2685   (상한 2048)
+
+   ■ 폐기  DROP_HALLUC 7건 · uncovered 0건
+
+##### ② 정규화 누수 검증 · TRAIN #####
+
+■ TRAIN · 예제 120
+
+     └ 선언은 없지만 프롬프트엔 있음                        2
+     └ 프롬프트에 선언 있음                            17
+   A 학습 프롬프트 env 무관 (동일)                     120
+   B normalize=False 는 매핑 없음                 120
+   C (매핑할 이름 없음/꺼짐)                            2
+   C 기본값이 정규화 켬                              118
+   D 정답의 익명 토큰                                19
+   예제                                        120
+
+   ✅ 이상 없음
+
+##### ③ 정규화 누수 검증 · TEST #####
+Traceback (most recent call last):
+  File "/app/coq-modeling/scripts/verify_norm_isolation.py", line 52, in <module>
+    ds = LmDataset.from_conf(conf, getattr(Split, SPLIT), None)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/coq-modeling/src/tactic_gen/tactic_data.py", line 2439, in from_conf
+    return cls(
+           ^^^^
+  File "/app/coq-modeling/src/tactic_gen/tactic_data.py", line 1966, in __init__
+    self.__check_cut_coverage()
+  File "/app/coq-modeling/src/tactic_gen/tactic_data.py", line 1993, in __check_cut_coverage
+    f"   파일        {os.environ['CUTS_PATH']}\n"
+                      ~~~~~~~~~~^^^^^^^^^^^^^
+  File "<frozen os>", line 679, in __getitem__
+KeyError: 'CUTS_PATH'
+[FINAL_DONE]

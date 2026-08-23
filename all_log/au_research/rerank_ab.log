@@ -1,0 +1,78 @@
+##### RERANK_PREMISES=1 (현재) #####
+
+★ cut 파일 커버리지 부족 — 조용히 기능이 죽는다.
+   파일        data/cut_plans_all.jsonl
+   스캔 범위    [0, 0)
+   필요 범위    [0, 177,207)   (Split.TEST)
+   범위 밖 스텝은 cut 치환도 CUT_DROP_HOPELESS 도 작동하지 않는다.
+   메우려면:  python3 scripts/build_cuts.py 197207 test <out> 0
+   (의도한 부분 실행이면 CUTS_ALLOW_PARTIAL=1)
+
+   … 200/400 (201s)
+   … 400/400 (383s)
+
+■ TEST/AbsInt-CompCert · AUGMENT_V2=1 · 예제 400
+
+     (형태) 실명                            99  (100.0%)
+     ① 패킹에서 탈락 (검색엔 있었다)                76  ( 76.8%)
+     ② 절단에서 탈락 (프롬프트엔 있었다)               2  (  2.0%)
+     ③ 검색에도 없다                          21  ( 21.2%)
+   2048 초과                              96  ( 24.0%)
+   ★ [PREMISES] 헤더가 절단됨                 96  ( 24.0%)
+   ★ 결손 이름                              99  ( 24.8%)
+   예제                                  400  (100.0%)
+   평균 토큰                                1803
+      ltu_inv                ← generalize (ltu_inv _ _ H).
+      Vlong                  ← assert (y = Vlong n2) by (eapply is_longconst_sound; eauto).
+      frame_contents_incr    ← apply frame_contents_incr with j; auto.
+      for_all_between_iff    ← rewrite EqSet.for_all_between_iff in H.
+      bits_shru              ← rewrite bits_shru; auto.
+      ulp_neq_0              ← rewrite 2!ulp_neq_0.
+      eval_helper_1          ← eapply (eval_helper_1 (BI_standard BI_i64_stod)); eauto.
+      BI_i64_stod            ← eapply (eval_helper_1 (BI_standard BI_i64_stod)); eauto.
+      sub_add_opp            ← rewrite Int64.sub_add_opp; auto.
+      transf_final_states    ← eapply transf_final_states; eauto.
+      pos_pow_spec           ← rewrite pos_pow_spec.
+      next_field             ← unfold next_field.
+      Cur                    ← destruct (Mem.range_perm_dec m1 b ofs (ofs + n) Cur Readable
+      transition             ← unfold transition.
+
+##### RERANK_PREMISES=0 #####
+
+★ cut 파일 커버리지 부족 — 조용히 기능이 죽는다.
+   파일        data/cut_plans_all.jsonl
+   스캔 범위    [0, 0)
+   필요 범위    [0, 177,207)   (Split.TEST)
+   범위 밖 스텝은 cut 치환도 CUT_DROP_HOPELESS 도 작동하지 않는다.
+   메우려면:  python3 scripts/build_cuts.py 197207 test <out> 0
+   (의도한 부분 실행이면 CUTS_ALLOW_PARTIAL=1)
+
+   … 200/400 (197s)
+   … 400/400 (377s)
+
+■ TEST/AbsInt-CompCert · AUGMENT_V2=1 · 예제 400
+
+     (형태) 실명                           101  (100.0%)
+     ① 패킹에서 탈락 (검색엔 있었다)                79  ( 78.2%)
+     ② 절단에서 탈락 (프롬프트엔 있었다)               1  (  1.0%)
+     ③ 검색에도 없다                          21  ( 20.8%)
+   2048 초과                              91  ( 22.8%)
+   ★ [PREMISES] 헤더가 절단됨                 90  ( 22.5%)
+   ★ 결손 이름                             101  ( 25.2%)
+   예제                                  400  (100.0%)
+   평균 토큰                                1802
+      ltu_inv                ← generalize (ltu_inv _ _ H).
+      Vlong                  ← assert (y = Vlong n2) by (eapply is_longconst_sound; eauto).
+      frame_contents_incr    ← apply frame_contents_incr with j; auto.
+      for_all_between_iff    ← rewrite EqSet.for_all_between_iff in H.
+      bits_shru              ← rewrite bits_shru; auto.
+      ulp_neq_0              ← rewrite 2!ulp_neq_0.
+      eval_helper_1          ← eapply (eval_helper_1 (BI_standard BI_i64_stod)); eauto.
+      BI_i64_stod            ← eapply (eval_helper_1 (BI_standard BI_i64_stod)); eauto.
+      sub_add_opp            ← rewrite Int64.sub_add_opp; auto.
+      transf_final_states    ← eapply transf_final_states; eauto.
+      pos_pow_spec           ← rewrite pos_pow_spec.
+      next_field             ← unfold next_field.
+      Cur                    ← destruct (Mem.range_perm_dec m1 b ofs (ofs + n) Cur Readable
+      transition             ← unfold transition.
+[RR_DONE]

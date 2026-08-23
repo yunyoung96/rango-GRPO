@@ -87,6 +87,9 @@ ap.add_argument("--budget", type=int, default=0,
                 help="premise 토큰 예산. 0 이면 conf 값(896). "
                      "★ 이 값을 넘으면 프롬프트에서 잘린다")
 ap.add_argument("--out", default="")
+# ★ 프로젝트 한정 측정 — held-out 벤치마크(CompCert)만 떼어 A/C 를 보려면 필요하다.
+ap.add_argument("--proj", default="",
+                help="파일 경로에 이 문자열이 든 예제만 (예: AbsInt-CompCert)")
 A = ap.parse_args()
 SPLIT = A.split.upper()
 BUDGET = A.budget or 896      # conf 의 premise_tokens
@@ -1122,6 +1125,8 @@ for i in range(200000):
     if not golds:
         continue
     sid = ds.shuffled_idx.get_idx(ds.split, i)
+    if A.proj and A.proj not in str(sid.file):
+        continue
     try:
         dp = DatasetFile.load(conf.data_loc / "data_points" / sid.file, sdb)
         proof = dp.proofs[sid.proof_idx]

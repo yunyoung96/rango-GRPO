@@ -1,4 +1,5 @@
 from __future__ import annotations
+import rango_defaults as _D   # ★ 프로덕션 기본값 단일 출처
 from typing import Any, Optional
 from enum import Enum
 import sys, os
@@ -798,10 +799,10 @@ class DPCache:
     def __init__(self, cache_size: int | None = None):
         import collections as _c
         if cache_size is None:
-            cache_size = int(os.environ.get("DP_CACHE_SIZE", "128"))
+            cache_size = _D.num("DP_CACHE_SIZE")
         else:
             # 명시 크기를 줬어도 환경변수로 키울 수 있게 한다(학습에서 일괄 조절)
-            cache_size = max(cache_size, int(os.environ.get("DP_CACHE_SIZE", "0")))
+            cache_size = max(cache_size, _D.num("DP_CACHE_SIZE"))
         self.__cached_dps: "_c.OrderedDict[str, DatasetFile]" = _c.OrderedDict()
         self.__cache_size = cache_size
 

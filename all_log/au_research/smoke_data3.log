@@ -1,0 +1,32 @@
+   [v9_env] 38개 적용: ADMIT_MIN_FILES=2 AUGMENT_V2=1 CUTS_PATH=data/cut_plans_all.jsonl CUT_DROP_HOPELESS=1 DEFS_TOKENS=300 DP_CACHE_SIZE=2048 …
+■ TRAIN 총 2,009,606 스텝 · 표본 400 · hard_seq_len 2048
+
+   … 100/400 (48s)
+   … 200/400 (83s)
+   … 300/400 (117s)
+   … 400/400 (147s)
+
+■ 결과 (예제 400 · 147s)
+
+       └ final (H_asrt 를 쓴다)               9  (  2.2%)
+       ├ assert (명제를 세운다)                 13  (  3.2%)
+     §DEFINITIONS                        337  ( 84.2%)
+     §LTAC                                56  ( 14.0%)
+     §NOTATION                           145  ( 36.2%)
+     §PREMISES                           400  (100.0%)
+     §PROOFS                             400  (100.0%)
+     §SCRIPT                             400  (100.0%)
+     §STATE                              400  (100.0%)
+     §TYPES                              226  ( 56.5%)
+     ⚠ hard_seq_len 초과                    38  (  9.5%)
+   ★ cut — assert/final                   22  (  5.5%)
+   ★ cut 후보 — close(exact L) 형태            8  (  2.0%)
+   예제                                    400  (100.0%)
+   정규화 적용                                392  ( 98.0%)
+
+   ■ 무작위성 — 서로 다른 파일 **358개** / 예제 400개  (한 파일 최다 4회)
+      방문 순서 앞 12개: FunctSequence.v · ListSetExtras.v · ReflectiveSubuniverse.v · Callset.v · E1_formula.v · Imp.v · Wand.v · State.v · ConstructiveUniformCont.v · DependentChoice.v · propositional_logic_1.v · LegacyRing_theory.v
+
+   ■ 길이  중앙 1586 · p90 2036 · p99 2608 · 최대 2684   (상한 2048)
+
+   ■ 폐기  DROP_HALLUC 5건 · uncovered 0건

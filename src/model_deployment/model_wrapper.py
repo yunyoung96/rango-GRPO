@@ -1,4 +1,5 @@
 from __future__ import annotations
+import rango_defaults as _D   # ★ 프로덕션 기본값 단일 출처
 from typing import Any, Callable, Optional
 from pathlib import Path
 import yaml
@@ -223,7 +224,7 @@ class DecoderLocalWrapper:
         #   normalize_inference=False 를 주거나 NORMALIZE_INFERENCE=0 을 준다.
         self.normalize_inference = (
             bool(normalize_inference) if normalize_inference is not None
-            else os.environ.get("NORMALIZE_INFERENCE", "1") == "1")
+            else _D.flag("NORMALIZE_INFERENCE"))
 
     def get_recs(
         self,

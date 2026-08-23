@@ -1,0 +1,21 @@
+
+★ cut 파일 커버리지 부족 — 조용히 기능이 죽는다.
+   파일        data/cut_plans_all.jsonl
+   스캔 범위    [0, 0)
+   필요 범위    [0, 177,207)   (Split.TEST)
+   범위 밖 스텝은 cut 치환도 CUT_DROP_HOPELESS 도 작동하지 않는다.
+   메우려면:  python3 scripts/build_cuts.py 197207 test <out> 0
+   (의도한 부분 실행이면 CUTS_ALLOW_PARTIAL=1)
+
+  [9829] 'ltu_inv'  정규화ON만 결손 · 매핑에 있나=False (값 None) · 토큰 1599
+  [21457] 'bits_shru'  정규화ON만 결손 · 매핑에 있나=False (값 None) · 토큰 1821
+  [117659] 'eval_helper_1'  정규화ON만 결손 · 매핑에 있나=False (값 None) · 토큰 2025
+  [146296] 'sub_add_opp'  정규화ON만 결손 · 매핑에 있나=False (값 None) · 토큰 2556
+  [150215] 'transf_final_states'  정규화ON만 결손 · 매핑에 있나=False (값 None) · 토큰 2069
+  [169640] 'pos_pow_spec'  정규화ON만 결손 · 매핑에 있나=False (값 None) · 토큰 1955
+  [144236] 'eval_static_condition_sound'  정규화ON만 결손 · 매핑에 있나=False (값 None) · 토큰 2016
+  [46194] 'Mptr'  정규화ON만 결손 · 매핑에 있나=False (값 None) · 토큰 1929
+
+■ CompCert 250예제  결손 합계: 정규화ON 63 · OFF 33
+   ON 에서만 결손인 이름 30건 · 서로다른 30개
+   상위: [('ltu_inv', 1), ('bits_shru', 1), ('eval_helper_1', 1), ('sub_add_opp', 1), ('transf_final_states', 1), ('pos_pow_spec', 1), ('eval_static_condition_sound', 1), ('Mptr', 1), ('B2BSN_BSN2B', 1), ('Bnearbyint', 1)]

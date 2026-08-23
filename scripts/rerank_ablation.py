@@ -71,7 +71,7 @@ _probe_on = TD.rerank_premises.__doc__ is not None
 from premise_selection import premise_client as PC  # noqa: E402
 import inspect  # noqa: E402
 _src = inspect.getsource(PC.SparseClient.get_premise_scores)
-print(f"   [{'✓' if 'RETRIEVAL_MODE' in _src else '✗'}] SparseClient 가 RETRIEVAL_MODE 를 읽는다")
+print(f"   [{'✓' if 'retrieval_mode()' in _src else '✗'}] SparseClient 가 retrieval_mode() 를 쓴다")
 print(f"   [{'✓' if 'PREMISE_PACK_SKIP' in inspect.getsource(TD.whole_number_allocate) else '✗'}]"
       f" 담기가 skip 방식이다")
 print(f"   [{'✓' if _probe_on else '✗'}] rerank_premises 존재")

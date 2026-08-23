@@ -1,0 +1,42 @@
+   [v9_env] 32개 적용: AUGMENT_V2=1 CUTS_PATH=data/cut_plans_all.jsonl CUT_DROP_HOPELESS=1 DEFS_TOKENS=300 DP_CACHE_SIZE=2048 DYNAMIC_PADDING=1 …
+
+★ cut 파일 커버리지 부족 — 조용히 기능이 죽는다.
+   파일        data/cut_plans_all.jsonl
+   스캔 범위    [0, 0)
+   필요 범위    [0, 177,207)   (Split.TEST)
+   범위 밖 스텝은 cut 치환도 CUT_DROP_HOPELESS 도 작동하지 않는다.
+   메우려면:  python3 scripts/build_cuts.py 197207 test <out> 0
+   (의도한 부분 실행이면 CUTS_ALLOW_PARTIAL=1)
+
+   … 200/500 (209s)
+   … 300/500 (292s)
+   … 500/500 (471s)
+
+■ 결과 (예제 500)
+
+     (SSReflect) 외부참조 쓰는 예제                1
+     (stdlib — 안다고 가정)                    26
+     (참고) stdlib 포함하면 결손 있는 예제            48
+     (참고) 그 tactic 이름도 안 보임                2
+     (참고) 정답 첫 토큰이 비표준 tactic             28
+     ├ 비-SSReflect 환각                     23
+     안 보이는 이름 수                           23
+     외부 참조 없음                            301
+     외부 참조 이름 수                          294
+   ★ 외부 참조를 쓰는 예제                        199
+   ★★ 그중 환각(하나라도 안 보임)                    23
+   예제                                    500
+
+   ★★ **외부 참조를 쓰는 예제 중 환각** 23/199 = 11.6%
+   (참고) 전체 예제 대비 4.6%
+
+   ■ 이름 종류별  (안 보임 / 전체)
+     Theorem              7 /    18  ( 38.9% 안 보임)  결손 중  30.4%
+     Lemma                5 /    41  ( 12.2% 안 보임)  결손 중  21.7%
+     Field                3 /    52  (  5.8% 안 보임)  결손 중  13.0%
+     Constructor          2 /    30  (  6.7% 안 보임)  결손 중   8.7%
+     Definition           2 /    88  (  2.3% 안 보임)  결손 중   8.7%
+     Axiom                2 /    34  (  5.9% 안 보임)  결손 중   8.7%
+     Remark               2 /     4  ( 50.0% 안 보임)  결손 중   8.7%
+     미상                   0 /    16  (  0.0% 안 보임)  결손 중   0.0%
+     Fixpoint             0 /    11  (  0.0% 안 보임)  결손 중   0.0%

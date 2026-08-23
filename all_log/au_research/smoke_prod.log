@@ -1,0 +1,31 @@
+   [v9_env] 33개 적용: ADMIT_MIN_FILES=2 AUGMENT_V2=1 CUTS_PATH=data/cut_plans_all.jsonl CUT_DROP_HOPELESS=1 DEFS_TOKENS=300 DP_CACHE_SIZE=2048 …
+■ TRAIN 총 2,009,606 스텝 · 표본 300 · hard_seq_len 2048
+
+   … 100/300 (51s)
+   … 200/300 (91s)
+   … 300/300 (118s)
+
+■ 결과 (예제 300 · 118s)
+
+       └ final (H_asrt 를 쓴다)               6  (  2.0%)
+       ├ assert (명제를 세운다)                  7  (  2.3%)
+     §DEFINITIONS                        240  ( 80.0%)
+     §LTAC                                44  ( 14.7%)
+     §NOTATION                           128  ( 42.7%)
+     §PREMISES                           300  (100.0%)
+     §PROOFS                             300  (100.0%)
+     §SCRIPT                             300  (100.0%)
+     §STATE                              300  (100.0%)
+     §TYPES                              165  ( 55.0%)
+     ⚠ hard_seq_len 초과                    23  (  7.7%)
+   ★ cut — assert/final                   13  (  4.3%)
+   ★ cut 후보 — close(exact L) 형태            7  (  2.3%)
+   예제                                    300  (100.0%)
+   정규화 적용                                296  ( 98.7%)
+
+   ■ 무작위성 — 서로 다른 파일 **281개** / 예제 300개  (한 파일 최다 2회)
+      방문 순서 앞 12개: Tactics.v · VTowerFinNotation.v · E2_automatic.v · Tanhinmin.v · Scott_Con_KB.v · Basics.v · group2.v · goal75.v · EnsembleMonad.v · RBT.v · nat.v · RealCount.v
+
+   ■ 길이  중앙 1506 · p90 2003 · p99 2682 · 최대 2707   (상한 2048)
+
+   ■ 폐기  DROP_HALLUC 6건 · uncovered 0건

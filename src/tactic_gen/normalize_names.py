@@ -36,6 +36,7 @@
     정답 tactic 이 치환된 이름을 쓰는 예제  93/377 = 25%  ← 이 25%가 강한 압력을 받는다
 """
 from __future__ import annotations
+import rango_defaults as _D   # ★ 프로덕션 기본값 단일 출처
 
 import hashlib
 import json
@@ -97,7 +98,7 @@ def _index() -> dict:
     """정의 인덱스 — '프로젝트 정의'인지 판정하는 데 쓴다."""
     global _IDX
     if _IDX is None:
-        path = os.environ.get("FUNC_DEFS_PATH", "data/func_defs_v3.json")
+        path = _D.get("FUNC_DEFS_PATH")
         try:
             with open(path) as f:
                 _IDX = json.load(f)
@@ -136,7 +137,7 @@ def _stdlib_names() -> set:
 
 def is_stdlib_name(name: str) -> bool:
     """표준 라이브러리 전용 이름인가 (익명화 제외 대상)."""
-    if os.environ.get("NORMALIZE_SKIP_STDLIB", "1") != "1":
+    if (not _D.flag("NORMALIZE_SKIP_STDLIB")):
         return False
     n = (name or "").split(".")[-1]
     return n in _stdlib_names()
@@ -265,9 +266,9 @@ def build_mapping(injected: dict, seed_key: str, avoid_text: str = "",
     # ★ 주입 정의가 없어도 premise·정리 이름은 정규화 대상이다(v7/v8).
     #   예전엔 여기서 즉시 반환해 [TYPES]/[DEFINITIONS] 가 빈 예제는 premise 정규화가
     #   **조용히 건너뛰어졌다**.
-    if not injected and os.environ.get("NORMALIZE_PREMISES", "0") != "1" \
-            and os.environ.get("NORMALIZE_THEOREM", "0") != "1" \
-            and os.environ.get("NORMALIZE_LTAC", "0") != "1":
+    if not injected and (not _D.flag("NORMALIZE_PREMISES")) \
+            and (not _D.flag("NORMALIZE_THEOREM")) \
+            and (not _D.flag("NORMALIZE_LTAC")):
         return {}
     injected = injected or {}
     names = []
@@ -285,7 +286,7 @@ def build_mapping(injected: dict, seed_key: str, avoid_text: str = "",
     # ★ v7: [PREMISES] 의 lemma 이름도 대상에 넣는다(NORMALIZE_PREMISES=1 일 때만).
     #   주입 정의 이름과 겹치면 그쪽 매핑을 따른다(중복 금지).
     prem_names = []
-    if os.environ.get("NORMALIZE_PREMISES", "0") == "1":
+    if _D.flag("NORMALIZE_PREMISES"):
         for pn in premise_names(premises):
             # ★ renameable() 을 쓰면 안 된다 — 그건 **정의 인덱스(func_defs)** 에 있는 이름만
             #   허용하는데 premise 는 lemma 라 인덱스에 없다(실측: 235건 중 134건이 이 필터에
@@ -315,7 +316,7 @@ def build_mapping(injected: dict, seed_key: str, avoid_text: str = "",
     #   notation 이 가린 이름은 반대로 회상이 없으므로 **대상에 넣지 않는다** —
     #   막을 게 없는데 "뜻 있는 이름" 신호만 잃는 순손실이다.
     ltac_ns = []
-    if os.environ.get("NORMALIZE_LTAC", "0") == "1":
+    if _D.flag("NORMALIZE_LTAC"):
         for t in (ltac_names or []):
             m = re.match(r"\s*(?:Ltac|Ltac2)\s+([A-Za-z_][\w']*)", t if isinstance(t, str) else "")
             if not m:
@@ -329,7 +330,7 @@ def build_mapping(injected: dict, seed_key: str, avoid_text: str = "",
     global LAST_THM_DECL
     LAST_THM_DECL = None
     thm = None
-    if os.environ.get("NORMALIZE_THEOREM", "0") == "1":
+    if _D.flag("NORMALIZE_THEOREM"):
         t = theorem_name(proof_script or "")
         if t and t not in names and t not in ctors:
             # ★★ **동명 선언이 프롬프트에 둘 이상이면 매핑하지 않는다.**
@@ -635,7 +636,7 @@ def should_normalize(key: str) -> bool:
     ★ 전부 정규화하면 테스트(실제 이름)와 분포가 어긋난다. 섞어야 모델이 메커니즘을 배우고
       실제 이름에도 적용한다.
     """
-    rate = float(os.environ.get("NORMALIZE_RATE", "0.5"))
+    rate = _D.fnum("NORMALIZE_RATE")
     if rate <= 0:
         return False
     if rate >= 1:

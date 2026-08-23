@@ -1,0 +1,38 @@
+
+★ cut 파일 커버리지 부족 — 조용히 기능이 죽는다.
+   파일        data/cut_plans_all.jsonl
+   스캔 범위    [0, 0)
+   필요 범위    [0, 177,207)   (Split.TEST)
+   범위 밖 스텝은 cut 치환도 CUT_DROP_HOPELESS 도 작동하지 않는다.
+   메우려면:  python3 scripts/build_cuts.py 197207 test <out> 0
+   (의도한 부분 실행이면 CUTS_ALLOW_PARTIAL=1)
+
+   … 250/500 (240s)
+   … 500/500 (444s)
+
+■ 결과 (예제 500)
+
+       (참고) 선언 자체가 검색에 있음                             92   70.2%
+     ① 검색 100개 어디에도 없다                                16   12.2%
+     ② ★패킹 손실 — 상위 22위 안인데 프롬프트에 없다                   96   73.3%
+     ③ 23위 밖 — 순위 문제                                  19   14.5%
+   ★ 결손 이름                                           131
+   예제                                                500
+
+   ■ 패킹 손실 표본
+      typ_eq                 순위  13(선언 13) ← destruct (typ_eq t1 t2); inv H; auto.
+        premise: Lemma typ_eq: forall (t1 t2: typ), {t1=t2} + {t1<>t2}.
+      bmatch                 순위   2(선언 2) ← unfold bmatch.
+        premise: Definition bmatch (m: mem) (b: block) (ab: ablock) : Prop := smatch m b ab.(ab_summary) /\
+      round_odd_fix          순위   2(선언 2) ← apply round_odd_fix.
+        premise: Corollary round_odd_fix: forall x p choice, prec > 1 -> 0 <= p -> (bpow radix2 (prec + p +
+      nextinstr              순위   1(선언 34) ← set (rs' := nextinstr (compare_longs v1 v2 rs m)).
+        premise: Lemma nextinstr_inv1: forall r rs, data_preg r = true -> (nextinstr rs)#r = rs#r.
+      compare_longs          순위  16(선언 None) ← set (rs' := nextinstr (compare_longs v1 v2 rs m)).
+        premise: Lemma compare_longs_spec: forall rs v1 v2 m, let rs' := nextinstr (compare_longs v1 v2 rs 
+      sd_determ_3            순위   1(선언 1) ← exploit (sd_determ_3 L1det).
+        premise: Lemma sd_determ_3: forall s t s1 s2, Step L s t s1 -> Step L s E0 s2 -> t = E0 /\ s1 = s2.
+      perm_storebytes_2      순위   8(선언 8) ← eapply perm_storebytes_2; eauto.
+        premise: Theorem perm_storebytes_2: forall b' ofs' k p, perm m2 b' ofs' k p -> perm m1 b' ofs' k p.
+      round                  순위   2(선언 30) ← unfold round, F2R, scaled_mantissa, cexp; simpl.
+        premise: Theorem cexp_DN : forall x, (0 < round Zfloor x)%R -> cexp (round Zfloor x) = cexp x.

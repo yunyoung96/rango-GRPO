@@ -1,4 +1,5 @@
 from __future__ import annotations
+import rango_defaults as _D   # ★ 프로덕션 기본값 단일 출처
 from typing import Any, Optional
 import ipdb
 
@@ -133,7 +134,7 @@ def _used_names() -> dict:
 
 def admit_by_usage(premise) -> bool:
     """제외 종류이지만 **프로젝트에서 실제로 tactic 인자로 쓰인** premise 인가."""
-    if os.environ.get("PREMISE_ADMIT_USED", "0") != "1":
+    if (not _D.flag("PREMISE_ADMIT_USED")):
         return False
     idx = _used_names()
     if not idx:
@@ -151,7 +152,7 @@ def admit_by_usage(premise) -> bool:
     if not v:
         return False
     n, nf = (v if isinstance(v, list) else [v, 99])
-    return (nf >= int(os.environ.get("ADMIT_MIN_FILES", "2"))
+    return (nf >= _D.num("ADMIT_MIN_FILES")
             and n >= int(os.environ.get("ADMIT_MIN_USES", "1")))
 
 

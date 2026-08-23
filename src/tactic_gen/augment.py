@@ -1,4 +1,5 @@
 import os
+import rango_defaults as _D   # ★ 프로덕션 기본값 단일 출처
 """rango-augmented 구조컨텍스트 생성 — 학습·추론·스크립트가 공유하는 canonical 로직.
 train/infer 동일 규칙 보장(REVIEW.md R1). CPU only.
 
@@ -27,12 +28,14 @@ def _bad_head(h):
     #   실측: 후보 풀의 92.7% 가 stdlib. [PREMISES] 예산이 빡빡해
     #   프롬프트에 10~22개만 들어가는 상황이라 이 절약이 직접적으로 도움이 된다.
     #   끄려면 INJECT_SKIP_STDLIB=0.
-    if os.environ.get("INJECT_SKIP_STDLIB", "1") == "1":
+    if _D.flag("INJECT_SKIP_STDLIB"):
         try:
             from tactic_gen.normalize_names import is_stdlib_name
             import os as _os
+            # ★ 이 판정은 정규화 설정과 **독립**이어야 한다 — 잠시 강제로 켠다.
+            #   (읽기는 rango_defaults 를 쓰지만, 여기는 **쓰기**라 env 를 직접 만진다)
             _prev = _os.environ.get("NORMALIZE_SKIP_STDLIB")
-            _os.environ["NORMALIZE_SKIP_STDLIB"] = "1"   # 이 판정은 정규화 설정과 독립
+            _os.environ["NORMALIZE_SKIP_STDLIB"] = "1"
             r = is_stdlib_name(s)
             if _prev is None:
                 _os.environ.pop("NORMALIZE_SKIP_STDLIB", None)

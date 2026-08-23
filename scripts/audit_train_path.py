@@ -44,7 +44,8 @@ for k, v in dict(AUGMENT_V2="1", RERANK_PREMISES="1", INJECT_TYPES="1", INJECT_D
                  AUG_OUT_TOKENS="128", FUNC_DEFS_PATH="data/func_defs_v3.json",
                  NORMALIZE_NAMES="1", NORMALIZE_RATE="1.0", NORMALIZE_PREMISES="1",
                  NORMALIZE_THEOREM="1", NORMALIZE_SKIP_STDLIB="1", INJECT_SKIP_STDLIB="1",
-                 RETRIEVAL_MODE="eqx", RETRIEVAL_STAGE1="5000",
+                 RETRIEVAL_STAGE1="5000",   # ★ RETRIEVAL_MODE 는 안 박는다 —
+                 #   premise_client.DEFAULT_RETRIEVAL_MODE 가 단일 출처다.
                  PREMISE_PACK="hybrid", PREMISE_PACK_TOPK="4",
                  STRIP_TARGET_NL="1", TFIDF_DOC_CACHE="200000",
                  DP_CACHE_SIZE="2048").items():

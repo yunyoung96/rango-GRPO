@@ -23,6 +23,7 @@ cut 의 명제를 정확히 얻으려면 그 증명 지점에서 Coq 에 `Check 
 사용: 환경변수 `CUTS_PATH=data/cut_plans_all.jsonl` 이 있으면 collate 가 자동으로 쓴다.
 """
 from __future__ import annotations
+import rango_defaults as _D   # ★ 프로덕션 기본값 단일 출처
 
 import json
 import os
@@ -50,7 +51,7 @@ def load(path: str | None = None) -> bool:
     with _lock:
         if _loaded:
             return bool(_steps)
-        p = path or os.environ.get("CUTS_PATH", "")
+        p = path or _D.get("CUTS_PATH")
         _loaded = True
         if not p or not os.path.exists(p):
             return False

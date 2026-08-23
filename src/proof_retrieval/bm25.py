@@ -1,4 +1,5 @@
 from typing import Optional
+import rango_defaults as _D   # ★ 프로덕션 기본값 단일 출처
 import functools
 import math
 import os
@@ -26,7 +27,7 @@ def doc_from_hashable(s: str) -> list[str]:
 
 # ★ 후보 문서가 수만 개인 예제가 있어서 10,000 캐시는 매번 통째로 밀린다(적중률 0).
 #   `TFIDF_DOC_CACHE` 로 함께 조절한다.
-@functools.lru_cache(int(os.environ.get("TFIDF_DOC_CACHE", "200000")))
+@functools.lru_cache(_D.num("TFIDF_DOC_CACHE"))
 def bm_compute_term_freqs(doc_str: str) -> dict[str, int]:
     doc = doc_from_hashable(doc_str)
     return compute_term_freqs(doc)

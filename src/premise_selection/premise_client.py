@@ -1,4 +1,5 @@
 from __future__ import annotations
+import rango_defaults as _D   # ★ 프로덕션 기본값 단일 출처
 
 import os
 from typing import Iterable, Any, Optional
@@ -341,6 +342,24 @@ def get_cached_premises(
     )
 
 
+# ★★ **랭커는 파이썬 상수가 단일 출처다.** shell `export` 로 두면 위험하다 —
+#   `source` 를 잊으면 조용히 다른 랭커(tfidf)로 돌아가는데, 결과만 보고는
+#   설정이 빠진 건지 랭커가 나쁜 건지 구분할 수 없다.
+#   env 는 **절제 실험용 덮어쓰기**로만 쓴다(`RETRIEVAL_MODE=tfidf` 등).
+#
+#   근거 (CompCert TEST 1,200스텝 · 이름 개명 조건 · exp_abcd)
+#       A·프롬프트 ALL   tfidf 30.2%  →  afh70 42.0%   (+11.8pp)
+#       합성 ALL·P       tfidf 90.1%  →  afh70 97.2%   (+7.1pp, McNemar p=0.0001)
+#   비용 (CompCert 40파일 147스텝 · 캐시 워밍 후 · bench_ranker_scale.py)
+#       검색 14.5ms(tfidf) → 25.0ms(afh70) · 노드 300ms 대비 4.6% → 7.7%
+DEFAULT_RETRIEVAL_MODE = _D.PROD_DEFAULTS["RETRIEVAL_MODE"]   # 단일 출처
+
+
+def retrieval_mode() -> str:
+    """실제로 쓰이는 랭커 이름. env 가 있으면 그것, 없으면 파이썬 기본값."""
+    return _D.get("RETRIEVAL_MODE") or DEFAULT_RETRIEVAL_MODE
+
+
 @dataclass
 class SparseClient:
     kind: SparseKind
@@ -371,7 +390,7 @@ class SparseClient:
         #   RRF(tfidf, 결론구조 C', 질의 포함률) + 3.0×[결론 트리 완전일치]
         #   실측 목표지표 ALL@50: TEST 86.4→95.6 · VAL 86.5→94.9 · TRAIN 87.8→97.2%
         #   되돌리려면 RETRIEVAL_MODE=tfidf (기본은 eqx)
-        _mode = os.environ.get("RETRIEVAL_MODE", "eqx")
+        _mode = retrieval_mode()
         if _mode == "tfidf" or not premises:
             return base
         try:
@@ -396,7 +415,7 @@ class SparseClient:
             return structural_scores(
                 getattr(context, "goal", "") or "", getattr(context, "hyps", []) or [],
                 texts, base, query_ids=query_ids, docs=premise_docs,
-                stage1=int(os.environ.get("RETRIEVAL_STAGE1", str(STAGE1))), **_kw)
+                stage1=_D.num("RETRIEVAL_STAGE1"), **_kw)
         except Exception:
             # ★ 재랭킹이 어떤 이유로 실패해도 **검색 자체가 죽으면 안 된다** — tfidf 로 돌아간다
             return base

@@ -1,0 +1,115 @@
+########## CompCert · RETRIEVAL_MODE=tfidf-rango원본 ##########
+
+★ cut 파일 커버리지 부족 — 조용히 기능이 죽는다.
+   파일        data/cut_plans_all.jsonl
+   스캔 범위    [0, 0)
+   필요 범위    [0, 177,207)   (Split.TEST)
+   범위 밖 스텝은 cut 치환도 CUT_DROP_HOPELESS 도 작동하지 않는다.
+   메우려면:  python3 scripts/build_cuts.py 197207 test <out> 0
+   (의도한 부분 실행이면 CUTS_ALLOW_PARTIAL=1)
+
+   … 200/300 (211s)
+
+■ TEST/AbsInt-CompCert · AUGMENT_V2=1 · 예제 300
+
+     (형태) 실명                            23  (100.0%)
+     ① 패킹에서 탈락 (검색엔 있었다)                10  ( 43.5%)
+     ② 절단에서 탈락 (프롬프트엔 있었다)               1  (  4.3%)
+     ③ 검색에도 없다                          12  ( 52.2%)
+   2048 초과                              78  ( 26.0%)
+   ★ [PREMISES] 헤더가 절단됨                 78  ( 26.0%)
+   ★ 결손 이름                              23  (  7.7%)
+   예제                                  300  (100.0%)
+   평균 토큰                                1805
+      frame_contents_incr    ← apply frame_contents_incr with j; auto.
+      for_all_between_iff    ← rewrite EqSet.for_all_between_iff in H.
+      ulp_neq_0              ← rewrite 2!ulp_neq_0.
+      BI_i64_stod            ← eapply (L0 (BI_standard BI_i64_stod)); eauto.
+      match_stacks_inside_alloc_left ← eapply match_stacks_inside_alloc_left; eauto.
+      store_unchanged_on     ← eapply Mem.store_unchanged_on; eauto.
+      incontext_ok           ← eapply incontext_ok; eauto.
+      prog_defmap            ← assert (exists gd, (prog_defmap p)!id = Some gd).
+      external_call_parallel_rule ← exploit external_call_parallel_rule; eauto.
+      red_addrof             ← apply red_addrof; auto.
+      star_right             ← eapply star_right.
+      unsigned_range         ← generalize (unsigned_range y); intro.
+      find_funct_ptr_not_fresh ← eapply Genv.find_funct_ptr_not_fresh; eauto.
+      preg_of_injective      ← eapply preg_of_injective; eauto.
+
+########## CompCert · RETRIEVAL_MODE=eqx ##########
+
+★ cut 파일 커버리지 부족 — 조용히 기능이 죽는다.
+   파일        data/cut_plans_all.jsonl
+   스캔 범위    [0, 0)
+   필요 범위    [0, 177,207)   (Split.TEST)
+   범위 밖 스텝은 cut 치환도 CUT_DROP_HOPELESS 도 작동하지 않는다.
+   메우려면:  python3 scripts/build_cuts.py 197207 test <out> 0
+   (의도한 부분 실행이면 CUTS_ALLOW_PARTIAL=1)
+
+   … 200/300 (208s)
+
+■ TEST/AbsInt-CompCert · AUGMENT_V2=1 · 예제 300
+
+     (형태) 실명                            19  (100.0%)
+     ① 패킹에서 탈락 (검색엔 있었다)                 7  ( 36.8%)
+     ② 절단에서 탈락 (프롬프트엔 있었다)               1  (  5.3%)
+     ③ 검색에도 없다                          11  ( 57.9%)
+   2048 초과                              76  ( 25.3%)
+   ★ [PREMISES] 헤더가 절단됨                 76  ( 25.3%)
+   ★ 결손 이름                              19  (  6.3%)
+   예제                                  300  (100.0%)
+   평균 토큰                                1799
+      frame_contents_incr    ← apply frame_contents_incr with j; auto.
+      for_all_between_iff    ← rewrite EqSet.for_all_between_iff in H.
+      ulp_neq_0              ← rewrite 2!ulp_neq_0.
+      BI_i64_stod            ← eapply (L0 (BI_standard BI_i64_stod)); eauto.
+      match_stacks_inside_alloc_left ← eapply match_stacks_inside_alloc_left; eauto.
+      mag_mult_bpow          ← rewrite (mag_mult_bpow _ _ _ Nzx), !Z.max_l; lia.
+      incontext_ok           ← eapply incontext_ok; eauto.
+      external_call_parallel_rule ← exploit external_call_parallel_rule; eauto.
+      red_addrof             ← apply red_addrof; auto.
+      star_right             ← eapply star_right.
+      unsigned_range         ← generalize (unsigned_range y); intro.
+      find_funct_ptr_not_fresh ← eapply Genv.find_funct_ptr_not_fresh; eauto.
+      preg_of_injective      ← eapply preg_of_injective; eauto.
+      fundef_return          ← assert (fundef_return fd = ty).
+
+########## CompCert · RETRIEVAL_MODE=afh70 ##########
+
+★ cut 파일 커버리지 부족 — 조용히 기능이 죽는다.
+   파일        data/cut_plans_all.jsonl
+   스캔 범위    [0, 0)
+   필요 범위    [0, 177,207)   (Split.TEST)
+   범위 밖 스텝은 cut 치환도 CUT_DROP_HOPELESS 도 작동하지 않는다.
+   메우려면:  python3 scripts/build_cuts.py 197207 test <out> 0
+   (의도한 부분 실행이면 CUTS_ALLOW_PARTIAL=1)
+
+   … 200/300 (210s)
+
+■ TEST/AbsInt-CompCert · AUGMENT_V2=1 · 예제 300
+
+     (형태) 실명                            19  (100.0%)
+     ① 패킹에서 탈락 (검색엔 있었다)                 7  ( 36.8%)
+     ② 절단에서 탈락 (프롬프트엔 있었다)               1  (  5.3%)
+     ③ 검색에도 없다                          11  ( 57.9%)
+   2048 초과                              76  ( 25.3%)
+   ★ [PREMISES] 헤더가 절단됨                 76  ( 25.3%)
+   ★ 결손 이름                              19  (  6.3%)
+   예제                                  300  (100.0%)
+   평균 토큰                                1799
+      frame_contents_incr    ← apply frame_contents_incr with j; auto.
+      for_all_between_iff    ← rewrite EqSet.for_all_between_iff in H.
+      ulp_neq_0              ← rewrite 2!ulp_neq_0.
+      BI_i64_stod            ← eapply (L0 (BI_standard BI_i64_stod)); eauto.
+      match_stacks_inside_alloc_left ← eapply match_stacks_inside_alloc_left; eauto.
+      mag_mult_bpow          ← rewrite (mag_mult_bpow _ _ _ Nzx), !Z.max_l; lia.
+      incontext_ok           ← eapply incontext_ok; eauto.
+      external_call_parallel_rule ← exploit external_call_parallel_rule; eauto.
+      red_addrof             ← apply red_addrof; auto.
+      star_right             ← eapply star_right.
+      unsigned_range         ← generalize (unsigned_range y); intro.
+      find_funct_ptr_not_fresh ← eapply Genv.find_funct_ptr_not_fresh; eauto.
+      preg_of_injective      ← eapply preg_of_injective; eauto.
+      fundef_return          ← assert (fundef_return fd = ty).
+
+[RANKCC_DONE]

@@ -1,0 +1,141 @@
+########## CompCert / 새 기능 OFF ##########
+   [v9_env] 33개 적용: ADMIT_MIN_FILES=2 AUGMENT_V2=1 CUTS_PATH=data/cut_plans_all.jsonl CUT_DROP_HOPELESS=1 DEFS_TOKENS=300 DP_CACHE_SIZE=2048 …
+
+★ cut 파일 커버리지 부족 — 조용히 기능이 죽는다.
+   파일        data/cut_plans_all.jsonl
+   스캔 범위    [0, 0)
+   필요 범위    [0, 177,207)   (Split.TEST)
+   범위 밖 스텝은 cut 치환도 CUT_DROP_HOPELESS 도 작동하지 않는다.
+   메우려면:  python3 scripts/build_cuts.py 197207 test <out> 0
+   (의도한 부분 실행이면 CUTS_ALLOW_PARTIAL=1)
+
+   … 200/500 (195s)
+   … 300/500 (271s)
+   … 500/500 (441s)
+
+■ 결과 (예제 500)
+
+     (SSReflect) 외부참조 쓰는 예제                1
+     (stdlib — 안다고 가정)                    26
+     (참고) stdlib 포함하면 결손 있는 예제           134
+     (참고) 그 tactic 이름도 안 보임                8
+     (참고) 정답 첫 토큰이 비표준 tactic             28
+     ├ SSReflect 환각                        1
+     ├ 비-SSReflect 환각                    112
+     안 보이는 이름 수                          130
+     외부 참조 없음                            303
+     외부 참조 이름 수                          287
+   ★ 외부 참조를 쓰는 예제                        197
+   ★★ 그중 환각(하나라도 안 보임)                   113
+   예제                                    500
+
+   ★★ **외부 참조를 쓰는 예제 중 환각** 113/197 = 57.4%
+   (참고) 전체 예제 대비 22.6%
+
+   ■ 이름 종류별  (안 보임 / 전체)
+     Definition          50 /    90  ( 55.6% 안 보임)  결손 중  38.5%
+     Lemma               33 /    68  ( 48.5% 안 보임)  결손 중  25.4%
+     Theorem             31 /    38  ( 81.6% 안 보임)  결손 중  23.8%
+     Field                5 /    36  ( 13.9% 안 보임)  결손 중   3.8%
+     Constructor          5 /    31  ( 16.1% 안 보임)  결손 중   3.8%
+     Axiom                2 /    10  ( 20.0% 안 보임)  결손 중   1.5%
+     Remark               2 /     4  ( 50.0% 안 보임)  결손 중   1.5%
+     Corollary            1 /     1  (100.0% 안 보임)  결손 중   0.8%
+     미상                   1 /     7  ( 14.3% 안 보임)  결손 중   0.8%
+     Fixpoint             0 /     2  (  0.0% 안 보임)  결손 중   0.0%
+
+   ■ ★ SSReflect 환각 스텝만 제외했을 때
+     현재            환각 113/197 = 57.4%
+       ├ SSReflect     1건 (1% of 환각)
+       └ 비-SSReflect  112건 (99%)
+     제외 후          환각 112/196 = 57.1%
+     대가             외부참조 예제의 0.5% 제외 · 전체 예제의 0.20%
+     (참고) SSReflect 는 외부참조 예제의 0.5%, 그중 환각률 100.0%
+     (참고) **모든** SSReflect 를 제외하면 환각 112/196 = 57.1% · 대가 전체의 0.20%
+
+   ■ tactic 종류별  (외부참조 쓰는 예제 / 환각 / 비율)
+     tactic                 씀      환각      환각률      외부참조 없음
+     apply                 77      47    61.0%            6
+     unfold                27      20    74.1%            1
+     rewrite               25      18    72.0%           13
+     destruct              23      12    52.2%           26
+     assert                 9       4    44.4%            1
+     exploit                5       1    20.0%            0
+     now                    5       1    20.0%            2
+     set                    3       1    33.3%            0
+     exists                 3       1    33.3%            2
+     generalize             3       3   100.0%            1
+
+   ■ '미상' 실제 예 (오탐 확인용)
+     Prec_gt_0                ← apply Zle_not_lt; unfold FTZ_exp; unfold Prec_gt_0 in prec_g
+
+########## CompCert / 새 기능 ON ##########
+   [v9_env] 32개 적용: AUGMENT_V2=1 CUTS_PATH=data/cut_plans_all.jsonl CUT_DROP_HOPELESS=1 DEFS_TOKENS=300 DP_CACHE_SIZE=2048 DYNAMIC_PADDING=1 …
+
+★ cut 파일 커버리지 부족 — 조용히 기능이 죽는다.
+   파일        data/cut_plans_all.jsonl
+   스캔 범위    [0, 0)
+   필요 범위    [0, 177,207)   (Split.TEST)
+   범위 밖 스텝은 cut 치환도 CUT_DROP_HOPELESS 도 작동하지 않는다.
+   메우려면:  python3 scripts/build_cuts.py 197207 test <out> 0
+   (의도한 부분 실행이면 CUTS_ALLOW_PARTIAL=1)
+
+   … 200/500 (201s)
+   … 300/500 (279s)
+   … 500/500 (450s)
+
+■ 결과 (예제 500)
+
+     (SSReflect) 외부참조 쓰는 예제                1
+     (stdlib — 안다고 가정)                    26
+     (참고) stdlib 포함하면 결손 있는 예제           133
+     (참고) 그 tactic 이름도 안 보임                8
+     (참고) 정답 첫 토큰이 비표준 tactic             28
+     ├ 비-SSReflect 환각                    112
+     안 보이는 이름 수                          129
+     외부 참조 없음                            303
+     외부 참조 이름 수                          287
+   ★ 외부 참조를 쓰는 예제                        197
+   ★★ 그중 환각(하나라도 안 보임)                   112
+   예제                                    500
+
+   ★★ **외부 참조를 쓰는 예제 중 환각** 112/197 = 56.9%
+   (참고) 전체 예제 대비 22.4%
+
+   ■ 이름 종류별  (안 보임 / 전체)
+     Definition          50 /    90  ( 55.6% 안 보임)  결손 중  38.8%
+     Lemma               32 /    68  ( 47.1% 안 보임)  결손 중  24.8%
+     Theorem             31 /    38  ( 81.6% 안 보임)  결손 중  24.0%
+     Field                5 /    36  ( 13.9% 안 보임)  결손 중   3.9%
+     Constructor          5 /    31  ( 16.1% 안 보임)  결손 중   3.9%
+     Remark               2 /     4  ( 50.0% 안 보임)  결손 중   1.6%
+     Axiom                2 /    10  ( 20.0% 안 보임)  결손 중   1.6%
+     Corollary            1 /     1  (100.0% 안 보임)  결손 중   0.8%
+     미상                   1 /     7  ( 14.3% 안 보임)  결손 중   0.8%
+     Fixpoint             0 /     2  (  0.0% 안 보임)  결손 중   0.0%
+
+   ■ ★ SSReflect 환각 스텝만 제외했을 때
+     현재            환각 112/197 = 56.9%
+       ├ SSReflect     0건 (0% of 환각)
+       └ 비-SSReflect  112건 (100%)
+     제외 후          환각 112/197 = 56.9%
+     대가             외부참조 예제의 0.0% 제외 · 전체 예제의 0.00%
+     (참고) SSReflect 는 외부참조 예제의 0.5%, 그중 환각률 0.0%
+     (참고) **모든** SSReflect 를 제외하면 환각 112/196 = 57.1% · 대가 전체의 0.20%
+
+   ■ tactic 종류별  (외부참조 쓰는 예제 / 환각 / 비율)
+     tactic                 씀      환각      환각률      외부참조 없음
+     apply                 77      48    62.3%            6
+     unfold                27      20    74.1%            1
+     rewrite               25      18    72.0%           13
+     destruct              23      10    43.5%           26
+     assert                 9       4    44.4%            1
+     exploit                5       1    20.0%            0
+     now                    5       1    20.0%            2
+     set                    3       1    33.3%            0
+     exists                 3       1    33.3%            2
+     generalize             3       3   100.0%            1
+
+   ■ '미상' 실제 예 (오탐 확인용)
+     Prec_gt_0                ← apply Zle_not_lt; unfold FTZ_exp; unfold Prec_gt_0 in prec_g
+[CC_DONE]

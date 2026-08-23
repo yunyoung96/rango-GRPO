@@ -60,7 +60,8 @@ V9_ENV = dict(CUTS_PATH=CUTS, AUGMENT_V2="1", RERANK_PREMISES="1", INJECT_TYPES=
               FUNC_DEFS_PATH="data/func_defs_v3.json", NORMALIZE_NAMES="1",
               NORMALIZE_RATE="1.0", NORMALIZE_PREMISES="1", NORMALIZE_THEOREM="1",
               NORMALIZE_SKIP_STDLIB="1", INJECT_SKIP_STDLIB="1",
-              RETRIEVAL_MODE="eqx", RETRIEVAL_STAGE1="5000",
+              RETRIEVAL_STAGE1="5000",   # ★ RETRIEVAL_MODE 는 안 박는다 —
+                 #   premise_client.DEFAULT_RETRIEVAL_MODE 가 단일 출처다.
               PREMISE_PACK="hybrid", PREMISE_PACK_TOPK="4", STRIP_TARGET_NL="1",
               HARD_SEQ_LEN="2048")
 # ★ rango 원본 = 증강 3종·정규화·cut 을 **전부 끈다**. 끄는 것을 빠뜨리면 비교가 거짓이 된다.

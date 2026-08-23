@@ -1,4 +1,5 @@
 from __future__ import annotations
+import rango_defaults as _D   # ★ 프로덕션 기본값 단일 출처
 
 import hashlib
 import re
@@ -157,7 +158,7 @@ def _fd_index() -> dict:
     """함수 정의 인덱스 지연로드(scripts/build_func_defs.py 산출). 없으면 {} → [DEFINITIONS] 비활성."""
     global _FD_INDEX
     if _FD_INDEX is None:
-        path = os.environ.get("FUNC_DEFS_PATH", "data/func_defs.json")
+        path = _D.get("FUNC_DEFS_PATH")
         try:
             with open(path) as f:
                 _FD_INDEX = json.load(f)
@@ -244,7 +245,7 @@ def _maybe_normalize_input(text: str, example, tokenizer=None,
         #   premise 부분집합이 달라져 L# 번호가 통째로 밀린다(실측: 창을 out_tokens
         #   만큼 좁혔더니 불일치가 6건 → 70건으로 늘었다).
         _vis = text
-        _hard = int(os.environ.get("HARD_SEQ_LEN", "0") or 0)
+        _hard = _D.num("HARD_SEQ_LEN")
         if _hard and tokenizer is not None and len(text) > _hard * 2:
             try:
                 _ids = tokenizer(text, add_special_tokens=False)["input_ids"]
@@ -290,7 +291,7 @@ def defs_section(tokenizer: PreTrainedTokenizer, example: LmExample,
     goal 결론의 함수 정의를 복원해 상태를 완전하게 만든다(PHASE2_DECIDER_GUIDE §D).
     ★ 너무 긴 정의는 시그니처만, 시그니처도 길면 아예 넣지 않는다(DEFS_MAX_BODY/DEFS_MAX_SIG).
     [TYPES] 와 **별도의 독립 예산**(DEFS_TOKENS, 기본 200) — premise 를 밀어내지 않는다."""
-    if os.environ.get("INJECT_DEFS", "0") != "1":
+    if (not _D.flag("INJECT_DEFS")):
         return ""
     # ★ ablation(ABLATE_DEFS=1): 섹션 **헤더는 유지**하고 내용만 비운다.
     #   그냥 INJECT_DEFS=0 으로 끄면 프롬프트 포맷 자체가 달라져(=학습과 불일치, OOD) 성능이 떨어져도
@@ -308,7 +309,7 @@ def defs_section(tokenizer: PreTrainedTokenizer, example: LmExample,
         getattr(example, "proof_state", "") or "", idx,
         project=getattr(example, "file_name", None),   # ★ 파일 경로 전체 — 같은 파일→디렉토리→프로젝트 순 선택
         max_defs=int(os.environ.get("DEFS_MAX", "5")),
-        budget_tok=int(os.environ.get("DEFS_TOKENS", "200")),
+        budget_tok=_D.num("DEFS_TOKENS"),
         max_body=int(os.environ.get("DEFS_MAX_BODY", "80")),
         max_sig=int(os.environ.get("DEFS_MAX_SIG", "40")),
         ntok=_ntok,
@@ -438,7 +439,7 @@ def augment_v2_section(tokenizer: PreTrainedTokenizer, example: LmExample,
     #   여럿이라 끝에서만 지우면 **이전 예제의 주입 이름이 남는다**.
     #   실제로 그 탓에 goal 은 정규화됐는데 정의는 없는 예제가 400개 중 20건 나왔다.
     _LAST_INJECTED.clear()
-    if os.environ.get("AUGMENT_V2", "0") != "1":
+    if (not _D.flag("AUGMENT_V2")):
         return ""
     # ★ ablation: 섹션 **헤더는 유지**하고 내용만 비운다(포맷 고정 → 정보의 기여만 분리).
     #   그냥 INJECT_*=0 으로 끄면 프롬프트 형식 자체가 학습과 달라져(OOD) 성능이 떨어져도
@@ -454,37 +455,37 @@ def augment_v2_section(tokenizer: PreTrainedTokenizer, example: LmExample,
     def _ntok(s: str) -> int:
         return len(tokenizer(s or "", add_special_tokens=False)["input_ids"])
 
-    hard = int(os.environ.get("HARD_SEQ_LEN", "4096"))
+    hard = _D.num("HARD_SEQ_LEN")
     out_tokens = int(os.environ.get("AUG_OUT_TOKENS", "128"))   # 정답(tactic) 자리
     margin = 16
     room = hard - _ntok(base_str) - out_tokens - margin
     if room <= 32:
         return ""                       # 자리가 없으면 아예 안 넣는다(프롬프트 보호)
-    t_budget = min(int(os.environ.get("TYPES_TOKENS", "300")), room)
+    t_budget = min(_D.num("TYPES_TOKENS"), room)
     goal = getattr(example, "proof_state", "") or ""
     proj = getattr(example, "file_name", None)   # ★ 파일 경로 전체(pick_def 가 거리순으로 좁힘)
     # ★★ **프로젝트 notation** — goal 의 기호가 가린 이름을 되찾는다.
     #   `A ⊢I phi` 의 `intu` 는 파일 밖 notation 안에만 있고, NOTATION 은
     #   PremiseFilter 가 풀에서 빼므로 **검색으로는 영영 안 온다.**
     _np_texts, _np_seeds = ([], [])
-    if os.environ.get("NOTATION_PROJ", "0") == "1":
+    if _D.flag("NOTATION_PROJ"):
         try:
             _np_texts, _np_seeds = proj_notations(
-                proj or "", goal, limit=int(os.environ.get("NOTATION_PROJ_MAX", "20")))
+                proj or "", goal, limit=_D.num("NOTATION_PROJ_MAX"))
         except Exception:
             _np_texts, _np_seeds = [], []
     # ★★ **역인덱스** — goal 이 정의의 *본문*을 보여 줄 때 이름을 되찾는다.
     _uf_seeds = []
-    if os.environ.get("UNFOLD_SEEDS", "0") == "1":
+    if _D.flag("UNFOLD_SEEDS"):
         try:
             _uf_seeds = unfold_seeds(proj or "", goal,
-                                     limit=int(os.environ.get("UNFOLD_MAX", "6")))
+                                     limit=_D.num("UNFOLD_MAX"))
         except Exception:
             _uf_seeds = []
     parts = []
     used = 0
     injected = {}          # ★ 실제로 프롬프트에 들어간 {이름: 정의문} — 인용 타깃 생성에 쓴다
-    if os.environ.get("INJECT_TYPES", "0") == "1":
+    if _D.flag("INJECT_TYPES"):
         if ab_t:
             parts.append(TYPES_SEP + "(none)")
         else:
@@ -527,11 +528,11 @@ def augment_v2_section(tokenizer: PreTrainedTokenizer, example: LmExample,
                 facts.append(f"{nm}: {len(ar)} ctors, arities {ar}")
         if facts:
             parts.append(FACTS_SEP + "\n".join(facts[:6]))
-    if os.environ.get("INJECT_DEFS", "0") == "1":
+    if _D.flag("INJECT_DEFS"):
         if ab_d:
             parts.append(DEFS_SEP + "(none)")
         else:
-            d_budget = min(int(os.environ.get("DEFS_TOKENS", "300")), max(0, room - used))
+            d_budget = min(_D.num("DEFS_TOKENS"), max(0, room - used))
             if d_budget > 16:
                 # ★★ **씨앗 확장** (2026-08-22) — 전부 정답과 무관한 출처다.
                 #   결론만으로는 정답이 필요로 하는 정의가 안 들어간다:
@@ -624,13 +625,13 @@ def augment_v2_section(tokenizer: PreTrainedTokenizer, example: LmExample,
     # ★ **파일 내 Notation** — notation 이 이름을 가리는 경우를 연다.
     #   실측 사례: goal 이 `A ⊢I phi` 인데 정답은 `intu` 를 쓴다.
     #   `Notation "A ⊢I phi" := (prv intu A phi)` 를 보여 주면 그 연결이 생긴다.
-    if os.environ.get("INJECT_NOTATION", "1") == "1":
+    if _D.flag("INJECT_NOTATION"):
         _nt = [(_x if isinstance(_x, str) else str(_x)).strip()
                for _x in (getattr(example, "local_notation", None) or [])]
         _nt = [x for x in _nt if x]
         _nt += [x for x in _np_texts if x not in _nt]   # ★ 프로젝트 notation 합류
         if _nt:
-            _nb = min(int(os.environ.get("NOTATION_TOKENS", "220")), max(0, room - used))
+            _nb = min(_D.num("NOTATION_TOKENS"), max(0, room - used))
             _acc2, _n2 = [], 0
             for _x in _nt:
                 _c = _ntok(_x)
@@ -648,7 +649,7 @@ def augment_v2_section(tokenizer: PreTrainedTokenizer, example: LmExample,
 def types_section(tokenizer: PreTrainedTokenizer, example: LmExample) -> str:
     """INJECT_TYPES=1 이면 '\\n[TYPES]\\n<T := c1 | c2>...' 섹션, 아니면 "" (=base 프롬프트 그대로).
     ※ 결정적(점수 동점은 타입명순) — 학습·추론이 같은 goal 에 같은 섹션을 만든다."""
-    if os.environ.get("INJECT_TYPES", "0") != "1":
+    if (not _D.flag("INJECT_TYPES")):
         return ""
     # ★ ablation(ABLATE_TYPES=1): 헤더 유지, 내용만 비움(defs_section 과 같은 이유 — 포맷 고정).
     if os.environ.get("ABLATE_TYPES", "0") == "1":
@@ -656,7 +657,7 @@ def types_section(tokenizer: PreTrainedTokenizer, example: LmExample) -> str:
     idx = _it_index()
     if not idx:
         return ""
-    budget = int(os.environ.get("TYPES_TOKENS", "200"))
+    budget = _D.num("TYPES_TOKENS")
 
     def _ntok(s: str) -> int:
         return len(tokenizer(s or "", add_special_tokens=False)["input_ids"])
@@ -690,7 +691,7 @@ from util.constants import DATA_POINTS_NAME
 _logger = get_basic_logger(__name__)
 
 # 동적 패딩(패딩 낭비 제거). 기본 꺼짐 — 기존 동작 보존.
-_DYN_PAD = os.environ.get("DYNAMIC_PADDING", "0") == "1"
+_DYN_PAD = _D.flag("DYNAMIC_PADDING")
 
 # FROM HERE: https://huggingface.co/docs/trl/sft_trainer#train-on-completions-only
 RESPONSE_TEMPLATE = "[TACTIC]"
@@ -708,7 +709,7 @@ NEWLINE_RESPONSE_TEMPLATE = f"\n{RESPONSE_TEMPLATE}\n"
 #   프롬프트 본문은 그대로 "...\n[TACTIC]\n" 로 끝난다 — 개행 하나가 프롬프트 쪽으로 옮겨질 뿐.
 #   생성 시에는 model_wrapper 가 TACTIC_LEADING_NL=1 로 개행을 다시 붙인다
 #   (탐색기가 cur_proof_script + tactic 으로 이어붙이므로 개행이 없으면 Coq 구문이 깨진다).
-STRIP_TARGET_NL = os.environ.get("STRIP_TARGET_NL", "0") == "1"
+STRIP_TARGET_NL = _D.flag("STRIP_TARGET_NL")
 MASK_TEMPLATE = f"{RESPONSE_TEMPLATE}\n" if STRIP_TARGET_NL else NEWLINE_RESPONSE_TEMPLATE
 
 __test_lm_json = {
@@ -761,14 +762,14 @@ def whole_number_allocate(
     #     · knapsack 이 버리는 gold = 순위 중앙 **3위**인데 길이 중앙 **64토큰** (36건 손해)
     #     · knapsack 이 건지는 gold = 순위 중앙 **34위**인데 길이 중앙 22토큰 (21건 이득)
     #     → 상위 K 를 지키면 손해를 막고 이득은 남는다.
-    mode = os.environ.get("PREMISE_PACK", "hybrid")
+    mode = prod("PREMISE_PACK")
     # ★ K=4 확정 (세 스플릿 실측, greedy 대비 gold 포함률)
     #     K=4   TRAIN -0.9p · TEST +9.0p · VAL +15.4p   평균 +7.8p  ← 채택
     #     K=8   TRAIN +4.4p · TEST +5.4p · VAL +11.0p   평균 +6.9p
     #     K=16  TRAIN +3.5p · TEST +2.4p · VAL  +6.2p   평균 +4.0p
     #   TRAIN 은 학습 데이터라 gold 가 이미 상위(순위 중앙 4위)이고, 실제 추론 대상은
     #   처음 보는 프로젝트다 — held-out(TEST 8위 · VAL 10위)에 맞춘다.
-    topk = int(os.environ.get("PREMISE_PACK_TOPK", "4"))
+    topk = int(prod("PREMISE_PACK_TOPK"))
     lens = [len(tokenizer.tokenize(x)) for x in ss]
 
     def _greedy(idxs, left, skip):
@@ -1079,7 +1080,7 @@ class ProofPremiseCollator:
                       normalize: bool = True) -> str:
         proof_str = allocate_and_fmt(tokenizer, example.proofs, self.proof_tokens)
         _prem = example.premises
-        if os.environ.get("RERANK_PREMISES", "0") == "1":
+        if prod("RERANK_PREMISES") == "1":
             _prem = rerank_premises(example)   # ★ 타입-지향 재랭킹(결론매칭)로 앞쪽 우선
         premise_str = allocate_and_fmt(tokenizer, _prem, self.premise_tokens)
         state_str, _ = allocate_tokens(
@@ -1090,7 +1091,7 @@ class ProofPremiseCollator:
         )
         # ★ 구조컨텍스트: [TYPES](생성자) + [DEFINITIONS](정의). 각각 독립예산 — premise 안 뺏음.
         #   v1(기본): [STATE] 앞에 삽입.  v2(AUGMENT_V2=1): 맨 뒤(응답 템플릿 직전) + 길이 보장.
-        if os.environ.get("AUGMENT_V2", "0") == "1":
+        if _D.flag("AUGMENT_V2"):
             base_str = (
                 self.PREMISE_SEP + premise_str
                 + self.PROOF_SEP + proof_str
@@ -1180,7 +1181,7 @@ class ProofPremiseCollator:
         #       (1) gold 가 전부 보인다        → gold tactic 그대로
         #       (2) 일부가 안 보인다           → 그것들만 assert 해서 조립
         #       (3) 계획이 없다(hopeless)      → `resolved_example` 이 이미 걸러냈다
-        if os.environ.get("CUTS_PATH", ""):
+        if _D.get("CUTS_PATH"):
             from tactic_gen import cut_lookup
             _ck = (f"{getattr(example, 'file_name', '')}:"
                    f"{getattr(example, 'proof_idx', '')}:"
@@ -1228,7 +1229,7 @@ class ProofPremiseCollator:
         #    조회 가능성은 유지되면서 **이름 암기만 무력화**된다.
         #    (ablation: clean vs wrong 차이 ±0 → 모델이 안 읽는 이유는 '읽을 필요가 없어서'다)
         globals()["_LAST_TRAIN_MAPPING"] = {}
-        if os.environ.get("NORMALIZE_NAMES", "0") == "1":
+        if _D.flag("NORMALIZE_NAMES"):
             from tactic_gen.normalize_names import build_mapping, apply_mapping, should_normalize
             key = (f"{getattr(example, 'file_name', '')}:"
                    f"{getattr(example, 'proof_idx', '')}:{getattr(example, 'step_idx', '')}")
@@ -1236,7 +1237,7 @@ class ProofPremiseCollator:
             #   정답이 프롬프트에 없는 이름을 쓰는데 정규화까지 하면 `L92` 같은
             #   무의미 토큰을 외우게 된다. 진짜 이름이 그나마 낫다.
             _skip_norm = False
-            if os.environ.get("CUTS_PATH", ""):
+            if _D.get("CUTS_PATH"):
                 from tactic_gen import cut_lookup
                 _skip_norm = cut_lookup.is_hopeless(key)
             if _skip_norm:
@@ -1259,7 +1260,7 @@ class ProofPremiseCollator:
                 #   이름을 안 바꾸면 정답은 **진짜 이름**을 쓰게 되고, 그게 그나마 낫다
                 #   (hopeless 스텝에서 정규화를 끄는 것과 같은 논리).
                 _vis = input_str
-                _hard = int(os.environ.get("HARD_SEQ_LEN", "0") or 0)
+                _hard = _D.num("HARD_SEQ_LEN")
                 # 문자 길이로 먼저 걸러 낸다 — 안 넘치는 91% 에서 토크나이즈를 아낀다
                 if _hard and len(input_str) + len(target) > _hard * 2:
                     try:
@@ -1362,7 +1363,7 @@ class NoScriptCollator:
     def collate_input(self, tokenizer: PreTrainedTokenizer, example: LmExample) -> str:
         proof_str = allocate_and_fmt(tokenizer, example.proofs, self.proof_tokens)
         _prem = example.premises
-        if os.environ.get("RERANK_PREMISES", "0") == "1":
+        if prod("RERANK_PREMISES") == "1":
             _prem = rerank_premises(example)   # ★ 타입-지향 재랭킹(결론매칭)로 앞쪽 우선
         premise_str = allocate_and_fmt(tokenizer, _prem, self.premise_tokens)
         state_str, _ = allocate_tokens(
@@ -1679,6 +1680,16 @@ class ExamplePage:
 #
 #   ※ collate 단계에서 적용되는 것(PREMISE_PACK, NORMALIZE_*, CUTS_PATH 등)은
 #     캐시에 안 구워지므로 여기 넣지 않는다.
+# ★★ **검색·담기 계열의 프로덕션 기본값은 여기가 단일 출처다.**
+#   shell `export` 로만 두면 `source` 를 잊었을 때 조용히 다른 설정으로 돈다.
+#   실제로 `RERANK_PREMISES` 는 파이썬 기본값이 "0" 인데 프로덕션은 "1" 이라,
+#   env 를 안 주면 재랭킹이 통째로 꺼진 채 돌았다.
+#   env 는 **절제 실험용 덮어쓰기**로만 쓴다.  (랭커 이름은 premise_client 참고)
+# ★ 프로덕션 기본값은 `src/rango_defaults.py` 가 단일 출처다. 여기서는 위임만 한다.
+prod = _D.get
+
+
+
 _CACHE_STAMP_KEYS = (
     "RETRIEVAL_MODE", "RETRIEVAL_STAGE1", "RERANK_PREMISES",
     "INJECT_TYPES", "INJECT_DEFS", "TYPES_TOKENS", "DEFS_TOKENS",
@@ -1728,7 +1739,18 @@ def _strip_coq_comments(t: str) -> str:
 
 def _cache_stamp(formatter) -> str:
     import hashlib
-    parts = [f"{k}={os.environ.get(k, '')}" for k in _CACHE_STAMP_KEYS]
+    # ★ **해결된 값**을 찍는다. env 가 비어 있어도 파이썬 기본값(afh70)으로 도는데
+    #   도장에 `RETRIEVAL_MODE=` 로 남으면, 나중에 기본값을 바꿨을 때 **옛 캐시가
+    #   조용히 재사용**된다. 기본값을 바꾸는 것 자체가 프롬프트를 바꾸는 일이다.
+    def _resolved(k):
+        if k == "RETRIEVAL_MODE":
+            try:
+                from premise_selection.premise_client import retrieval_mode
+                return retrieval_mode()
+            except Exception:
+                pass
+        return prod(k)
+    parts = [f"{k}={_resolved(k)}" for k in _CACHE_STAMP_KEYS]
     parts.append(f"formatter={type(formatter).__name__}")
     for attr in ("num_premises", "num_proofs"):
         parts.append(f"{attr}={getattr(formatter, attr, None)}")
@@ -1954,7 +1976,7 @@ class LmDataset(Dataset):
     #  ★ 외부 검증 스크립트로는 부족하다 — 안 돌리면 그만이다.
     #    **데이터셋 자신이** 자기 전제조건을 확인한다. 어느 경로로 학습을 시작하든 걸린다.
     def __check_cut_coverage(self) -> None:
-        if not os.environ.get("CUTS_PATH", ""):
+        if not _D.get("CUTS_PATH"):
             return
         try:
             from tactic_gen import cut_lookup
@@ -1968,7 +1990,7 @@ class LmDataset(Dataset):
             _logger.info(f"[cut] 커버리지 OK — 스캔 [{start:,}, {end:,}) ⊇ 사용 {need:,}")
             return
         msg = (f"\n★ cut 파일 커버리지 부족 — 조용히 기능이 죽는다.\n"
-               f"   파일        {os.environ['CUTS_PATH']}\n"
+               f"   파일        {_D.get('CUTS_PATH')}\n"
                f"   스캔 범위    [{start:,}, {end:,})\n"
                f"   필요 범위    [0, {need:,})   ({self.split})\n"
                f"   범위 밖 스텝은 cut 치환도 CUT_DROP_HOPELESS 도 작동하지 않는다.\n"
@@ -2031,7 +2053,7 @@ class LmDataset(Dataset):
             #   으로 "gold 가 보이나" 를 판정하게 된다 — cut 을 넣을지 말지가 어긋난다.
             #   실측: 표본 200건 중 55건(27.5%)에서 담긴 premise 집합이 달랐다.
             _prem = example.premises or []
-            if os.environ.get("RERANK_PREMISES", "0") == "1":
+            if prod("RERANK_PREMISES") == "1":
                 try:
                     _prem = rerank_premises(example)
                 except Exception:
@@ -2054,7 +2076,7 @@ class LmDataset(Dataset):
         """
         if os.environ.get("CUT_SUBSTEP", "1") != "1":
             return None
-        if not os.environ.get("CUTS_PATH", ""):
+        if not _D.get("CUTS_PATH"):
             return None
         from tactic_gen import cut_lookup
         key = (f"{getattr(example, 'file_name', '')}:"
@@ -2093,7 +2115,7 @@ class LmDataset(Dataset):
         없는 이름**을 쓰므로, 이걸로 학습하면 모델에게 *볼 수 없는 이름을 지어내라*고
         가르치는 셈이다. `CUT_DROP_HOPELESS=1` 이면 학습에서 제외한다.
         """
-        if not os.environ.get("CUTS_PATH", ""):
+        if not _D.get("CUTS_PATH"):
             return False
         from tactic_gen import cut_lookup
         return cut_lookup.is_hopeless(
@@ -2218,7 +2240,7 @@ class LmDataset(Dataset):
           `CUTS_ALLOW_PARTIAL=1` 일 때만 건너뛴다 — 생성 중에 돌리는 진단 스크립트용이다.
         """
         if self._cut_range is None:
-            if not os.environ.get("CUTS_PATH", ""):
+            if not _D.get("CUTS_PATH"):
                 self._cut_range = (0, 1 << 62)          # cut 미사용 — 전부 커버로 본다
             else:
                 from tactic_gen import cut_lookup
@@ -2333,7 +2355,7 @@ class LmDataset(Dataset):
 
         사전점검 스크립트도 이걸 써야 학습과 같은 예제를 본다.
         """
-        if os.environ.get("CUT_DROP_HOPELESS", "0") != "1":
+        if (not _D.flag("CUT_DROP_HOPELESS")):
             return self._apply_substep(self.raw_example(index), index)
         n = len(self)
         _partial = os.environ.get("CUTS_ALLOW_PARTIAL", "0") == "1"
@@ -2373,7 +2395,7 @@ class LmDataset(Dataset):
                 #   PremiseFilter 가 풀에서 통째로 빼므로 검색으로 절대 안 온다.
                 #   실측(12,000): 외부 참조를 쓰는 예제의 17.4% 가 그렇다.
                 #   비용은 collate 한 번(검색은 이미 캐시됨)이다.
-                if os.environ.get("DROP_HALLUC", "0") != "1":
+                if (not _D.flag("DROP_HALLUC")):
                     return example
                 try:
                     if not self._hallucinates(example):

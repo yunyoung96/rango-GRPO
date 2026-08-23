@@ -1,0 +1,38 @@
+##### 누수 검증 · TRAIN #####
+
+■ TRAIN · 예제 150
+
+     └ 선언은 없지만 프롬프트엔 있음                        2
+     └ 프롬프트에 선언 있음                            23
+   A 학습 프롬프트 env 무관 (동일)                     150
+   B normalize=False 는 매핑 없음                 150
+   C normalize=True 는 정규화됨                   148
+   C ★True 인데 정규화 안 됨                          2
+   D 정답의 익명 토큰                                25
+   예제                                        150
+
+   ❌ 이상 2건
+
+##### 누수 검증 · TEST #####
+
+★ cut 파일 커버리지 부족 — 조용히 기능이 죽는다.
+   파일        data/cut_plans_all.jsonl
+   스캔 범위    [0, 0)
+   필요 범위    [0, 177,207)   (Split.TEST)
+   범위 밖 스텝은 cut 치환도 CUT_DROP_HOPELESS 도 작동하지 않는다.
+   메우려면:  python3 scripts/build_cuts.py 197207 test <out> 0
+   (의도한 부분 실행이면 CUTS_ALLOW_PARTIAL=1)
+
+
+■ TEST · 예제 150
+
+     └ 선언은 없지만 프롬프트엔 있음                        3
+     └ 프롬프트에 선언 있음                            34
+   A 학습 프롬프트 env 무관 (동일)                     150
+   B normalize=False 는 매핑 없음                 150
+   C normalize=True 는 정규화됨                   150
+   D 정답의 익명 토큰                                37
+   예제                                        150
+
+   ✅ 이상 없음
+[HEALTH_DONE]

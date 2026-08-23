@@ -59,8 +59,10 @@ HARD = int(os.environ.get("HARD_SEQ_LEN", cc["hard_seq_len"]))
 
 print(f"■ 본학습 전 종합 검증  ({CONF} · {N}건)\n")
 print("A. 설정이 실제로 먹는가")
-chk("RETRIEVAL_MODE" in inspect.getsource(PC.SparseClient.get_premise_scores),
-    "SparseClient 가 RETRIEVAL_MODE 를 읽는다")
+chk("retrieval_mode()" in inspect.getsource(PC.SparseClient.get_premise_scores),
+    "SparseClient 가 retrieval_mode() 를 쓴다 (파이썬 단일 출처)")
+chk(PC.retrieval_mode() == PC.DEFAULT_RETRIEVAL_MODE or bool(os.environ.get("RETRIEVAL_MODE")),
+    f"랭커 해결값 = {PC.retrieval_mode()}")
 src_alloc = inspect.getsource(whole_number_allocate)
 chk("PREMISE_PACK" in src_alloc, "담기 방식이 PREMISE_PACK 로 제어된다",
     f"현재 {os.environ.get('PREMISE_PACK', 'hybrid')}")

@@ -1,4 +1,5 @@
 from typing import Optional
+import rango_defaults as _D   # ★ 프로덕션 기본값 단일 출처
 import functools
 import math
 import os
@@ -37,7 +38,7 @@ def compute_idfs(corpus: list[list[str]]) -> dict[str, float]:
 # ★ 캐시 크기가 후보 문서 수보다 작으면 **매 예제마다 통째로 밀려** 적중률이 0 이 된다.
 #   의존이 많은 파일은 후보 문서가 수만 개다(실측 최대 예제 하나에 280초).
 #   `TFIDF_DOC_CACHE` 로 조절한다. 항목 하나는 작은 dict 라 10만개도 수백 MB 수준이다.
-@functools.lru_cache(int(os.environ.get("TFIDF_DOC_CACHE", "200000")))
+@functools.lru_cache(_D.num("TFIDF_DOC_CACHE"))
 def compute_doc_tf(doc_str: str) -> dict[str, float]:
     doc = doc_from_hashable(doc_str)
     # doc = tokenize(premise)

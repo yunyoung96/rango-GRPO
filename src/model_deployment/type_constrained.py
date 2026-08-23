@@ -29,6 +29,7 @@ arity 는 **시스템이 결정하므로 틀릴 수 없다**(아이디어 목록
 원 후보는 그대로 두고 **변형을 덧붙이기만** 한다 — 탐색 폭이 줄지 않는다.
 """
 from __future__ import annotations
+import rango_defaults as _D   # ★ 프로덕션 기본값 단일 출처
 
 import json
 import os
@@ -50,7 +51,7 @@ _IDX: Optional[dict] = None
 def _index() -> dict:
     global _IDX
     if _IDX is None:
-        path = os.environ.get("FUNC_DEFS_PATH", "data/func_defs_v3.json")
+        path = _D.get("FUNC_DEFS_PATH")
         try:
             with open(path) as f:
                 _IDX = json.load(f)

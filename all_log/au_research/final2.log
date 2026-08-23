@@ -1,0 +1,79 @@
+##### ① 이관 동등성 (env 없음 vs v9_env) #####
+■ 키 35개 · v9_env 와 값이 다른 것 0개
+
+■ 결과 (예제 120)
+   동일           120
+   예제           120
+
+   ✅ 이관 완료 — env 없이도 같은 프롬프트
+
+##### ② 누수 검증 TRAIN #####
+
+■ TRAIN · 예제 120
+
+     └ 선언은 없지만 프롬프트엔 있음                        2
+     └ 프롬프트에 선언 있음                            20
+   A 학습 프롬프트 env 무관 (동일)                     120
+   B normalize=False 는 매핑 없음                 120
+   C (매핑할 이름 없음/꺼짐)                            2
+   C 기본값이 정규화 켬                              118
+   D 정답의 익명 토큰                                22
+   예제                                        120
+
+   ✅ 이상 없음
+
+##### ③ 누수 검증 TEST #####
+
+★ cut 파일 커버리지 부족 — 조용히 기능이 죽는다.
+   파일        data/cut_plans_all.jsonl
+   스캔 범위    [0, 0)
+   필요 범위    [0, 177,207)   (Split.TEST)
+   범위 밖 스텝은 cut 치환도 CUT_DROP_HOPELESS 도 작동하지 않는다.
+   메우려면:  python3 scripts/build_cuts.py 197207 test <out> 0
+   (의도한 부분 실행이면 CUTS_ALLOW_PARTIAL=1)
+
+
+■ TEST · 예제 120
+
+     └ 선언은 없지만 프롬프트엔 있음                        3
+     └ 프롬프트에 선언 있음                            29
+   A 학습 프롬프트 env 무관 (동일)                     120
+   B normalize=False 는 매핑 없음                 120
+   C 기본값이 정규화 켬                              120
+   D 정답의 익명 토큰                                32
+   예제                                        120
+
+   ✅ 이상 없음
+
+##### ④ 데이터 경로 스모크 #####
+   [v9_env] 3개 적용: HF_HUB_OFFLINE=1 PYTORCH_ALLOC_CONF=expandable_segments:True TOKENIZERS_PARALLELISM=false
+■ TRAIN 총 2,009,606 스텝 · 표본 250 · hard_seq_len 2048
+
+   … 100/250 (49s)
+   … 200/250 (92s)
+
+■ 결과 (예제 250 · 108s)
+
+       └ final (H_asrt 를 쓴다)               4  (  1.6%)
+       ├ assert (명제를 세운다)                  4  (  1.6%)
+     §DEFINITIONS                        196  ( 78.4%)
+     §LTAC                                38  ( 15.2%)
+     §NOTATION                            98  ( 39.2%)
+     §PREMISES                           250  (100.0%)
+     §PROOFS                             250  (100.0%)
+     §SCRIPT                             250  (100.0%)
+     §STATE                              250  (100.0%)
+     §TYPES                              132  ( 52.8%)
+     ⚠ hard_seq_len 초과                    27  ( 10.8%)
+   ★ cut — assert/final                    8  (  3.2%)
+   ★ cut 후보 — close(exact L) 형태            7  (  2.8%)
+   예제                                    250  (100.0%)
+   정규화 적용                                245  ( 98.0%)
+
+   ■ 무작위성 — 서로 다른 파일 **236개** / 예제 250개  (한 파일 최다 2회)
+      방문 순서 앞 12개: Small.v · Logic.v · env.v · Subsets.v · MSNorm.v · NewtonInt.v · Basics.v · mult_div.v · Positive_conat.v · Convertibility.v · ssete3.v · LivenessProof.v
+
+   ■ 길이  중앙 1581 · p90 2078 · p99 2691 · 최대 2710   (상한 2048)
+
+   ■ 폐기  DROP_HALLUC 3건 · uncovered 0건
+[F2_DONE]

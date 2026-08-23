@@ -85,10 +85,26 @@ if __name__ == "__main__":
     print(f"■ {V9} 에서 읽은 설정 {len(e)}개\n")
     for k, v in sorted(e.items()):
         print(f"   {k:26s} {v}")
-    # 핵심 값이 비면 배선이 끊긴 것이다
-    need = ["RETRIEVAL_MODE", "CUTS_PATH", "HARD_SEQ_LEN"]
-    miss = [k for k in need if not e.get(k)]
+    # 핵심 값이 비면 배선이 끊긴 것이다.
+    # ★ RETRIEVAL_MODE 는 **파이썬 상수가 단일 출처**라 여기 없는 것이 정상이다
+    #   (premise_client.DEFAULT_RETRIEVAL_MODE). 대신 그 값을 찍어 확인한다.
+    # ★ 설정값은 `src/rango_defaults.py` 로 옮겼다. v9_env.sh 에 없는 것이 정상이다.
+    #   여기서는 **해결값**(env 덮어쓰기 + 파이썬 기본값)을 확인한다.
+    miss = []
     print()
+    try:
+        sys.path.insert(0, "src")
+        import rango_defaults as _R
+        print(f"   ■ 해결값 (env 덮어쓰기 + 파이썬 기본값) — {len(_R.PROD_DEFAULTS)}개")
+        for _k in sorted(_R.PROD_DEFAULTS):
+            _v, _d = _R.get(_k), _R.PROD_DEFAULTS[_k]
+            print(f"      {_k:24s} {_v}" + ("" if _v == _d else f"   ← env 로 덮어씀(기본 {_d})"))
+        for _k in ("CUTS_PATH", "HARD_SEQ_LEN", "RETRIEVAL_MODE"):
+            if not _R.get(_k):
+                miss.append(_k)
+    except Exception as _e:
+        print(f"★ 기본값 모듈 확인 실패: {_e}")
+        miss.append("rango_defaults")
     if miss:
         print("★ 필수 값 없음:", miss)
         sys.exit(1)

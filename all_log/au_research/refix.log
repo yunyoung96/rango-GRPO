@@ -1,0 +1,90 @@
+##### ① CompCert 결손 (정규화 ON · 수정 후) #####
+
+★ cut 파일 커버리지 부족 — 조용히 기능이 죽는다.
+   파일        data/cut_plans_all.jsonl
+   스캔 범위    [0, 0)
+   필요 범위    [0, 177,207)   (Split.TEST)
+   범위 밖 스텝은 cut 치환도 CUT_DROP_HOPELESS 도 작동하지 않는다.
+   메우려면:  python3 scripts/build_cuts.py 197207 test <out> 0
+   (의도한 부분 실행이면 CUTS_ALLOW_PARTIAL=1)
+
+   … 200/400 (198s)
+   … 400/400 (378s)
+
+■ TEST/AbsInt-CompCert · AUGMENT_V2=1 · 예제 400
+
+     (형태) 실명                            27  (100.0%)
+     ① 패킹에서 탈락 (검색엔 있었다)                 7  ( 25.9%)
+     ② 절단에서 탈락 (프롬프트엔 있었다)               2  (  7.4%)
+     ③ 검색에도 없다                          18  ( 66.7%)
+   2048 초과                              96  ( 24.0%)
+   ★ [PREMISES] 헤더가 절단됨                 96  ( 24.0%)
+   ★ 결손 이름                              27  (  6.8%)
+   예제                                  400  (100.0%)
+   평균 토큰                                1803
+      frame_contents_incr    ← apply frame_contents_incr with j; auto.
+      for_all_between_iff    ← rewrite EqSet.for_all_between_iff in H.
+      ulp_neq_0              ← rewrite 2!ulp_neq_0.
+      BI_i64_stod            ← eapply (L0 (BI_standard BI_i64_stod)); eauto.
+      match_stacks_inside_alloc_left ← eapply match_stacks_inside_alloc_left; eauto.
+      mag_mult_bpow          ← rewrite (mag_mult_bpow _ _ _ Nzx), !Z.max_l; lia.
+      incontext_ok           ← eapply incontext_ok; eauto.
+      external_call_parallel_rule ← exploit external_call_parallel_rule; eauto.
+      red_addrof             ← apply red_addrof; auto.
+      star_right             ← eapply star_right.
+      unsigned_range         ← generalize (unsigned_range y); intro.
+      find_funct_ptr_not_fresh ← eapply Genv.find_funct_ptr_not_fresh; eauto.
+      preg_of_injective      ← eapply preg_of_injective; eauto.
+      fundef_return          ← assert (fundef_return fd = ty).
+
+##### ② 익명화 교란 재검증 (TRAIN · 이번엔 매핑이 진짜로 채워짐) #####
+   … 250/1200 (110s)
+   … 500/1200 (209s)
+   … 750/1200 (294s)
+   … 1000/1200 (371s)
+
+■ 결과 (예제 1200)
+
+     매핑 항목 수                                     26068
+     정규화가 적용된 예제                                  1182
+   예제                                             1200
+
+   ★★ 익명화 탓 오신고  0/0 = 0.00%
+
+##### ③ 평가 정규화 일치 재검증 #####
+
+★ cut 파일 커버리지 부족 — 조용히 기능이 죽는다.
+   파일        data/cut_plans_all.jsonl
+   스캔 범위    [0, 0)
+   필요 범위    [0, 177,207)   (Split.TEST)
+   범위 밖 스텝은 cut 치환도 CUT_DROP_HOPELESS 도 작동하지 않는다.
+   메우려면:  python3 scripts/build_cuts.py 197207 test <out> 0
+   (의도한 부분 실행이면 CUTS_ALLOW_PARTIAL=1)
+
+
+■ TEST · 예제 200
+
+       ├ 매핑 자체가 다름                        26
+     └ ★선언 없음                            107
+     └ ★학습 선언 없음                         107
+     └ 선언 있음                            3738
+     └ 학습 선언 있음                         3706
+     매핑 있음                               200
+     매핑 항목                              6065
+   A 프롬프트에 보이는 익명 토큰                    5946
+   B 왕복 성공                               200
+   C 미지 이름 보존                            200
+   D ★프롬프트 불일치                            26
+   D 학습 프롬프트와 동일                         174
+   E 프롬프트의 L# 토큰                        3845
+   E' 학습 프롬프트의 L# 토큰                    3813
+   예제                                    200
+
+   매핑 있는 예제 200/200 · 항목 평균 30.3
+     [replace] 학습: 'cubic_eq'
+           평가: 'L8'
+     [replace] 학습: 'mulr_algr'
+           평가: 'L31'
+     [replace] 학습: 'Ple_trans'
+           평가: 'L13'
+[REFIX_DONE]
