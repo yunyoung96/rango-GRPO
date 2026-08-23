@@ -95,4 +95,9 @@ export DROP_HALLUC=1
 #  생성된 tactic 은 `model_wrapper` 가 `apply_inverse` 로 **자동 역매핑**한다 —
 #  Coq 은 `L0` 를 모르기 때문이다. 매핑에 없는 이름(모델이 지어낸 것)은 그대로 둬서
 #  Coq 에서 실패하게 한다(조용히 바꾸면 환각을 숨기게 된다).
+#  ★ 이 값은 **추론 프로세스에서만** 읽힌다(model_wrapper 의 기본값). 학습 경로는
+#    파이썬 인자로만 켜지므로 여기 값이 학습에 새지 않는다.
+#    더 안전하게는 평가 설정에 {"normalize_inference": true} 를 주거나
+#    DecoderLocalWrapper.from_checkpoint(..., normalize_inference=True) 를 쓴다.
+#    체크포인트의 학습 설정에 normalize_names 가 있으면 **자동으로 따라간다.**
 export NORMALIZE_INFERENCE=1

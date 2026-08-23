@@ -210,7 +210,7 @@ def last_inference_mapping() -> dict:
 
 
 def _maybe_normalize_input(text: str, example, tokenizer=None,
-                           out_tokens: int = 0) -> str:
+                           out_tokens: int = 0, enabled: bool = True) -> str:
     """추론 프롬프트 정규화. `NORMALIZE_INFERENCE=1` 일 때만 동작한다.
 
     ★ 학습(`collate`)은 프롬프트와 **정답에 같은 매핑**을 적용한다. 추론에는 정답이
@@ -219,7 +219,18 @@ def _maybe_normalize_input(text: str, example, tokenizer=None,
     """
     global _LAST_INFER_MAPPING
     _LAST_INFER_MAPPING = {}
-    if os.environ.get("NORMALIZE_INFERENCE", "0") != "1":
+    # ★★ **정규화는 두 종류이고 플래그가 다르다.** 섞으면 사고가 난다.
+    #
+    #     학습용   `NORMALIZE_NAMES`(+PREMISES/THEOREM/LTAC/RATE)
+    #              → `collate` 안의 자체 블록. 프롬프트와 **정답에 같은 매핑**을 건다.
+    #     추론용   이 함수. 정답이 없으므로 **프롬프트만** 바꾸고 매핑을 남긴다
+    #              (`last_inference_mapping` → 생성 후 `apply_inverse` 로 되돌린다).
+    #
+    #   기본값은 **켬**이다 — 모델이 익명 이름으로 학습되므로 추론도 같아야 한다.
+    #   대신 `collate`(학습)는 **반드시 enabled=False 를 명시**해서 부른다.
+    #   전역 env 로 두었다가 학습 경로로 새어, 프롬프트는 `Lemma L##` 인데 정답은
+    #   `ltu_inv` 로 남는 사고가 있었다(CompCert 결손 27 → 99).
+    if not enabled:
         return text
     from tactic_gen.normalize_names import build_mapping, apply_mapping
     key = (f"{getattr(example, 'file_name', '')}:"
@@ -1064,7 +1075,8 @@ class ProofPremiseCollator:
     PROOF_SEP = "\n[PROOFS]\n"
     PREMISE_SEP = "\n[PREMISES]\n"
 
-    def collate_input(self, tokenizer: PreTrainedTokenizer, example: LmExample) -> str:
+    def collate_input(self, tokenizer: PreTrainedTokenizer, example: LmExample,
+                      normalize: bool = True) -> str:
         proof_str = allocate_and_fmt(tokenizer, example.proofs, self.proof_tokens)
         _prem = example.premises
         if os.environ.get("RERANK_PREMISES", "0") == "1":
@@ -1098,7 +1110,8 @@ class ProofPremiseCollator:
             return _maybe_normalize_input(
                 base_str + augment_v2_section(tokenizer, example, base_str)
                 + NEWLINE_RESPONSE_TEMPLATE, example,
-                tokenizer=tokenizer, out_tokens=getattr(self, "out_tokens", 0))
+                tokenizer=tokenizer, out_tokens=getattr(self, "out_tokens", 0),
+                enabled=normalize)
         types_str = types_section(tokenizer, example)   # INJECT_TYPES=0 이면 ""
         _tnames = {ln.split(" :=")[0].strip()            # [TYPES] 가 이미 보여준 타입명
                    for ln in types_str.split("\n") if " :=" in ln}
@@ -1139,7 +1152,10 @@ class ProofPremiseCollator:
         # ① 프롬프트는 **원래 이름**으로 구성한다.
         #    ★ 정규화된 goal 로 정의를 조회하면 인덱스에 없어 [TYPES]/[DEFINITIONS] 가 통째로
         #      사라진다(실측). 반드시 원본으로 섹션을 만든 뒤 마지막에 치환해야 한다.
-        input_str = self.collate_input(tokenizer, example)   # ← _LAST_INJECTED 가 채워짐
+        # ★★ 학습 경로는 **추론 정규화를 반드시 끈다**(normalize=False 명시).
+        #   정규화는 아래 자체 블록에서 프롬프트와 **정답에 같은 매핑**으로 건다.
+        #   여기서 끄지 않으면 프롬프트만 먼저 익명화되어 정답과 어긋난다.
+        input_str = self.collate_input(tokenizer, example, normalize=False)
 
         # ①-b ★ cut 치환 (how-to-learn.txt §3)
         #   gold tactic 이 쓰는 lemma L 이 검색 결과에 없으면, 모델은 프롬프트에서

@@ -207,11 +207,23 @@ class DecoderLocalWrapper:
         tokenizer: PreTrainedTokenizer,
         collator: ExampleCollator,
         hard_seq_len: int,
+        normalize_inference: Optional[bool] = None,
     ):
         self.model = model
         self.tokenizer = tokenizer
         self.collator = collator
         self.hard_seq_len = hard_seq_len
+        # ★★ **추론 프롬프트 정규화는 여기서만 켠다.**
+        #   전역 env 로 두면 학습 경로로 샌다 — `collate`(학습)가 내부에서
+        #   `collate_input` 을 부르기 때문이다. 실제로 그렇게 새서 프롬프트는
+        #   `Lemma L##`, 정답은 `ltu_inv` 로 어긋난 채 학습됐다(CompCert 결손 27→99).
+        #   그래서 **파이썬 인자**로 받고, 이 값만 collator 에 명시적으로 넘긴다.
+        #   env 는 인자를 안 준 경우의 기본값으로만 쓴다(추론 프로세스 안에서만 읽힌다).
+        #   기본값은 **켬**이다(모델이 익명 이름으로 학습되므로). 끄려면 명시로
+        #   normalize_inference=False 를 주거나 NORMALIZE_INFERENCE=0 을 준다.
+        self.normalize_inference = (
+            bool(normalize_inference) if normalize_inference is not None
+            else os.environ.get("NORMALIZE_INFERENCE", "1") == "1")
 
     def get_recs(
         self,
@@ -224,7 +236,8 @@ class DecoderLocalWrapper:
         token_mask = None
         if token_mask_str is not None:
             token_mask = TokenMask.from_str(token_mask_str)
-        collated_input = self.collator.collate_input(self.tokenizer, example)
+        collated_input = self.collator.collate_input(
+            self.tokenizer, example, normalize=self.normalize_inference)
         inputs = self.tokenizer(
             collated_input,
             max_length=self.hard_seq_len,
@@ -261,11 +274,10 @@ class DecoderLocalWrapper:
         input_num_tokens = inputs["input_ids"].shape[1]
         generated_seqs = outputs.sequences[:, input_num_tokens:]
         tactics = self.tokenizer.batch_decode(generated_seqs, skip_special_tokens=True)
-        # ★ 추론 정규화(NORMALIZE_INFERENCE=1)를 켰다면 **반드시 되돌린다.**
-        #   모델은 프롬프트에서 본 `L0` 를 그대로 생성하는데 Coq 은 `L0` 를 모른다.
-        #   매핑에 없는 이름(모델이 지어낸 것)은 그대로 둔다 — Coq 에서 실패하는 것이
-        #   맞다. 조용히 다른 이름으로 바꾸면 환각을 숨기게 된다.
-        if os.environ.get("NORMALIZE_INFERENCE", "0") == "1":
+        # ★ 추론 정규화를 켰다면 **반드시 되돌린다.** 모델은 프롬프트에서 본 `L0` 를
+        #   그대로 생성하는데 Coq 은 `L0` 를 모른다. 매핑에 없는 이름(모델이 지어낸 것)은
+        #   그대로 둔다 — Coq 에서 실패하는 것이 맞다. 조용히 바꾸면 환각을 숨기게 된다.
+        if self.normalize_inference:
             from tactic_gen.tactic_data import last_inference_mapping
             from tactic_gen.normalize_names import apply_inverse
             _m = last_inference_mapping()
@@ -347,8 +359,18 @@ class DecoderLocalWrapper:
         return training_conf
 
     @classmethod
-    def from_checkpoint(cls, checkpoint_loc: Path) -> DecoderLocalWrapper:
+    def from_checkpoint(cls, checkpoint_loc: Path,
+                        normalize_inference: Optional[bool] = None) -> DecoderLocalWrapper:
+        """`normalize_inference` — 추론 프롬프트를 학습과 같은 형태로 익명화할지.
+
+        ★ **명시 인자로 받는다.** 전역 env 로 두면 학습 경로로 샌다(`collate` 가
+          내부에서 `collate_input` 을 부른다). None 이면 학습 설정에서 읽고,
+          그것도 없으면 env 를 본다 — env 는 추론 프로세스 안에서만 읽힌다.
+        """
         training_conf = cls.get_training_conf(checkpoint_loc)
+        if normalize_inference is None and "normalize_inference" in training_conf:
+            # 체크포인트의 학습 설정이 명시하면 그것을 따른다(사람이 잊는 사고 방지).
+            normalize_inference = bool(training_conf["normalize_inference"])
         hard_seq_length = get_required_arg("hard_seq_len", training_conf)
         example_collator_conf = example_collator_conf_from_yaml(
             training_conf["example_collator"]
@@ -374,12 +396,15 @@ class DecoderLocalWrapper:
                 model = model.cuda()
         except StopIteration:
             pass
-        return cls(model, tokenizer, example_collator, hard_seq_length)
+        return cls(model, tokenizer, example_collator, hard_seq_length,
+                   normalize_inference=normalize_inference)
 
     @classmethod
     def from_conf(cls, json_data: Any) -> DecoderLocalWrapper:
         name = json_data["checkpoint_loc"]
-        return cls.from_checkpoint(Path(name))
+        # 평가 설정에서 명시로 줄 수 있다: {"normalize_inference": true}
+        return cls.from_checkpoint(Path(name),
+                                   normalize_inference=json_data.get("normalize_inference"))
 
 
 class StubWrapper:

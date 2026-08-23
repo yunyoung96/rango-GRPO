@@ -69,6 +69,13 @@ def _strip_comments(t: str) -> str:
     return "".join(out)
 
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 400
+# ★ 프로젝트 한정 측정 (예: PROJ_FILTER=AbsInt-CompCert). held-out 벤치마크에서
+#   새 검색 기능이 실제로 먹는지 보려면 그 프로젝트만 떼어 봐야 한다.
+PROJ_FILTER = os.environ.get("PROJ_FILTER", "")
+SPLIT_NAME = os.environ.get("PROBE_SPLIT", "TRAIN").upper()
+if SPLIT_NAME == "TEST":          # 평가에는 cut 계획이 없다 — 드롭도 없다
+    os.environ["CUT_DROP_HOPELESS"] = "0"
+    os.environ.setdefault("DROP_HALLUC", "0")
 _dk = json.load(open("data/decl_kinds.json"))
 KINDS = _dk.get("kind", {})
 
@@ -77,10 +84,10 @@ _td = copy.deepcopy(cc["tactic_data"])
 _td["cache_loc"] = os.environ.get("VERIFY_CACHE", "/tmp/extref-cache")
 conf = TacticDataConf.from_yaml(_td)
 tok = get_tokenizer(cc["model_name"])
-ds = LmDataset.from_conf(conf, Split.TRAIN, None)
+ds = LmDataset.from_conf(conf, getattr(Split, SPLIT_NAME), None)
 coll = example_collator_from_conf(conf.collator_conf)
 HARD = int(os.environ.get("HARD_SEQ_LEN", "2048"))
-TOTAL = ds.shuffled_idx.split_length(Split.TRAIN)
+TOTAL = ds.shuffled_idx.split_length(getattr(Split, SPLIT_NAME))
 
 # ★ SSReflect 표지 — "환각 나는 SSReflect 스텝만 제외하면?" 을 재기 위해
 SSR = re.compile(
@@ -105,10 +112,13 @@ while st["예제"] < N and tried < N * 40:
     i = random.randrange(TOTAL)
     tried += 1
     try:
-        full = coll.collate(tok, ds.resolved_example(i))
+        _ex = ds.resolved_example(i)
+        full = coll.collate(tok, _ex)
     except Exception:
         continue
     if "[TACTIC]" not in full:
+        continue
+    if PROJ_FILTER and PROJ_FILTER not in (getattr(_ex, "file_name", "") or ""):
         continue
     st["예제"] += 1
     prompt, target = full.rsplit("[TACTIC]", 1)

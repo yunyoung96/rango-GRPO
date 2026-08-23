@@ -78,6 +78,15 @@ def fragments(defn: str, name: str) -> list:
         ids = [t for t in acc if re.match(r"[A-Za-z_]", t)]
         if not ids or any(len(t) < 2 for t in ids):
             continue
+        # ★★ **식별자 둘이 붙으면 버린다.** 공백을 지우고 매칭하므로 원본에서
+        #   공백으로 갈라져 있던 두 식별자가 이어붙어 **없는 토큰**이 만들어진다.
+        #   실측(CompCert, 조각 45,353개): `IS.In id` → `IS.Inid`,
+        #   `map fst` → `mapfst`, `ulp beta` → `ulpbeta`, `s1 s2 ->` → `s1s2->`.
+        #   이런 가짜 조각이 goal 아무 데나 걸려 무관한 정의를 주입했다.
+        #   `Tr (-1)`(=merely 의 단서)는 사이에 `(`·숫자가 있어 살아남는다.
+        if any(re.match(r"[A-Za-z_]", acc[k]) and re.match(r"[A-Za-z_]", acc[k + 1])
+               for k in range(len(acc) - 1)):
+            continue
         out.append(f)
     return list(dict.fromkeys(out))
 

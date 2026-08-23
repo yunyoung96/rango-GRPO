@@ -41,16 +41,21 @@ from tactic_gen.normalize_names import introduced_names  # noqa: E402
 from _coq_vocab import is_core  # noqa: E402
 
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 1500
+PROJ_FILTER = os.environ.get("PROJ_FILTER", "")
+SPLIT_NAME = os.environ.get("PROBE_SPLIT", "TRAIN").upper()
+if SPLIT_NAME == "TEST":
+    os.environ["CUT_DROP_HOPELESS"] = "0"
+    os.environ.setdefault("DROP_HALLUC", "0")
 STDLIB = set(json.load(open("data/stdlib_names.json")))
 cc = yaml.safe_load(open("all_log/ft_qwen3b_v9_conf.yaml"))
 _td = copy.deepcopy(cc["tactic_data"])
 _td["cache_loc"] = os.environ.get("VERIFY_CACHE", "/tmp/hsource-cache")
 conf = TacticDataConf.from_yaml(_td)
 tok = get_tokenizer(cc["model_name"])
-ds = LmDataset.from_conf(conf, Split.TRAIN, None)
+ds = LmDataset.from_conf(conf, getattr(Split, SPLIT_NAME), None)
 coll = example_collator_from_conf(conf.collator_conf)
 HARD = int(os.environ.get("HARD_SEQ_LEN", "2048"))
-TOTAL = ds.shuffled_idx.split_length(Split.TRAIN)
+TOTAL = ds.shuffled_idx.split_length(getattr(Split, SPLIT_NAME))
 
 st = collections.Counter()
 samples = []
@@ -66,6 +71,8 @@ while st["예제"] < N and tried < N * 40:
     except Exception:
         continue
     if "[TACTIC]" not in full:
+        continue
+    if PROJ_FILTER and PROJ_FILTER not in (getattr(ex, "file_name", "") or ""):
         continue
     st["예제"] += 1
     prompt, target = full.rsplit("[TACTIC]", 1)
