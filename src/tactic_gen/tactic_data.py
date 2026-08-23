@@ -170,6 +170,7 @@ def _fd_index() -> dict:
 
 TYPES_SEP = "\n[TYPES]\n"
 DEFS_SEP = "\n[DEFINITIONS]\n"
+NOTATION_SEP = "\n[NOTATION]\n"  # 파일 내 notation (풀에서 제외되는 종류)
 LTAC_SEP = "\n[LTAC]\n"   # 파일 내 Ltac 정의 (검색 풀에서 제외되는 종류)
 # ★ 에러 조건부 학습(ERROR_COND=1): 직전 시도와 Coq 이 준 에러를 프롬프트에 넣는다.
 #   기존 SFT 는 순수 `state -> gold tactic` 이라, 실패 정리당 INVALID 가 중앙 52회 나는데도
@@ -190,6 +191,17 @@ _LAST_INJECTED: dict = {}
 
 # ★ 추론 정규화용 — 마지막으로 적용한 매핑을 보관한다(역매핑에 필요).
 _LAST_INFER_MAPPING: dict = {}
+
+
+# ★ 학습 경로에서 **실제로 적용된 매핑**. 검사기가 "익명화 때문에 못 찾은 것" 을
+#   가려낼 수 있어야 한다 — 프롬프트는 `f3` 인데 정답은 `foo` 로 남았다면 그건
+#   측정 버그이지 환각이 아니다. 진단용이며 학습 동작에는 영향이 없다.
+_LAST_TRAIN_MAPPING: dict = {}
+
+
+def last_train_mapping() -> dict:
+    """직전 `collate` 가 프롬프트·정답에 적용한 정규화 매핑."""
+    return dict(_LAST_TRAIN_MAPPING)
 
 
 def last_inference_mapping() -> dict:
@@ -214,7 +226,8 @@ def _maybe_normalize_input(text: str, example) -> str:
     try:
         m = build_mapping(dict(_LAST_INJECTED), key, avoid_text=text,
                           premises=list(getattr(example, "premises", None) or []),
-                          proof_script=getattr(example, "proof_script", "") or "")
+                          proof_script=getattr(example, "proof_script", "") or "",
+                          ltac_names=list(getattr(example, "local_ltac", None) or []))
     except Exception:
         return text
     if not m:
@@ -262,6 +275,111 @@ def defs_section(tokenizer: PreTrainedTokenizer, example: LmExample,
     return DEFS_SEP + "\n".join(line for _, line in lines)
 
 
+_NOTA_INDEX = None
+
+
+def _nota_index() -> dict:
+    """`data/notation_index.json` — 프로젝트별 notation 색인. 없으면 {}."""
+    global _NOTA_INDEX
+    if _NOTA_INDEX is None:
+        try:
+            with open(os.environ.get("NOTATION_INDEX_PATH",
+                                     "data/notation_index.json")) as f:
+                _NOTA_INDEX = json.load(f)
+        except Exception:
+            _NOTA_INDEX = {}
+    return _NOTA_INDEX
+
+
+# ★ `example.file_name` 은 `repos/HoTT-Coq-HoTT/...` 처럼 **앞 슬래시가 없다.**
+#   `/repos/` 를 요구했다가 실측 120건에서 **0건 매치** — 프로젝트 notation 과
+#   역인덱스가 한 번도 발화하지 않았고, 그래서 A/B 가 바이트 단위로 같았다.
+_PROJ_RE = re.compile(r"(?:^|/)repos/([^/]+)/")
+
+
+def proj_notations(file_path: str, goal: str, limit: int = 20):
+    """★ goal 의 **기호로 앵커링한** 프로젝트 notation.
+
+    파일 **밖** notation 은 중앙 194개라 통째로는 못 넣는다. 그런데 결손 이름이
+    거기 숨어 있다 — goal `A ⊢I phi` 뒤의 `intu` 가 그렇다. 그래서 프로젝트로
+    좁히고 **goal 에 실제로 나타나는 기호만** 고른다.
+
+    실측(LEMMA 3,000건을 goal 대용):
+        발화 중앙 0 · p90 2 · p99 10 개 · 토큰 중앙 0 · p90 39 · p99 291
+        23.1% 의 goal 이 하나라도 발화, 2.6% 가 타입 씨앗을 얻는다
+        `intu` 사례: 프로젝트 99개 → **1개 발화, 그게 정답**
+
+    반환 (notation 문장들, [TYPES] 씨앗 타입명들)
+    """
+    idx = _nota_index()
+    if not idx or not goal:
+        return [], []
+    m = _PROJ_RE.search(file_path or "")
+    if not m:
+        return [], []
+    e = idx.get(m.group(1))
+    if not e:
+        return [], []
+    g = goal[:4000]
+    fired = []
+    for an, _names, text in e.get("n", ()):
+        best = 0
+        for a in an:
+            if a in g and len(a) > best:
+                best = len(a)
+        if best:
+            fired.append((best, text))
+    fired.sort(key=lambda x: -x[0])          # 긴 기호 = 식별력 높은 것 먼저
+    seeds = [tn for a, tn in e.get("s", ()) if a in g]
+    return [t for _, t in fired[:limit]], list(dict.fromkeys(seeds))[:8]
+
+
+_UNFOLD_INDEX = None
+
+
+def _unfold_index() -> dict:
+    global _UNFOLD_INDEX
+    if _UNFOLD_INDEX is None:
+        try:
+            with open(os.environ.get("UNFOLD_INDEX_PATH",
+                                     "data/unfold_index.json")) as f:
+                _UNFOLD_INDEX = json.load(f)
+        except Exception:
+            _UNFOLD_INDEX = {}
+    return _UNFOLD_INDEX
+
+
+def unfold_seeds(file_path: str, goal: str, limit: int = 6) -> list:
+    """★ goal 에 **펼쳐진 형태**가 보일 때 접힌 이름을 되찾는다.
+
+    실측 사례: goal `Tr (-1) (hfiber ...)` · 정답 `merely (hfiber ...)` ·
+    정의 `Definition merely (A:Type) := Build_HProp (Tr (-1) A)`.
+    지금 `[DEFINITIONS]` 씨앗은 goal 의 **이름**으로만 확장하므로 `merely` 에 못 닿는다.
+
+    실측 비용(LEMMA 2,500건): 중앙 0 · p90 1 · p99 5 개 · 발화율 15.3%
+    """
+    idx = _unfold_index()
+    if not idx or not goal:
+        return []
+    m = _PROJ_RE.search(file_path or "")
+    if not m:
+        return []
+    e = idx.get(m.group(1))
+    if not e:
+        return []
+    g = re.sub(r"\s+", "", goal[:4000])
+    hit = [(len(f), names) for f, names in e.items() if f in g]
+    hit.sort(key=lambda x: -x[0])
+    out = []
+    for _, names in hit:
+        for n in names:
+            if n not in out:
+                out.append(n)
+        if len(out) >= limit:
+            break
+    return out[:limit]
+
+
 def augment_v2_section(tokenizer: PreTrainedTokenizer, example: LmExample,
                        base_str: str) -> str:
     """AUGMENT_V2=1 일 때 프롬프트 **맨 뒤**(응답 템플릿 직전)에 붙일 [TYPES]/[DEFINITIONS] 블록.
@@ -301,6 +419,24 @@ def augment_v2_section(tokenizer: PreTrainedTokenizer, example: LmExample,
     t_budget = min(int(os.environ.get("TYPES_TOKENS", "300")), room)
     goal = getattr(example, "proof_state", "") or ""
     proj = getattr(example, "file_name", None)   # ★ 파일 경로 전체(pick_def 가 거리순으로 좁힘)
+    # ★★ **프로젝트 notation** — goal 의 기호가 가린 이름을 되찾는다.
+    #   `A ⊢I phi` 의 `intu` 는 파일 밖 notation 안에만 있고, NOTATION 은
+    #   PremiseFilter 가 풀에서 빼므로 **검색으로는 영영 안 온다.**
+    _np_texts, _np_seeds = ([], [])
+    if os.environ.get("NOTATION_PROJ", "0") == "1":
+        try:
+            _np_texts, _np_seeds = proj_notations(
+                proj or "", goal, limit=int(os.environ.get("NOTATION_PROJ_MAX", "20")))
+        except Exception:
+            _np_texts, _np_seeds = [], []
+    # ★★ **역인덱스** — goal 이 정의의 *본문*을 보여 줄 때 이름을 되찾는다.
+    _uf_seeds = []
+    if os.environ.get("UNFOLD_SEEDS", "0") == "1":
+        try:
+            _uf_seeds = unfold_seeds(proj or "", goal,
+                                     limit=int(os.environ.get("UNFOLD_MAX", "6")))
+        except Exception:
+            _uf_seeds = []
     parts = []
     used = 0
     injected = {}          # ★ 실제로 프롬프트에 들어간 {이름: 정의문} — 인용 타깃 생성에 쓴다
@@ -309,7 +445,9 @@ def augment_v2_section(tokenizer: PreTrainedTokenizer, example: LmExample,
             parts.append(TYPES_SEP + "(none)")
         else:
             # ★ [TYPES] 도 같은 씨앗 확장을 받는다 (Constructor·Field 결손 대응).
-            _tex = []
+            # ★ notation 이 준 타입명을 **맨 앞에** 둔다 — 가장 정밀한 씨앗이다.
+            #   `st =[ c ]=> st'` → `ceval` → 그 생성자 `E_IfFalse` 까지 2단으로 닿는다.
+            _tex = list(_np_seeds) + list(_uf_seeds)
             if os.environ.get("TYPES_SEED_PREMISES", "1") == "1":
                 for _p in (getattr(example, "premises", None) or [])[:12]:
                     _tex += re.findall(r"[A-Za-z_][\w']*",
@@ -357,7 +495,7 @@ def augment_v2_section(tokenizer: PreTrainedTokenizer, example: LmExample,
                 #     아예 없었다(풀에서 제외된 종류라 주입이 유일한 통로다).
                 #   예산 여유도 확인했다 — 프롬프트 중앙 1,118 / 상한 2,048.
                 #   각 출처는 env 로 끌 수 있게 둔다(절제 실험용).
-                _extra = []
+                _extra = list(_np_seeds) + list(_uf_seeds)
                 if os.environ.get("DEFS_SEED_HYP", "1") == "1":
                     _st_all = getattr(example, "proof_state", "") or ""
                     _hy = _st_all.split("\n\n")[0] if "\n\n" in _st_all else ""
@@ -434,6 +572,31 @@ def augment_v2_section(tokenizer: PreTrainedTokenizer, example: LmExample,
                 _n += _c
             if _acc:
                 parts.append(LTAC_SEP + "\n".join(_acc))
+                # ★★ 이 줄이 빠져 있었다. `used` 를 안 올리면 뒤따르는 [NOTATION] 이
+                #   남은 자리를 **최대 LTAC_TOKENS(160) 만큼 과대평가**한다.
+                #   실측: 2048 초과율이 8.5% → 11.5% 로 올라간 원인 중 하나.
+                used += _n
+
+    # ★ **파일 내 Notation** — notation 이 이름을 가리는 경우를 연다.
+    #   실측 사례: goal 이 `A ⊢I phi` 인데 정답은 `intu` 를 쓴다.
+    #   `Notation "A ⊢I phi" := (prv intu A phi)` 를 보여 주면 그 연결이 생긴다.
+    if os.environ.get("INJECT_NOTATION", "1") == "1":
+        _nt = [(_x if isinstance(_x, str) else str(_x)).strip()
+               for _x in (getattr(example, "local_notation", None) or [])]
+        _nt = [x for x in _nt if x]
+        _nt += [x for x in _np_texts if x not in _nt]   # ★ 프로젝트 notation 합류
+        if _nt:
+            _nb = min(int(os.environ.get("NOTATION_TOKENS", "220")), max(0, room - used))
+            _acc2, _n2 = [], 0
+            for _x in _nt:
+                _c = _ntok(_x)
+                if _n2 + _c > _nb:
+                    continue
+                _acc2.append(_x)
+                _n2 += _c
+            if _acc2:
+                parts.append(NOTATION_SEP + "\n".join(_acc2))
+                used += _n2
 
     return "".join(parts)
 
@@ -1014,6 +1177,7 @@ class ProofPremiseCollator:
         #    이러면 goal 의 `val` 과 [TYPES] 의 `Inductive val := ...` 이 함께 `T0` 가 되어
         #    조회 가능성은 유지되면서 **이름 암기만 무력화**된다.
         #    (ablation: clean vs wrong 차이 ±0 → 모델이 안 읽는 이유는 '읽을 필요가 없어서'다)
+        globals()["_LAST_TRAIN_MAPPING"] = {}
         if os.environ.get("NORMALIZE_NAMES", "0") == "1":
             from tactic_gen.normalize_names import build_mapping, apply_mapping, should_normalize
             key = (f"{getattr(example, 'file_name', '')}:"
@@ -1061,7 +1225,9 @@ class ProofPremiseCollator:
                 mapping = build_mapping(dict(_LAST_INJECTED), key,
                                         avoid_text=input_str + target,
                                         premises=_in_prompt,
-                                        proof_script=getattr(example, "proof_script", "") or "")
+                                        proof_script=getattr(example, "proof_script", "") or "",
+                                        ltac_names=list(
+                                            getattr(example, "local_ltac", None) or []))
                 # ★★ 프롬프트에 **실제로 없는 이름**은 매핑에서 뺀다.
                 #   build_mapping 은 `example.premises` 전부를 대상으로 하는데,
                 #   프롬프트는 premise_tokens(896) 에서 잘린다. 잘려나간 premise 의
@@ -1073,6 +1239,8 @@ class ProofPremiseCollator:
                     mapping = {k: v for k, v in mapping.items()
                                if re.search(r"(?<![\w'])" + re.escape(k) + r"(?![\w'])",
                                             input_str)}
+                global _LAST_TRAIN_MAPPING
+                _LAST_TRAIN_MAPPING = dict(mapping or {})
                 if mapping:
                     input_str = apply_mapping(input_str, mapping)
                     target = apply_mapping(target, mapping)
@@ -1465,6 +1633,8 @@ _CACHE_STAMP_KEYS = (
     "RETRIEVAL_MODE", "RETRIEVAL_STAGE1", "RERANK_PREMISES",
     "INJECT_TYPES", "INJECT_DEFS", "TYPES_TOKENS", "DEFS_TOKENS",
     "FUNC_DEFS_PATH", "AUGMENT_V2", "CACHE_MAX_PAGE",
+    # ★ 검색 **풀 구성**을 바꾸는 것 — 캐시된 예제 자체가 달라지므로 반드시 도장에 넣는다.
+    "PREMISE_ADMIT_USED", "ADMIT_MIN_FILES", "ADMIT_MIN_USES",
 )
 
 
@@ -1477,7 +1647,7 @@ _CACHE_STAMP_KEYS = (
 #     해시는 PYTHONHASHSEED 로 프로세스마다 랜덤화되므로, **같은 인덱스가 실행마다 다른
 #     프롬프트**를 냈다(실측: 7개 중 3개 불일치, 길이까지 달랐다). 원본 순서를 쓰도록
 #     고쳤고 그래서 이전 캐시는 전부 무효다.
-_DATA_PATH_VERSION = "v6-seed+proofs"
+_DATA_PATH_VERSION = "v7-seed+proofs+notation"
 
 
 # ★ stdlib 선언 이름 (data/stdlib_names.json). 없으면 빈 집합 — 가드가 보수적으로 동작한다.
@@ -1490,6 +1660,20 @@ def _load_stdlib_names():
 
 
 _STDLIB_NAMES = _load_stdlib_names()
+
+
+def _strip_coq_comments(t: str) -> str:
+    """Coq 주석 `(* … *)` 제거 — 주석 안 낱말은 이름이 아니다(중첩 처리)."""
+    out, depth, i = [], 0, 0
+    while i < len(t or ""):
+        if t.startswith("(*", i):
+            depth += 1; i += 2; continue
+        if t.startswith("*)", i) and depth:
+            depth -= 1; i += 2; continue
+        if not depth:
+            out.append(t[i])
+        i += 1
+    return "".join(out)
 
 
 def _cache_stamp(formatter) -> str:
@@ -1629,6 +1813,7 @@ class ExampleCache:
 
 # 진단 모드에서 건너뛴 '판정 없음' 스텝 수 — 스크립트가 읽어 보고한다.
 _UNCOVERED_SKIPS = [0]
+_HALLUC_SKIPS = [0]   # DROP_HALLUC 로 건너뛴 수
 
 
 _SUB_ASSERT = re.compile(
@@ -1865,6 +2050,100 @@ class LmDataset(Dataset):
             f"{getattr(example, 'file_name', '')}:"
             f"{getattr(example, 'proof_idx', '')}:{getattr(example, 'step_idx', '')}")
 
+    # ★ 환각 판정에 쓰는 어휘·stdlib (검사기와 **같은 것**을 써야 학습과 측정이 맞는다)
+    __VOCAB = None
+
+    @staticmethod
+    def _vocab():
+        if LmDataset.__VOCAB is None:
+            try:
+                import sys as _sys
+                if "scripts" not in _sys.path:
+                    _sys.path.insert(0, "scripts")
+                from _coq_vocab import is_core as _ic
+            except Exception:
+                _ic = lambda _x: False
+            LmDataset.__VOCAB = _ic
+        return LmDataset.__VOCAB
+
+    def _hallucinates(self, example) -> bool:
+        """정답이 **프롬프트에 없는 이름**을 쓰는가 — 그러면 이 예제는 학습 불가다.
+
+        `_hopeless` 는 cut 계획이 판정한 것(gold lemma 가 풀에 없음)만 본다. 그런데
+        정답은 lemma 말고도 **정의·생성자·필드·프로젝트 Ltac** 을 부르고, 그것들은
+        rango 의 PremiseFilter 가 풀에서 통째로 빼므로 검색으로 절대 안 온다.
+        실측(12,000 예제): 외부 참조를 쓰는 예제의 **17.4%** 가 그런 이름을 쓴다.
+
+        판정은 **검사기와 같은 규칙**이다(안 그러면 학습과 측정이 어긋난다):
+          · Coq 기본 어휘·tactic·Vernacular·항 키워드   → 이름 아님
+          · **stdlib** — 모델이 안다고 가정(풀에서 구조적으로 빠져 있다)
+          · [STATE] 의 가설 이름, 이 tactic 이 도입하는 이름 → 지역
+          · 주석 안 낱말 → 이름 아님
+          · 정답의 첫 토큰(tactic 이름) → 문법
+        그 나머지가 **절단 후 프롬프트**에 없으면 환각이다.
+        """
+        try:
+            full = self.example_collator.collate(self.tokenizer, example)
+        except Exception:
+            return False                      # 못 만들면 판정하지 않는다(보수적)
+        if "[TACTIC]" not in full:
+            return False
+        prompt, target = full.rsplit("[TACTIC]", 1)
+        try:
+            ids = self.tokenizer(full, add_special_tokens=False)["input_ids"]
+            vis = self.tokenizer.decode(ids[max(0, len(ids) - self.hard_seq_len):],
+                                        skip_special_tokens=True)
+            vp = vis.rsplit("[TACTIC]", 1)[0] if "[TACTIC]" in vis else vis
+        except Exception:
+            vp = prompt
+        tgt = _strip_coq_comments(target)
+        # ★ 검사기(probe_extref_halluc)와 **같은 규칙**을 써야 한다. 어긋나면
+        #   `DROP_HALLUC` 이 환각이 아닌 예제까지 버린다(= 학습 데이터 손실).
+        #   문자열 리터럴 안은 참조가 아니다 — `Search "add_com".`
+        tgt = re.sub(r'"[^"]*"', " ", tgt)
+        local = set()
+        m = re.search(r"\[STATE\]\n(.*?)(?=\n\[[A-Z]+\]|\Z)", prompt, re.S)
+        if m:
+            for ln in m.group(1).split("\n"):
+                mm = re.match(r"^([A-Za-z_][\w', ]*?)\s*:", ln)
+                if mm:
+                    local |= {x.strip() for x in mm.group(1).split(",") if x.strip()}
+        try:
+            from tactic_gen.normalize_names import introduced_names as _intro
+            intro = _intro(tgt)
+        except Exception:
+            intro = set()
+        first = re.match(r"^\s*([A-Za-z_][\w']*)", tgt.strip())
+        tacname = first.group(1) if first else None
+        # ★ `;` · `by` 뒤도 **tactic 자리**다. 첫 토큰만 보면 `now nzsimpl` 의 nzsimpl,
+        #   `...; order_tac.` 의 order_tac 을 환각으로 오판해 예제를 버린다.
+        tacnames = set()
+        for _seg in re.split(r";|\bby\b", tgt):
+            _seg = _seg.strip().lstrip("[](){}| \t")
+            for _ in range(3):
+                _seg = re.sub(r"^(?:now|try|repeat|by|first|solve|progress|do\s+\d+|"
+                              r"abstract|once|time)\b\s*\[?\s*", "", _seg)
+            _mm = re.match(r"([A-Za-z_][\w']*)", _seg)
+            if _mm:
+                tacnames.add(_mm.group(1))
+        is_core = self._vocab()
+        # ★★ **길이 필터를 없앴다.** 예전에는 `len(base) < 3` 으로 짧은 이름을 통째로
+        #   건너뛰었는데, 익명 토큰이 정확히 두 글자다(`L0`·`f1`·`T2`·`C3`·`K0`·`G0`).
+        #   그래서 정답이 `apply L0.` 인데 `L0` 선언이 프롬프트에 없는 경우를
+        #   **못 잡고 있었다**(실측 2.2%). 익명 이름으로 환각을 가르치는 것이라
+        #   실명보다 더 나쁘다 — 되돌릴 뜻조차 없다.
+        #   짧은 지역 이름은 `local`·`intro`·`is_core` 가 이미 걸러 준다.
+        for w in dict.fromkeys(re.findall(
+                r"(?<![\w'.])([A-Za-z_][\w']*(?:\.[A-Za-z_][\w']*)*)", tgt)):
+            base = w.split(".")[-1]
+            if (is_core(w) or base in local or w in local or base in intro
+                    or w in intro or w == tacname or w in tacnames or base in tacnames
+                    or base in _STDLIB_NAMES or w in _STDLIB_NAMES):
+                continue
+            if not re.search(r"(?<![\w'])" + re.escape(base) + r"(?![\w'])", vp):
+                return True
+        return False
+
     def _uncovered(self, index: int) -> bool:
         """이 인덱스가 cut **판정을 못 받은** 구간인가.
 
@@ -2038,7 +2317,20 @@ class LmDataset(Dataset):
                         f"   (생성 중 진단이면 CUTS_ALLOW_PARTIAL=1)")
                 _UNCOVERED_SKIPS[0] += 1
             elif not self._hopeless(example):
-                return example
+                # ★★ `DROP_HALLUC=1` 이면 **정답이 프롬프트에 없는 이름을 쓰는** 예제도
+                #   건너뛴다. `_hopeless` 는 cut 계획이 본 것(gold lemma 가 풀에 없음)만
+                #   막는데, 정답은 정의·생성자·필드·프로젝트 Ltac 도 부르고 그것들은
+                #   PremiseFilter 가 풀에서 통째로 빼므로 검색으로 절대 안 온다.
+                #   실측(12,000): 외부 참조를 쓰는 예제의 17.4% 가 그렇다.
+                #   비용은 collate 한 번(검색은 이미 캐시됨)이다.
+                if os.environ.get("DROP_HALLUC", "0") != "1":
+                    return example
+                try:
+                    if not self._hallucinates(example):
+                        return example
+                    _HALLUC_SKIPS[0] += 1
+                except Exception:
+                    return example              # 판정 실패는 통과(보수적)
             index = (index + 1) % n
             try:
                 example = self._apply_substep(self.raw_example(index), index)

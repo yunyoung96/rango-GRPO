@@ -488,6 +488,23 @@ class GeneralFormatter:
             _ex.local_ltac = _lt
         except Exception:
             _ex.local_ltac = []
+        # ★ **파일 내 Notation** — 이름을 가리는 주범이다.
+        #   `A ⊢I phi` 의 뒤에 `intu` 가 숨어 있고, 정답은 그 이름을 쓴다.
+        #   `Notation "A ⊢I phi" := (prv intu A phi)` 를 보여 주면 드러난다.
+        #   NOTATION 은 PremiseFilter 가 풀에서 빼므로 검색으로는 절대 안 온다.
+        #   파일 **내** 것만 넣는다: 실측 중앙 0개 · p90 552토큰
+        #   (파일 밖은 중앙 194 · 최대 1,572 라 불가).
+        try:
+            _nt = []
+            for _p in dp_obj.in_file_avail_premises:
+                if str(getattr(_p, "sentence_type", "")).split(".")[-1] != "NOTATION":
+                    continue
+                _t = (getattr(_p, "text", "") or "").strip()
+                if _t and getattr(_p, "line", 0) < proof.theorem.term.line:
+                    _nt.append(_t)
+            _ex.local_notation = _nt
+        except Exception:
+            _ex.local_notation = []
         return _ex
 
     def close(self):

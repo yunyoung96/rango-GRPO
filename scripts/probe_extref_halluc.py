@@ -82,6 +82,16 @@ coll = example_collator_from_conf(conf.collator_conf)
 HARD = int(os.environ.get("HARD_SEQ_LEN", "2048"))
 TOTAL = ds.shuffled_idx.split_length(Split.TRAIN)
 
+# ★ SSReflect 표지 — "환각 나는 SSReflect 스텝만 제외하면?" 을 재기 위해
+SSR = re.compile(
+    r"(?:^|[;\s\[\]|(){}])(?:move|apply|case|elim|congr|rewrite|exact|set|pose)\s*:"
+    r"|=>\s*[\[\/]"
+    r"|(?:^|[;\s])(?:have|suff|suffices|wlog)\s"
+    r"|\bby\s*\[\]"
+    r"|//[=/]?"
+    r"|rewrite\s+-"
+    r"|/=")
+
 st = collections.Counter()
 tac_kind = collections.defaultdict(collections.Counter)
 kind_miss = collections.Counter()
@@ -125,8 +135,23 @@ while st["예제"] < N and tried < N * 40:
     #   여기 온다. 이름이 아니라 문법이므로 외부 참조에서 뺀다. 다만 그 자체가
     #   "볼 수 없는 Ltac" 문제이긴 하므로 **따로 센다.**
     _tgt = _strip_comments(target)          # ★ 주석 제거 후 판정
+    # ★ **문자열 리터럴**은 참조가 아니다 — `Search "add_com".` 의 add_com 을
+    #   "프롬프트에 없는 이름" 으로 신고했다(덤프 [11]). Coq 이 해석하는 이름이 아니다.
+    _tgt = re.sub(r'"[^"]*"', ' ', _tgt)
     _first = re.match(r"^\s*([A-Za-z_][\w']*)", _tgt.strip())
     _tacname = _first.group(1) if _first else None
+    # ★ **`;` 뒤도 tactic 자리다.** 첫 토큰만 보다가 `now nzsimpl` 의 nzsimpl,
+    #   `...; order_tac.` 의 order_tac 을 "프롬프트에 없는 이름" 으로 신고했다.
+    #   `now`·`try`·`repeat`·`by`·`do N`·`solve [` 같은 결합자는 벗겨 낸다.
+    _tacnames = set()
+    for _seg in re.split(r";|\bby\b", _tgt):
+        _seg = _seg.strip().lstrip("[](){}| \t")
+        for _ in range(3):
+            _seg = re.sub(r"^(?:now|try|repeat|by|first|solve|progress|do\s+\d+|"
+                          r"abstract|once|time)\b\s*[\[]?\s*", "", _seg)
+        _m = re.match(r"([A-Za-z_][\w']*)", _seg)
+        if _m:
+            _tacnames.add(_m.group(1))
     if _tacname and not is_core(_tacname):
         st["  (참고) 정답 첫 토큰이 비표준 tactic"] += 1
         if not re.search(r"(?<![\w'])" + re.escape(_tacname) + r"(?![\w'])", vp):
@@ -137,9 +162,7 @@ while st["예제"] < N and tried < N * 40:
         base = w.split(".")[-1]
         if is_core(w) or base in local or w in local or base in intro or w in intro:
             continue
-        if w == _tacname:                 # tactic 이름은 위에서 따로 셌다
-            continue
-        if len(base) < 3:
+        if w == _tacname or w in _tacnames:   # tactic 이름은 위에서 따로 셌다
             continue
         ext.append(w)
         if not re.search(r"(?<![\w'])" + re.escape(base) + r"(?![\w'])", vp):
@@ -165,9 +188,13 @@ while st["예제"] < N and tried < N * 40:
         (kind_miss if w in miss else kind_seen)[k] += 1
     if miss or stdmiss:
         st["  (참고) stdlib 포함하면 결손 있는 예제"] += 1
+    _is_ssr = bool(SSR.search(_tgt))
+    if _is_ssr:
+        st["  (SSReflect) 외부참조 쓰는 예제"] += 1
     if miss:
         st["★★ 그중 환각(하나라도 안 보임)"] += 1
         tac_kind[_tk]["환각"] += 1
+        st["  ├ SSReflect 환각" if _is_ssr else "  ├ 비-SSReflect 환각"] += 1
         st["  안 보이는 이름 수"] += len(miss)
         for w in miss:
             if (KINDS.get(w) or KINDS.get(w.split(".")[-1])) is None and len(unk) < 12:
@@ -193,6 +220,26 @@ for k in sorted(allk, key=lambda x: -kind_miss[x]):
           f"({kind_miss[k]/max(tot,1)*100:5.1f}% 안 보임)  "
           f"결손 중 {kind_miss[k]/NM*100:5.1f}%")
 if unk:
+    # ★★ "환각 나는 SSReflect 스텝만 제외하면?" — 남는 환각률과 그 대가
+    _E = st["★ 외부 참조를 쓰는 예제"]
+    _H = st["★★ 그중 환각(하나라도 안 보임)"]
+    _HS = st["  ├ SSReflect 환각"]
+    _HN = st["  ├ 비-SSReflect 환각"]
+    _ES = st["  (SSReflect) 외부참조 쓰는 예제"]
+    print("\n   ■ ★ SSReflect 환각 스텝만 제외했을 때")
+    print(f"     현재            환각 {_H}/{_E} = {_H/max(_E,1)*100:.1f}%")
+    print(f"       ├ SSReflect     {_HS}건 ({_HS/max(_H,1)*100:.0f}% of 환각)")
+    print(f"       └ 비-SSReflect  {_HN}건 ({_HN/max(_H,1)*100:.0f}%)")
+    print(f"     제외 후          환각 {_HN}/{_E - _HS} = "
+          f"{_HN/max(_E - _HS,1)*100:.1f}%")
+    print(f"     대가             외부참조 예제의 {_HS/max(_E,1)*100:.1f}% 제외 "
+          f"· 전체 예제의 {_HS/max(st['예제'],1)*100:.2f}%")
+    print(f"     (참고) SSReflect 는 외부참조 예제의 {_ES/max(_E,1)*100:.1f}%,"
+          f" 그중 환각률 {_HS/max(_ES,1)*100:.1f}%")
+    print(f"     (참고) **모든** SSReflect 를 제외하면 환각 "
+          f"{_HN}/{_E - _ES} = {_HN/max(_E - _ES,1)*100:.1f}% · "
+          f"대가 전체의 {_ES/max(st['예제'],1)*100:.2f}%")
+
     print("\n   ■ tactic 종류별  (외부참조 쓰는 예제 / 환각 / 비율)")
     rows = sorted(tac_kind.items(), key=lambda kv: -kv[1]["씀"])
     print(f"     {'tactic':16s} {'씀':>7} {'환각':>7} {'환각률':>8}   {'외부참조 없음':>10}")

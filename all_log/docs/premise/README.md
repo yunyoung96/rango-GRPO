@@ -97,6 +97,8 @@ A + (1-A) × C
 
 - [eqx.md](eqx.md) — α-동치 랭커. 포섭 선순서의 표준 몫 ⊑∩⊒ 로 유도되고 `exact` 성공 조건과 일치한다. 프로덕션 기본값(`RETRIEVAL_MODE=eqx`).
 
+- [halluc-limits.md](halluc-limits.md) — **환각의 원리적 한계와 cut 의 위치**. 왜 프롬프트 구성으로는 못 없애나(이름의 임의성 · goal 의 손실 렌더링 · lemma 가 goal 의 함수가 아님), 분모/분자를 명시한 구성표, **출처별(gold 88.4% vs cut 11.6%)** 분류, gold 원본 환각의 **원인별 실제 사례(프롬프트 전문 + gold tactic, 토글)**, `[TYPES]`/`[DEFINITIONS]` 주입이 왜 못 잡나(`IsPullback`/`isequiv_adjointify` 완전 사례), cut 이 무엇을 풀고 무엇을 못 푸는가.
+
 - [terms.md](terms.md) — IR 용어 전부(tf-idf · IDF · BM25 · 코사인 · **RRF** · 재현율 · McNemar). 어디까지가 IR 표준이고 어디부터가 우리 기여인지.
 
 - [metric-retrieval.md](metric-retrieval.md) — 구조 정보만으로 하는 검색. 경로집합 Jaccard 가 **진짜 metric** 임을 보이고(Theorem 1), MinHash+LSH 로 속도를 잰다. ATP 의 path/fingerprint indexing 과 수렴.

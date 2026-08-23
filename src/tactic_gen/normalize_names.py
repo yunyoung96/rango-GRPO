@@ -245,7 +245,8 @@ def theorem_name(proof_script: str) -> Optional[str]:
 
 def build_mapping(injected: dict, seed_key: str, avoid_text: str = "",
                   premises: Optional[list] = None,
-                  proof_script: Optional[str] = None) -> dict:
+                  proof_script: Optional[str] = None,
+                  ltac_names: Optional[list] = None) -> dict:
     """**실제로 주입된 정의**의 이름과 그 생성자만 치환 대상으로 삼는다.
 
     ★ 왜 좁히나 (실측 실패): 처음엔 텍스트의 모든 식별자 중 인덱스에 있는 것을 바꿨더니
@@ -265,7 +266,8 @@ def build_mapping(injected: dict, seed_key: str, avoid_text: str = "",
     #   예전엔 여기서 즉시 반환해 [TYPES]/[DEFINITIONS] 가 빈 예제는 premise 정규화가
     #   **조용히 건너뛰어졌다**.
     if not injected and os.environ.get("NORMALIZE_PREMISES", "0") != "1" \
-            and os.environ.get("NORMALIZE_THEOREM", "0") != "1":
+            and os.environ.get("NORMALIZE_THEOREM", "0") != "1" \
+            and os.environ.get("NORMALIZE_LTAC", "0") != "1":
         return {}
     injected = injected or {}
     names = []
@@ -301,6 +303,29 @@ def build_mapping(injected: dict, seed_key: str, avoid_text: str = "",
     #     텍스트 치환은 **같은 문자열을 두 이름으로 바꿀 수 없으므로**, 둘 다 L# 가
     #     되어 "증명 대상"과 "주어진 사실"을 구분할 수 없게 된다.
     #     → 충돌 시엔 매핑에 넣지 않고 전역에 기록해, collate 가 **선언부만** G# 로 바꾼다.
+    # ★★ v9: **파일 내 Ltac 이름**도 대상 (NORMALIZE_LTAC=1 일 때만).
+    #
+    #   근거(실측, Qwen2.5-Coder-3B · n=400 · 가짜는 `_` 조각 섞기라 토큰 구성 동일):
+    #       프로젝트 Lemma        실명 선호 61.8%  (4.7σ)
+    #       프로젝트 Ltac         실명 선호 61.5%  (4.6σ)   ← Lemma 와 사실상 같다
+    #       notation 이 가린 이름  실명 선호 53.5%  (1.4σ)   ← 우연과 구분 안 됨
+    #   프로젝트 전용이라 사전학습에 없을 줄 알았는데 **아니었다.** 막을 지름길이 있다.
+    #   익명화하면 `[LTAC]` 섹션이 그 이름의 **유일한 경로**가 되어 실제로 읽힌다.
+    #
+    #   notation 이 가린 이름은 반대로 회상이 없으므로 **대상에 넣지 않는다** —
+    #   막을 게 없는데 "뜻 있는 이름" 신호만 잃는 순손실이다.
+    ltac_ns = []
+    if os.environ.get("NORMALIZE_LTAC", "0") == "1":
+        for t in (ltac_names or []):
+            m = re.match(r"\s*(?:Ltac|Ltac2)\s+([A-Za-z_][\w']*)", t if isinstance(t, str) else "")
+            if not m:
+                continue
+            n = m.group(1)
+            if (n not in names and n not in ctors and n not in prem_names
+                    and n not in _PROTECTED and n not in _HEADERS and len(n) > 1
+                    and not is_stdlib_name(n)):
+                ltac_ns.append(n)
+        ltac_ns = list(dict.fromkeys(ltac_ns))
     global LAST_THM_DECL
     LAST_THM_DECL = None
     thm = None
@@ -329,7 +354,7 @@ def build_mapping(injected: dict, seed_key: str, avoid_text: str = "",
     ctors = [c for c in dict.fromkeys(ctors)
              if c not in names and not is_stdlib_name(c)]
     prem_names = [p for p in dict.fromkeys(prem_names) if p not in names and p not in ctors]
-    if not names and not ctors and not prem_names and not thm:
+    if not names and not ctors and not prem_names and not thm and not ltac_ns:
         return {}
     # ★ 충돌 검사는 **T\d+/f\d+/C\d+ 형태만** 훑으면 된다.
     #   프롬프트 전체(~8KB)를 일반 식별자 정규식으로 훑으면 예제마다 비용이 크다.
@@ -337,8 +362,9 @@ def build_mapping(injected: dict, seed_key: str, avoid_text: str = "",
     #   여기서는 **가벼운 모드** — 프롬프트가 8KB 라 매 예제마다 일반 식별자 정규식으로
     #   훑으면 비용이 크다. 정해진 형태(`[TfCLG]\d+`)만 본다.
     alloc = NameAllocator.from_pattern(
-        avoid_text or "", r"\b[TfCLG]\d+\b",
-        extra=set(names) | set(ctors) | set(prem_names) | ({thm} if thm else set()))
+        avoid_text or "", r"\b[TfCLGK]\d+\b",
+        extra=(set(names) | set(ctors) | set(prem_names) | set(ltac_ns)
+               | ({thm} if thm else set())))
 
     def fresh(prefix, k):
         """겹치면 **다음 인덱스로** 건너뛴 첫 이름과 다음 인덱스."""
@@ -360,6 +386,10 @@ def build_mapping(injected: dict, seed_key: str, avoid_text: str = "",
     n_l = 0
     for pn in prem_names:
         mapping[pn], n_l = fresh("L", n_l)
+    # ★ 파일 내 Ltac 은 **K** 접두사 — tactic 자리에 오는 것이라 lemma(L) 와 구분한다.
+    n_k = 0
+    for ln in ltac_ns:
+        mapping[ln], n_k = fresh("K", n_k)
     # 증명 중인 정리는 **G**(goal) — 하나뿐이라 번호는 0 에서 시작
     if thm:
         mapping[thm], _ = fresh("G", 0)
@@ -408,9 +438,115 @@ _INTRO_SSR_PAT = re.compile(r"=>\s*((?:[\[\]|/\s]|[A-Za-z_][\w']*)+)")
 #   실측 오탐: `assert (H3':= H3).` 의 H3'
 _INTRO_ASSIGN = re.compile(r"[(\s]([A-Za-z_][\w']*)\s*:=")
 
+# ★ `destruct n as [| n'] eqn:E.` 의 **`eqn`** — 이건 이름이 아니라 **절 키워드**다.
+#   실측: 이걸 "프롬프트에 없는 외부 참조" 로 신고했다(덤프 [13]).
+#   `eqn:E` 는 E 를 도입하고 `eqn` 자체는 문법이다.
+_INTRO_EQN = re.compile(r"\beqn\s*:\s*([A-Za-z_][\w']*)")
+# ★ SSReflect **중첩** intro 패턴 — `have [sf [ff _] f0 fs1 fs2] := (L5 h a pN).`
+#   기존 `_INTRO_HAVE` 의 `\[[^\]]*\]` 는 첫 `]` 에서 끊겨 중첩을 못 읽는다.
+#   그래서 fs1·fs2 가 "환각" 으로 신고됐다(덤프 [15]).
+#   → 괄호 균형을 직접 세어 그 안의 이름을 전부 도입으로 본다.
+_HAVE_HEAD = re.compile(
+    r"(?:^|[;\s|(){}])(?:have|suff|suffices|wlog|case|elim|destruct|move)\s*[:]?\s*(?=\[)"
+    r"|=>\s*(?=[\[])"
+    # ★ `as` 뒤의 묶음도 **도입 패턴**이다. `_INTRO_AS` 의 `\[[^\]]*\]` 는 첫 `]` 에서
+    #   끊겨 **중첩을 못 읽는다** — 실측: `destruct H as [q [Hqq [r [Hrq [[Hq Hr]
+    #   [[Hnnq Hnnr] Heq]]]]]].` 의 Hnnr 이 환각으로 신고됐다.
+    #   괄호형 `as (x, Hor)` 도 마찬가지다(`case (…) as (x,Hor).`).
+    r"|\bas\s*(?=[\[(])")
+
+
+def _bracket_names(tac: str) -> set:
+    """`[...]` 균형 그룹 안의 식별자 — 단 `/view` 는 **외부 참조**라 뺀다."""
+    out = set()
+    for m in _HAVE_HEAD.finditer(tac or ""):
+        # 여는 괄호를 찾는다 — `[` 든 `(` 든 (`as (x, Hor)` 형태 때문에).
+        i = -1
+        for k in range(max(0, m.end() - 1), min(len(tac), m.end() + 2)):
+            if tac[k] in "[(":
+                i = k
+                break
+        if i < 0:
+            continue
+        op = tac[i]
+        cl = "]" if op == "[" else ")"
+        d, j = 0, i
+        while j < len(tac):
+            if tac[j] == op:
+                d += 1
+            elif tac[j] == cl:
+                d -= 1
+                if d == 0:
+                    break
+            j += 1
+        if d != 0:
+            continue
+        grp = re.sub(r"/[A-Za-z_][\w']*", " ", tac[i:j + 1])   # view 제거
+        grp = re.sub(r"\busing\b.*", " ", grp)                  # `as [..] using L` 의 L 은 참조
+        out |= set(re.findall(r"[A-Za-z_][\w']*", grp))
+    return out
+
+
 _INTRO_SET = re.compile(
     r"(?:^|[;\s])(?:set|pose|epose|remember)\s+"
     r"(?:([A-Za-z_][\w']*)\s*:?=|.*?\bas\s+([A-Za-z_][\w']*))")
+
+
+# ★ `assert (Erw : pb + nd = ...)` · `assert (spliteps : (eps/3 > 0)%R) by lra.`
+#   → **`(이름 : 타입)` 의 이름은 도입**이다. 지금은 `(H := e)` 만 봤다.
+# ★ `assert (forall Γ vsubst vsubst' (vr : VR Γ), ...)`
+#   → forall/fun **바인더**도 도입이다. 실측에서 vsubst'·veqsubst·vr' 이
+#     "프롬프트에 없는 이름" 으로 신고됐다.
+#   단 `(vr : VR Γ)` 의 **`VR`·`Γ` 는 외부 참조**다 — `:` 앞만 도입으로 센다.
+# ★ `auto with arith` 의 **arith 는 힌트 DB 이름**이지 참조가 아니다.
+#   실측: gold 환각 36건 중 5건이 이것이었다(arith·geo·real·qarith·distributeMod).
+#   `auto using foo` 의 foo 는 **진짜 lemma** 이므로 `with` 만 대상으로 한다.
+_HINT_DB = re.compile(
+    r"\b(?:auto|eauto|autounfold|autorewrite|autoapply|trivial|firstorder|intuition|"
+    r"congruence|typeclasses\s+eauto|debug\s+auto|info_auto|new\s+auto)\b"
+    r"[^.;]*?\bwith\b([^.;]*)")
+_BINDER_HEAD = re.compile(r"\b(?:forall|fun)\s+([^,]*?)(?:,|=>)")
+_ASSERT_HEAD = re.compile(
+    r"\b(?:assert|enough|refine|have|suff|suffices|pose\s+proof|set|remember)\s*\(")
+
+
+def _names_before_colon(seg: str) -> set:
+    """`a b c : T` 에서 `a b c` 만. `:` 가 없으면 전부(바인더 나열)."""
+    if ":" in seg:
+        seg = seg.split(":", 1)[0]
+    return set(re.findall(r"[A-Za-z_][\w']*", seg))
+
+
+def _binder_names(tac: str) -> set:
+    """forall/fun 바인더 + `assert (이름 : ...)` 의 이름."""
+    out: set = set()
+    t = tac or ""
+    for m in _BINDER_HEAD.finditer(t):
+        region = m.group(1)
+        # 괄호 묶음은 `:` 앞만, 괄호 밖 홑이름은 전부 바인더
+        for grp in re.findall(r"\(([^()]*)\)", region):
+            out |= _names_before_colon(grp)
+        bare = re.sub(r"\([^()]*\)", " ", region)
+        out |= set(re.findall(r"[A-Za-z_][\w']*", bare))
+    for m in _ASSERT_HEAD.finditer(t):
+        i = m.end() - 1
+        d, j = 0, i
+        while j < len(t):
+            if t[j] == "(":
+                d += 1
+            elif t[j] == ")":
+                d -= 1
+                if d == 0:
+                    break
+            j += 1
+        inner = t[i + 1:j]
+        # `이름 : ...` 형태일 때만 (`assert (forall ...)` 은 위에서 처리)
+        m2 = re.match(r"\s*([A-Za-z_][\w']*)\s*:(?!=)", inner)
+        if m2:
+            out.add(m2.group(1))
+    out.discard("forall")
+    out.discard("fun")
+    return out
 
 
 def introduced_names(tac: str) -> set:
@@ -437,6 +573,13 @@ def introduced_names(tac: str) -> set:
         out |= set(re.findall(r"[A-Za-z_][\w']*", _seg))
     for m in _INTRO_ASSIGN.finditer(tac or ""):      # ★ `(H := e)`
         out.add(m.group(1))
+    for m in _INTRO_EQN.finditer(tac or ""):         # ★ `eqn:E`
+        out.add(m.group(1))
+        out.add("eqn")
+    out |= _bracket_names(tac or "")                 # ★ 중첩 `[a [b _] c]`
+    out |= _binder_names(tac or "")                  # ★ forall 바인더 · assert (H : T)
+    for m in _HINT_DB.finditer(tac or ""):           # ★ `auto with arith` 의 DB 이름
+        out |= set(re.findall(r"[A-Za-z_][\w']*", m.group(1)))
     out -= {"as", "intros", "intro", "eintros", "eintro", "move", "rename", "into",
             "have", "suff", "suffices", "wlog", "set", "pose", "remember", "by"}
     return out
