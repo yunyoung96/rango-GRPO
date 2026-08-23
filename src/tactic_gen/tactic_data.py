@@ -209,7 +209,8 @@ def last_inference_mapping() -> dict:
     return dict(_LAST_INFER_MAPPING)
 
 
-def _maybe_normalize_input(text: str, example) -> str:
+def _maybe_normalize_input(text: str, example, tokenizer=None,
+                           out_tokens: int = 0) -> str:
     """추론 프롬프트 정규화. `NORMALIZE_INFERENCE=1` 일 때만 동작한다.
 
     ★ 학습(`collate`)은 프롬프트와 **정답에 같은 매핑**을 적용한다. 추론에는 정답이
@@ -224,8 +225,27 @@ def _maybe_normalize_input(text: str, example) -> str:
     key = (f"{getattr(example, 'file_name', '')}:"
            f"{getattr(example, 'proof_idx', '')}:{getattr(example, 'step_idx', '')}")
     try:
+        # ★★ 학습(`collate`)과 **같은 premise 목록**을 넘겨야 한다.
+        #   학습은 "프롬프트에 실제로 실리고 **절단 후에도 보이는**" premise 만 넘긴다.
+        #   여기서 100개 전부를 넘기면 동명 중복 보호에 더 많이 걸려 **덜 익명화**되고,
+        #   그러면 학습은 `L9` 를 보고 추론은 실명을 보게 된다(실측 200건 중 6건 = 3.0%).
+        #   학습의 `_vis` 계산을 **그대로** 따른다 — 창을 조금만 다르게 잡아도
+        #   premise 부분집합이 달라져 L# 번호가 통째로 밀린다(실측: 창을 out_tokens
+        #   만큼 좁혔더니 불일치가 6건 → 70건으로 늘었다).
+        _vis = text
+        _hard = int(os.environ.get("HARD_SEQ_LEN", "0") or 0)
+        if _hard and tokenizer is not None and len(text) > _hard * 2:
+            try:
+                _ids = tokenizer(text, add_special_tokens=False)["input_ids"]
+                if len(_ids) > _hard:
+                    _vis = tokenizer.decode(_ids[len(_ids) - _hard:],
+                                            skip_special_tokens=True)
+            except Exception:
+                _vis = text
+        _in_prompt = [q for q in (getattr(example, "premises", None) or [])
+                      if q and str(q).strip().split("\n")[0][:60] in _vis]
         m = build_mapping(dict(_LAST_INJECTED), key, avoid_text=text,
-                          premises=list(getattr(example, "premises", None) or []),
+                          premises=_in_prompt,
                           proof_script=getattr(example, "proof_script", "") or "",
                           ltac_names=list(getattr(example, "local_ltac", None) or []))
     except Exception:
@@ -233,7 +253,20 @@ def _maybe_normalize_input(text: str, example) -> str:
     if not m:
         return text
     _LAST_INFER_MAPPING = m
-    return apply_mapping(text, m)
+    text = apply_mapping(text, m)
+    # ★ 학습(`collate`)과 **같은 처리**를 해야 프롬프트가 어긋나지 않는다.
+    #   증명 중인 정리 이름이 [PREMISES] 에도 있으면(동명 충돌, 실측 1.3%)
+    #   매핑에 넣지 않고 **선언부만** G# 로 바꾼다. 이 처리가 추론 경로에만
+    #   빠져 있어서, 그 경우 학습은 `Lemma G0 :` 를 보고 추론은 실명을 봤다.
+    import tactic_gen.normalize_names as _nn
+    if _nn.LAST_THM_DECL:
+        _used = set(re.findall(r"\bG(\d+)\b", text))
+        _k = 0
+        while str(_k) in _used:
+            _k += 1
+        _cur = m.get(_nn.LAST_THM_DECL, _nn.LAST_THM_DECL)
+        text = _nn.substitute_theorem_decl(text, _cur, f"G{_k}")
+    return text
 
 # distractor 샘플링용 키 목록(1회만 생성 — 예제마다 만들면 8만 원소 리스트가 매번 생긴다)
 _DISTRACTOR_KEYS = None
@@ -1064,7 +1097,8 @@ class ProofPremiseCollator:
                 base_str = base_str + ATTEMPT_SEP + a_str + ERROR_SEP + e_str
             return _maybe_normalize_input(
                 base_str + augment_v2_section(tokenizer, example, base_str)
-                + NEWLINE_RESPONSE_TEMPLATE, example)
+                + NEWLINE_RESPONSE_TEMPLATE, example,
+                tokenizer=tokenizer, out_tokens=getattr(self, "out_tokens", 0))
         types_str = types_section(tokenizer, example)   # INJECT_TYPES=0 이면 ""
         _tnames = {ln.split(" :=")[0].strip()            # [TYPES] 가 이미 보여준 타입명
                    for ln in types_str.split("\n") if " :=" in ln}

@@ -29,7 +29,9 @@ export FUNC_DEFS_PATH=data/func_defs_v3.json
 #   목적이 "이름 암기 차단 → 미지 프로젝트로 전이"이므로 절반만 정규화하면
 #   나머지 절반에서 여전히 이름을 외울 수 있다. 근거 없이 0.5 를 쓰고 있었다.
 #   ※ 일관성: 추론에서도 정규화해야 train/test 가 어긋나지 않는다.
-#     역매핑은 구현돼 있다 — 평가 때 NORMALIZE_INFERENCE=1 을 켤 것.
+#     ★ 그래서 **여기서 켠다**(아래 NORMALIZE_INFERENCE). 주석으로만 남겨 뒀더니
+#       실제로는 꺼진 채였다 — 평가 때 실명 프롬프트를 넣게 되어 학습과 어긋난다.
+#       추론 경로는 `collate_input`, 학습은 `collate` 로 분리돼 있어 학습에는 영향 없다.
 export NORMALIZE_NAMES=1 NORMALIZE_RATE=1.0 NORMALIZE_PREMISES=1 NORMALIZE_THEOREM=1
 export STRIP_TARGET_NL=1
 export PYTORCH_ALLOC_CONF=expandable_segments:True
@@ -87,3 +89,10 @@ export NORMALIZE_LTAC=1
 #  가르치는 것이라 학습 가치가 없다. 실측: 환각률 1.00% → 0.00%.
 #  대가는 학습 데이터 약 2.4% 다 (hopeless 제외 6.6% · 2048 초과 8.5% 와 같은 급).
 export DROP_HALLUC=1
+
+# ── 평가(추론) 정규화 ─────────────────────────────────────────────────────
+#  모델은 `L0`·`T2`·`K1` 기준으로 학습됐으므로 **프롬프트도 같은 형태로** 넣어야 한다.
+#  생성된 tactic 은 `model_wrapper` 가 `apply_inverse` 로 **자동 역매핑**한다 —
+#  Coq 은 `L0` 를 모르기 때문이다. 매핑에 없는 이름(모델이 지어낸 것)은 그대로 둬서
+#  Coq 에서 실패하게 한다(조용히 바꾸면 환각을 숨기게 된다).
+export NORMALIZE_INFERENCE=1
