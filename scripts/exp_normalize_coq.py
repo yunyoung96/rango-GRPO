@@ -58,9 +58,16 @@ def logical_name(rel: str):
     return None
 
 
-def locate(mod: str, name: str) -> bool:
-    """그 모듈 문맥에서 이름이 풀리는가."""
-    src = f"Require Import {mod}.\nLocate {name}.\n"
+def locate(mod: str, name: str, ltac: bool = False) -> bool:
+    """그 모듈 문맥에서 이름이 풀리는가.
+
+    ★ **Ltac 이름은 `Locate` 로 못 찾는다** — Ltac 은 term/notation 네임스페이스에
+      없어서, 되돌리기가 맞았어도 `No object of basename` 이 나온다.
+      실측: 실패 3건이 전부 `_K#` (TransfInstr · TrivialExists · mydestr) 였다.
+      `Print Ltac <name>.` 으로 물어야 판정이 옳다.
+    """
+    q = f"Print Ltac {name}." if ltac else f"Locate {name}."
+    src = f"Require Import {mod}.\n{q}\n"
     p = Path("/tmp/_loc_probe.v")
     p.write_text(src)
     try:
@@ -69,7 +76,7 @@ def locate(mod: str, name: str) -> bool:
     except subprocess.TimeoutExpired:
         return None
     out = (r.stdout or "") + (r.stderr or "")
-    if "No object of basename" in out:
+    if "No object of basename" in out or "is not a user defined tactic" in out:
         return False
     if "Error" in out:
         return None                       # 판정 불가(모듈 Require 실패 등)
@@ -132,8 +139,10 @@ while len(cases) < N and tried < 40000:
 print(f"\n■ Coq 확인 ({len(cases)}건)\n", flush=True)
 st = collections.Counter()
 for rel, mod, orig, val, gold, rt in cases:
-    a = locate(mod, orig)
-    b = locate(mod, val)
+    # ★ 익명 이름의 접두사가 그 이름의 **종류**를 말해 준다 — _K# 는 Ltac.
+    _is_ltac = bool(re.match(r"_K\d+$", val or ""))
+    a = locate(mod, orig, ltac=_is_ltac)
+    b = locate(mod, val, ltac=_is_ltac)
     st["검증"] += 1
     st["문자열 왕복 정확"] += bool(rt)
     if a is None or b is None:
@@ -145,8 +154,9 @@ for rel, mod, orig, val, gold, rt in cases:
         st["★ 익명이름도 존재(우연 충돌)"] += 1
     elif not a:
         st["★ 원래이름을 못 찾음"] += 1
-        if st["★ 원래이름을 못 찾음"] <= 3:
-            print(f"     ✗ {orig} ({val}) @ {mod}", flush=True)
+        # ★ 상한을 두지 않는다 — 3건에서 자르면 "나머지는 다른 원인" 인지
+        #   "전부 같은 원인" 인지 구분이 안 된다(실제로 전부 Ltac 이었다).
+        print(f"     \u2717 {orig} ({val}) @ {mod}", flush=True)
     if st["검증"] % 5 == 0:
         print(f"   … {st['검증']}/{len(cases)}", flush=True)
 

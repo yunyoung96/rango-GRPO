@@ -1845,3 +1845,38 @@ premise 길이 편차가 극심하다 — 최소 16 · p25 43 · 중앙 147 · �
         C 미지 이름 보존      250/250            250/250
         매핑 있는 예제        —                  **250/250** (항목 평균 40.8)
         E / E' 불변식        97.0% / 97.0%      **16 / 16 동일**
+
+  ■ 35-9. 역정규화의 Coq 확인 — 88.1% 는 검사 한계지 결함이 아니다
+
+    scripts/exp_normalize_coq.py 로 CompCert(held-out) 60건.
+        문자열 왕복 정확                              **60/60**
+        ✅ 원래이름 찾음 · 익명이름 없음                 52
+        ★ 원래이름을 못 찾음                          7
+        판정 불가(Require 실패)                      1
+        → 52/59 = 88.1%
+
+    실패 7건을 **전부** 찍어 보니(예전엔 3건에서 잘려 원인 판별이 안 됐다):
+
+        _K0 TransfInstr  @ backend/Constpropproof     Ltac, Section PRESERVATION 안
+        _K1 DeclHelper   @ backend/SplitLongproof     Ltac, Section CMCONSTR 안
+        _K0 mydestr      @ cfrontend/Cexec            Ltac
+        _K1 TrivialExists@ cfrontend/Cminorgenproof   Ltac
+        _f1 args         @ cfrontend/SimplLocalsproof 전역 선언 없음 → 지역 이름
+        _f8 v'           @ backend/Deadcodeproof      전역 선언 없음 → 지역 이름
+        _f0 lx           @ Flocq/BinarySingleNaN      전역 선언 없음 → 지역 이름
+
+    ★ Section 안의 Ltac 은 섹션이 닫히면 사라지고, 지역 binder 는 애초에 전역
+      네임스페이스에 없다. 즉 `Require Import` + `Locate` 로는 **원리상 못 찾는다.**
+      역정규화가 틀린 게 아니다 — 문자열 왕복이 60/60 이다.
+
+    검사기도 함께 고쳤다
+      · Ltac 은 `Locate` 대신 `Print Ltac` 으로 묻는다(Locate 는 term/notation 만 본다)
+      · 실패 출력 상한 3건 제거 — 3건에서 자르면 "나머지가 같은 원인인지" 알 수 없다
+
+  ■ 35-10. 수정 후 추론 스모크 (checkpoint-3000 · 60예제)
+
+        B 프롬프트 익명화됨      57 → **60**
+        C 생성물에 익명 토큰 없음  57 → **60**
+        D 미지 이름 보존         57 → **60**
+        이상                   3건 → **0건**
+    매핑이 비어도 선언부가 익명화되므로(35-1 원인 ②) 그 3건까지 해소됐다.
