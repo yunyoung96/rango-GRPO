@@ -1,0 +1,14 @@
+   [v9_env] 27개 적용: AUGMENT_V2=1 CUTS_PATH=data/cut_plans_all.jsonl CUT_DROP_HOPELESS=1 DEFS_TOKENS=600 DP_CACHE_SIZE=2048 DYNAMIC_PADDING=1 …
+   … 40/100 (40s)
+   … 80/100 (70s)
+
+■ 결과 (예제 100)
+
+   조건                               전체토큰(중앙)    2048초과      절단후 premise 수
+   ① rango 기준 (주입 없음)                  1,175      6.0%   중앙  10 · 평균  14.4
+   ② 지금 (v2 · 맨 뒤 주입)                  1,250      6.0%   중앙   9 · 평균  13.5
+   ③ v1 위치 (STATE 앞)                   1,167     10.0%   중앙   7 · 평균  12.5
+
+   ② 지금 (v2 · 맨 뒤 주입) vs ① rango 기준 (주입 없음):  premise 14.4 → 13.5  (-0.9)
+
+   ③ v1 위치 (STATE 앞) vs ① rango 기준 (주입 없음):  premise 14.4 → 12.5  (-1.9)

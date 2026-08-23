@@ -1,0 +1,65 @@
+── verify_cut_all
+■ 결과 (2,009,606건 · 3s)
+
+   cut 적용                                                 248,080   12.34%
+   exact 대상이 stmt 사전에 없음(후보 풀에는 있을 수 있음)                  159,616    7.94%
+   hopeless (학습 제외)                                       132,716    6.60%
+   계획 있음 (lemma 사용)                                       248,080   12.34%
+   계획 있음 (함수 이름뿐)                                          98,469    4.90%
+   무기록 (cut 불필요)                                        1,628,810   81.05%
+
+✓ 모든 인덱스가 판정을 받았고 cut 형태도 정상
+── verify_cut_wiring
+   ✓ (1) gold 가 전부 보이면 **cut 하지 않는다**   rewrite add_comm, mul_comm.
+   ✓ (2) 안 보이는 것**만** assert · 보이는 것은 그대로   assert (forall x y : nat, x * y = y * x) as H_asrt0. { exact mul_comm. } ⏎ rewrite add_comm, H_asrt0.
+   ✓ (2') 둘 다 안 보이면 둘 다 assert   assert (forall x y : nat, x + y = y + x) as H_asrt0. { exact add_comm. } ⏎ assert (forall x y : 
+   ✓ (3) 전체 조립이 되면 **모든 부분집합도** 된다 (생성 시점 검증의 전제)
+   ✓ (4) `add_comm'` 을 `add_comm` 으로 오인하지 않는다   assert (forall x y : nat, x + y = y + x) as H_asrt0. { exact add_comm. }
+
+==============================================================
+✓ 배선 정상
+── verify_substep
+   sub 1:  가설 [n, Hn]  ⊢ forall x y : nat, x + y = y + x
+   sub 2:  가설 [n, Hn, H_asrt0]  ⊢ Q n
+   sub 3:  가설 [n, Hn, H_asrt0]  ⊢ forall x y : nat, x * y = y * x
+   sub 4:  가설 [n, Hn, H_asrt0, H_asrt1]  ⊢ Q n
+
+   ✓ G2  goal 과 가설이 하위스텝마다 정확히 맞는다
+   ✓ G2b 원래 가설(Γ)이 보존된다
+   ✓ G2c [SCRIPT] 가 앞선 하위스텝을 포함하고 자기 자신은 없다   sub4 스크립트에 assert 2개 + exact 2개
+   ✓ G5  선택이 결정적 (같은 sid → 항상 같은 하위스텝)
+   ✓ G7  조각 최대 22토큰 < 전체 67토큰 (예산 여유가 생긴다)
+   ✓ G8  assert 가 없으면 하위스텝이 1개(원래 tactic 그대로)
+
+==============================================================
+✓ 전 항목 통과
+── preflight_random 200
+   하위스텝 final                                            2    1.00%
+
+■ P6 구간별 분포 (cut 적용률)
+     00%     17건  cut    2   11.8%
+     10%     20건  cut    0    0.0%
+     20%     11건  cut    0    0.0%
+     30%     15건  cut    1    6.7%
+     40%     11건  cut    1    9.1%
+     50%     14건  cut    1    7.1%
+     60%     12건  cut    2   16.7%
+     70%     16건  cut    0    0.0%
+     80%     13건  cut    1    7.7%
+     90%     71건  cut    3    4.2%
+
+★ 치명 항목:
+   · P4 ★★ 정답이 쓰는 이름이 **잘려서** 안 보인다  (1건)
+── scan_prompts 400
+
+■ 결과 (완성 프롬프트 400건)
+
+   N3 같은 문장이 두 번 (이름만 다름)                                   40   10.00%
+   Q3 premise 중복                                            14    3.50%
+   Q4 [STATE] 가 비었다                                         70   17.50%
+   S3 빈 [PREMISES]                                          96   24.00%
+   T1 2048 초과                                               36    9.00%
+   cut 적용                                                   25    6.25%
+
+✓ 치명 항목 없음
+===== 사전점검 끝 =====

@@ -1,0 +1,18 @@
+   [v9_env] 27개 적용: AUGMENT_V2=1 CUTS_PATH=data/cut_plans_all.jsonl CUT_DROP_HOPELESS=1 DEFS_TOKENS=300 DP_CACHE_SIZE=2048 DYNAMIC_PADDING=1 …
+■ _fit_premises vs 최종 프롬프트   표본 200
+
+   표본 200 · 2048 초과 15 (7.5%)
+   `_fit_premises` 가 담은 이름 총 3,750
+   그중 절단으로 **사라진** 이름 115  (3.1%)
+   하나라도 사라진 예제 13/200  (6.5%)
+
+      idx=1697947 담김 26 · 사라짐 4 (['NoDup_filter', 'cons_to_app', 'nodup_cons'])
+      idx=830807 담김 30 · 사라짐 1 (['S_in_nil'])
+      idx=74769 담김 33 · 사라짐 22 (['Exec_correct_exec', 'Exec_hd', 'Exec_sound_nil'])
+      idx=1935351 담김 5 · 사라짐 5 (['compare_int_defines_a_total_order', 'fold_unfold_insert_t_helper', 'insertion_in_node_min_max'])
+      idx=125605 담김 26 · 사라짐 2 (['ratAdd_0_l', 'ratAdd_0_r'])
+
+   손실 분해:  절단 때문 13  ·  ★ 절단이 아닌데 손실 0
+
+   ※ '절단이 아닌데 손실' 이 있으면 비교 자체가 틀린 것이다 — 먼저 그걸 고친다.
+   ※ 절단 때문인 몫만큼 cut 판정이 낙관적이다.

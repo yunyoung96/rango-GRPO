@@ -1,0 +1,50 @@
+
+■ 표본 2500   (환각 판정은 probe_extref_halluc 와 같은 규칙)
+
+── 예제 출처 구성 ─────────────────────────────────────────────
+     세부·assert/final             114  (  4.6%)
+     세부·close(exact L)            52  (  2.1%)
+     세부·gold                    2334  ( 93.4%)
+   출처·cut 생성                     166  (  6.6%)
+   출처·gold 원본                   2334  ( 93.4%)
+
+── 출처별 환각률 ──────────────────────────────────────────────
+   출처                외부참조 예제     환각      환각률
+   gold 원본               248     39    15.7%
+   cut 생성                 75      5     6.7%
+   합계                    323     44    13.6%
+
+   환각 예제 중  gold 원본 88.6% · cut 생성 11.4%
+
+── [gold 원본] 환각 이름 43개 ────────────────────────────────
+   종류별:
+      Definition       21   48.8% ←풀제외
+      Lemma            10   23.3%
+      미상                5   11.6%
+      Constructor       4    9.3% ←풀제외
+      Fact              2    4.7%
+      Field             1    2.3% ←풀제외
+   풀에서 제외되는 종류  26/43 = 60.5%
+   검색 100개 안에 있음  8/43 = 18.6%  (순위 중앙 70)
+   프로젝트 내 사용 횟수  중앙 15 · 1회 이하 21%
+      · isequiv_adjointify     ← srapply isequiv_adjointify.
+      · Vfi1                   ← pose II j  := (Vfi1 (Vg (psf S) (J i j)) xi).
+      · equiv_O_functor        ← apply equiv_O_functor.
+      · cancelL                ← rapply (cancelL (transport_const (f1 i j g x) _)).
+      · eq_symmetric           ← stepl (T0 (f0 IR n x)[*]T0 x); [| apply eq_symmetric; apply L2].
+      · Build_Diagram          ← srapply Build_Diagram.
+
+── [cut 생성] 환각 이름 5개 ────────────────────────────────
+   종류별:
+      Definition        3   60.0% ←풀제외
+      미상                1   20.0%
+      Axiom             1   20.0%
+   풀에서 제외되는 종류  3/5 = 60.0%
+   검색 100개 안에 있음  0/5 = 0.0%
+   프로젝트 내 사용 횟수  중앙 24 · 1회 이하 20%
+      · CNFbv                  ← rewrite /f1/f2/CNFbvo/CNFbv H_asrt0.
+      · ZeroR                  ← assert (forall n, ZeroR [<] f0 (S n)) as H_asrt0.
+      · CSetoid_bin_op         ← assert (forall (op : CSetoid_bin_op) (x1 x2 y1 y2 : S), x1 [=] x2 
+      · csucc                  ← assert (forall a b, ~ (inc b a) -> cardinal (a +s1 b) = csucc (car
+      · total_order            ← elim H_asrt0 with (r1 := k) (r2 := 0);
+ [ intros H16; try clear to

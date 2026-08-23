@@ -1,0 +1,9 @@
+   [v9_env] 27개 적용: AUGMENT_V2=1 CUTS_PATH=data/cut_plans_all.jsonl CUT_DROP_HOPELESS=1 DEFS_TOKENS=300 DP_CACHE_SIZE=2048 DYNAMIC_PADDING=1 …
+■ 계획 cut 256,714건  (data/cut_plans_all.jsonl)
+   인덱스 9,560개 훑어 cut 후보 1,200개 (적중률 12.55%)
+
+   … cut 50건 (41s)
+   … cut 100건 (76s)
+   … cut 150건 (105s)
+   … cut 200건 (138s)
+   … cut 250건 (173s)

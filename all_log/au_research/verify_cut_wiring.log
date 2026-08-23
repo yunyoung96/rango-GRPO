@@ -1,0 +1,10 @@
+■ cut 치환 배선 검사
+
+   ✓ (1) gold 가 전부 보이면 **cut 하지 않는다**   rewrite add_comm, mul_comm.
+   ✓ (2) 안 보이는 것**만** assert · 보이는 것은 그대로   assert (forall x y : nat, x * y = y * x) as H_asrt0. { exact mul_comm. } ⏎ rewrite add_comm, H_asrt0.
+   ✓ (2') 둘 다 안 보이면 둘 다 assert   assert (forall x y : nat, x + y = y + x) as H_asrt0. { exact add_comm. } ⏎ assert (forall x y : 
+   ✓ (3) 전체 조립이 되면 **모든 부분집합도** 된다 (생성 시점 검증의 전제)
+   ✓ (4) `add_comm'` 을 `add_comm` 으로 오인하지 않는다   assert (forall x y : nat, x + y = y + x) as H_asrt0. { exact add_comm. }
+
+==============================================================
+✓ 배선 정상

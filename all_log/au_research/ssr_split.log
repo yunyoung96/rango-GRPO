@@ -1,0 +1,39 @@
+   [v9_env] 27개 적용: AUGMENT_V2=1 CUTS_PATH=data/cut_plans_all.jsonl CUT_DROP_HOPELESS=1 DEFS_TOKENS=300 DP_CACHE_SIZE=2048 DYNAMIC_PADDING=1 …
+
+■ TRAIN  (표본 1,500)
+   SSReflect                   85    5.7%
+   gold lemma 사용             387   25.8%
+   ★ gold lemma + SSReflect     47    3.1% (전체) ·  12.1% (lemma 스텝 중)
+   SSReflect 많은 프로젝트:
+     coq-community-gaia                              63/92    (68%)
+     uds-psl-coq-synthetic-incompleteness             5/25    (20%)
+     uds-psl-coq-library-undecidability               3/22    (14%)
+     coq-community-corn                               2/98    (2%)
+     palmskog-coind-sem-while                         2/7     (29%)
+     davidjao-zfc-coq                                 2/8     (25%)
+
+■ VAL  (표본 1,500)
+   SSReflect                  330   22.0%
+   gold lemma 사용             645   43.0%
+   ★ gold lemma + SSReflect    236   15.7% (전체) ·  36.6% (lemma 스텝 중)
+   SSReflect 많은 프로젝트:
+     coq-community-graph-theory                     249/616   (40%)
+     coq-community-coqeal                            81/217   (37%)
+
+★ cut 파일 커버리지 부족 — 조용히 기능이 죽는다.
+   파일        data/cut_plans_all.jsonl
+   스캔 범위    [0, 0)
+   필요 범위    [0, 177,207)   (Split.TEST)
+   범위 밖 스텝은 cut 치환도 CUT_DROP_HOPELESS 도 작동하지 않는다.
+   메우려면:  python3 scripts/build_cuts.py 197207 test <out> 0
+   (의도한 부분 실행이면 CUTS_ALLOW_PARTIAL=1)
+
+
+■ TEST  (표본 1,500)
+   SSReflect                   82    5.5%
+   gold lemma 사용             474   31.6%
+   ★ gold lemma + SSReflect     48    3.2% (전체) ·  10.1% (lemma 스텝 중)
+   SSReflect 많은 프로젝트:
+     coq-community-fourcolor                         74/252   (29%)
+     coq-community-reglang                            7/16    (44%)
+     AbsInt-CompCert                                  1/953   (0%)

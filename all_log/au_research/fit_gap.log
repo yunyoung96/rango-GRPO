@@ -1,0 +1,15 @@
+   [v9_env] 27개 적용: AUGMENT_V2=1 CUTS_PATH=data/cut_plans_all.jsonl CUT_DROP_HOPELESS=1 DEFS_TOKENS=300 DP_CACHE_SIZE=2048 DYNAMIC_PADDING=1 …
+■ _fit_premises vs 최종 프롬프트   표본 200
+
+   표본 200 · 2048 초과 11 (5.5%)
+   `_fit_premises` 가 담은 이름 총 3,802
+   그중 절단으로 **사라진** 이름 2,856  (75.1%)
+   하나라도 사라진 예제 159/200  (79.5%)
+
+      idx=948708 담김 29 · 사라짐 28 (['DisjList_SubList', 'DisjList_app_1', 'DisjList_app_2'])
+      idx=1173927 담김 20 · 사라짐 16 (['maxListEmpty', 'maxListExists', 'maxListExists0'])
+      idx=1796971 담김 4 · 사라짐 4 (['induction2', 'induction_at', 'rev_1_ind'])
+      idx=1938210 담김 39 · 사라짐 27 (['S_injective', "S_injective'", 'add_0_r_firsttry'])
+      idx=1638333 담김 41 · 사라짐 23 (['add_0_r_firsttry', 'add_0_r_secondtry', 'and_assoc'])
+
+   ※ 이 비율만큼 cut 판정이 낙관적이다 — '보인다'고 보고 cut 을 안 만든다.

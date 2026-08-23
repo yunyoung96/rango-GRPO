@@ -1,0 +1,177 @@
+##### D: 기준 (새 검사기 · 새 stdlib · 주입 전부 off) #####
+   [v9_env] 27개 적용: AUGMENT_V2=1 CUTS_PATH=data/cut_plans_all.jsonl CUT_DROP_HOPELESS=1 DEFS_TOKENS=300 DP_CACHE_SIZE=2048 DYNAMIC_PADDING=1 …
+   … 300/2000 (117s)
+   … 700/2000 (254s)
+   … 1200/2000 (397s)
+   … 1400/2000 (453s)
+
+■ 결과 (예제 2000)
+
+     (SSReflect) 외부참조 쓰는 예제               27
+     (stdlib — 안다고 가정)                    30
+     (참고) stdlib 포함하면 결손 있는 예제            74
+     (참고) 그 tactic 이름도 안 보임               15
+     (참고) 정답 첫 토큰이 비표준 tactic             61
+     ├ SSReflect 환각                       11
+     ├ 비-SSReflect 환각                     35
+     안 보이는 이름 수                           58
+     외부 참조 없음                           1719
+     외부 참조 이름 수                          367
+   ★ 외부 참조를 쓰는 예제                        281
+   ★★ 그중 환각(하나라도 안 보임)                    46
+   예제                                   2000
+
+   ★★ **외부 참조를 쓰는 예제 중 환각** 46/281 = 16.4%
+   (참고) 전체 예제 대비 2.3%
+
+   ■ 이름 종류별  (안 보임 / 전체)
+     Definition          25 /   136  ( 18.4% 안 보임)  결손 중  43.1%
+     미상                  13 /    68  ( 19.1% 안 보임)  결손 중  22.4%
+     Lemma                9 /    54  ( 16.7% 안 보임)  결손 중  15.5%
+     Constructor          6 /    21  ( 28.6% 안 보임)  결손 중  10.3%
+     Fact                 2 /     5  ( 40.0% 안 보임)  결손 중   3.4%
+     Field                1 /    52  (  1.9% 안 보임)  결손 중   1.7%
+     Axiom                1 /    11  (  9.1% 안 보임)  결손 중   1.7%
+     Fixpoint             1 /     7  ( 14.3% 안 보임)  결손 중   1.7%
+     Corollary            0 /     2  (  0.0% 안 보임)  결손 중   0.0%
+     Proposition          0 /     4  (  0.0% 안 보임)  결손 중   0.0%
+     Theorem              0 /     6  (  0.0% 안 보임)  결손 중   0.0%
+     Instance             0 /     1  (  0.0% 안 보임)  결손 중   0.0%
+
+   ■ ★ SSReflect 환각 스텝만 제외했을 때
+     현재            환각 46/281 = 16.4%
+       ├ SSReflect     11건 (24% of 환각)
+       └ 비-SSReflect  35건 (76%)
+     제외 후          환각 35/270 = 13.0%
+     대가             외부참조 예제의 3.9% 제외 · 전체 예제의 0.55%
+     (참고) SSReflect 는 외부참조 예제의 9.6%, 그중 환각률 40.7%
+     (참고) **모든** SSReflect 를 제외하면 환각 35/254 = 13.8% · 대가 전체의 1.35%
+
+   ■ tactic 종류별  (외부참조 쓰는 예제 / 환각 / 비율)
+     tactic                 씀      환각      환각률      외부참조 없음
+     apply                 51       7    13.7%          151
+     xact                  43       0     0.0%           24
+     assert                37      10    27.0%           43
+     rewrite               22       3    13.6%           91
+     have                  13       4    30.8%            3
+     unfold                13       0     0.0%           40
+     destruct              10       1    10.0%           69
+     move                   7       3    42.9%           12
+     now                    5       0     0.0%           12
+     replace                5       0     0.0%            7
+     auto                   5       0     0.0%           15
+     exists                 4       1    25.0%           28
+     change                 4       0     0.0%            0
+     srapply                3       2    66.7%            0
+     proof                  3       1    33.3%          157
+     pose                   3       1    33.3%            1
+     generalize             3       0     0.0%            6
+     by                     3       1    33.3%           12
+
+   ■ '미상' 실제 예 (오탐 확인용)
+     Build_Diagram            ← srapply Build_Diagram.
+     TyUni                    ← capply TyUni.
+     ZeroR                    ← assert (forall n, ZeroR [<] nring (S n)) as H_asrt0.
+     Hcmp'                    ← destruct (AsciiOT.compare c2 c1) as [? | ? | ?] f1:Hcmp'.
+     OneR                     ← astepl (OneR[*]one_div_succ (n + (n + (n + 0)) + 2)[+]
+   (T
+     Erw                      ← assert (Erw : pb + nd + (pc + na)
+  = (pb + na) + (pc + nd))
+     ring_with_nat            ← assert (Erw : pb + nd + (pc + na)
+  = (pb + na) + (pc + nd))
+     spliteps                 ← assert (spliteps : (eps / 3 > 0)%R) by lra.
+     vsubst'                  ← assert (forall Γ vsubst vsubst' veqsubst veqsubst' (vr : VR 
+     veqsubst                 ← assert (forall Γ vsubst vsubst' veqsubst veqsubst' (vr : VR 
+     veqsubst'                ← assert (forall Γ vsubst vsubst' veqsubst veqsubst' (vr : VR 
+     vr'                      ← assert (forall Γ vsubst vsubst' veqsubst veqsubst' (vr : VR 
+
+##### E: 전부 on (파일내 notation + 프로젝트 notation + 역인덱스) #####
+   [v9_env] 27개 적용: AUGMENT_V2=1 CUTS_PATH=data/cut_plans_all.jsonl CUT_DROP_HOPELESS=1 DEFS_TOKENS=300 DP_CACHE_SIZE=2048 DYNAMIC_PADDING=1 …
+   … 300/2000 (119s)
+   … 700/2000 (259s)
+   … 1200/2000 (397s)
+   … 1400/2000 (465s)
+
+■ 결과 (예제 2000)
+
+     (SSReflect) 외부참조 쓰는 예제               27
+     (stdlib — 안다고 가정)                    30
+     (참고) stdlib 포함하면 결손 있는 예제            74
+     (참고) 그 tactic 이름도 안 보임               15
+     (참고) 정답 첫 토큰이 비표준 tactic             61
+     ├ SSReflect 환각                       11
+     ├ 비-SSReflect 환각                     35
+     안 보이는 이름 수                           58
+     외부 참조 없음                           1719
+     외부 참조 이름 수                          367
+   ★ 외부 참조를 쓰는 예제                        281
+   ★★ 그중 환각(하나라도 안 보임)                    46
+   예제                                   2000
+
+   ★★ **외부 참조를 쓰는 예제 중 환각** 46/281 = 16.4%
+   (참고) 전체 예제 대비 2.3%
+
+   ■ 이름 종류별  (안 보임 / 전체)
+     Definition          25 /   136  ( 18.4% 안 보임)  결손 중  43.1%
+     미상                  13 /    68  ( 19.1% 안 보임)  결손 중  22.4%
+     Lemma                9 /    54  ( 16.7% 안 보임)  결손 중  15.5%
+     Constructor          6 /    21  ( 28.6% 안 보임)  결손 중  10.3%
+     Fact                 2 /     5  ( 40.0% 안 보임)  결손 중   3.4%
+     Axiom                1 /    11  (  9.1% 안 보임)  결손 중   1.7%
+     Fixpoint             1 /     7  ( 14.3% 안 보임)  결손 중   1.7%
+     Field                1 /    52  (  1.9% 안 보임)  결손 중   1.7%
+     Instance             0 /     1  (  0.0% 안 보임)  결손 중   0.0%
+     Theorem              0 /     6  (  0.0% 안 보임)  결손 중   0.0%
+     Corollary            0 /     2  (  0.0% 안 보임)  결손 중   0.0%
+     Proposition          0 /     4  (  0.0% 안 보임)  결손 중   0.0%
+
+   ■ ★ SSReflect 환각 스텝만 제외했을 때
+     현재            환각 46/281 = 16.4%
+       ├ SSReflect     11건 (24% of 환각)
+       └ 비-SSReflect  35건 (76%)
+     제외 후          환각 35/270 = 13.0%
+     대가             외부참조 예제의 3.9% 제외 · 전체 예제의 0.55%
+     (참고) SSReflect 는 외부참조 예제의 9.6%, 그중 환각률 40.7%
+     (참고) **모든** SSReflect 를 제외하면 환각 35/254 = 13.8% · 대가 전체의 1.35%
+
+   ■ tactic 종류별  (외부참조 쓰는 예제 / 환각 / 비율)
+     tactic                 씀      환각      환각률      외부참조 없음
+     apply                 51       7    13.7%          151
+     xact                  43       0     0.0%           24
+     assert                37      10    27.0%           43
+     rewrite               22       3    13.6%           91
+     have                  13       4    30.8%            3
+     unfold                13       0     0.0%           40
+     destruct              10       1    10.0%           69
+     move                   7       3    42.9%           12
+     now                    5       0     0.0%           12
+     replace                5       0     0.0%            7
+     auto                   5       0     0.0%           15
+     exists                 4       1    25.0%           28
+     change                 4       0     0.0%            0
+     srapply                3       2    66.7%            0
+     proof                  3       1    33.3%          157
+     pose                   3       1    33.3%            1
+     generalize             3       0     0.0%            6
+     by                     3       1    33.3%           12
+
+   ■ '미상' 실제 예 (오탐 확인용)
+     Build_Diagram            ← srapply Build_Diagram.
+     TyUni                    ← capply TyUni.
+     ZeroR                    ← assert (forall n, ZeroR [<] nring (S n)) as H_asrt0.
+     Hcmp'                    ← destruct (AsciiOT.compare c2 c1) as [? | ? | ?] f1:Hcmp'.
+     OneR                     ← astepl (OneR[*]one_div_succ (n + (n + (n + 0)) + 2)[+]
+   (T
+     Erw                      ← assert (Erw : pb + nd + (pc + na)
+  = (pb + na) + (pc + nd))
+     ring_with_nat            ← assert (Erw : pb + nd + (pc + na)
+  = (pb + na) + (pc + nd))
+     spliteps                 ← assert (spliteps : (eps / 3 > 0)%R) by lra.
+     vsubst'                  ← assert (forall Γ vsubst vsubst' veqsubst veqsubst' (vr : VR 
+     veqsubst                 ← assert (forall Γ vsubst vsubst' veqsubst veqsubst' (vr : VR 
+     veqsubst'                ← assert (forall Γ vsubst vsubst' veqsubst veqsubst' (vr : VR 
+     vr'                      ← assert (forall Γ vsubst vsubst' veqsubst veqsubst' (vr : VR 
+
+##### F: 프로젝트 notation 만 #####
+   [v9_env] 27개 적용: AUGMENT_V2=1 CUTS_PATH=data/cut_plans_all.jsonl CUT_DROP_HOPELESS=1 DEFS_TOKENS=300 DP_CACHE_SIZE=2048 DYNAMIC_PADDING=1 …
+   … 300/2000 (119s)

@@ -1,0 +1,27 @@
+   [v9_env] 27개 적용: AUGMENT_V2=1 CUTS_PATH=data/cut_plans_all.jsonl CUT_DROP_HOPELESS=1 DEFS_TOKENS=300 DP_CACHE_SIZE=2048 DYNAMIC_PADDING=1 …
+■ 계획 cut 256,714건  (data/cut_plans_all.jsonl)
+   인덱스 7,328개 훑어 cut 후보 900개 (적중률 12.28%)
+
+   … cut 50건 (56s)
+   … cut 100건 (99s)
+   … cut 150건 (136s)
+   … cut 200건 (185s)
+   … cut 250건 (222s)
+   … cut 300건 (275s)
+
+■ 결과 (cut 프롬프트 300건 / 시도 798건)
+
+     ✓ 프롬프트에 있다                                       2
+     통짜 cut (쪼개지 않음)  ← exact 가 여기도 산다               12
+     하위스텝 assert                                    138
+     하위스텝 final                                     150
+   U1 ★ exact 대상이 프롬프트에 없다                            1
+        idx=279484 rclo14_rclo ← assert (forall clo r, rclo14 clo (rclo14 clo r) <14= rclo14 clo r) as H_asrt0. {
+   cut 프롬프트                                         300
+   exact 대상                                           3
+   계획은 있으나 cut 미적용(gold 가 보였다)                      498
+
+   exact 대상 가시율 2/3 = 66.7%
+
+★ 치명 항목:
+   · U1 ★ exact 대상이 프롬프트에 없다  (1건)

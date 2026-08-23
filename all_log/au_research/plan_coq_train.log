@@ -1,0 +1,152 @@
+■ 계획 파일 data/cut_plans_all.jsonl → cut 256,714건 적재
+  5건 검증 · 성공 4 (53s)
+  10건 검증 · 성공 8 (126s)
+  15건 검증 · 성공 13 (216s)
+  20건 검증 · 성공 18 (347s)
+  25건 검증 · 성공 23 (403s)
+  30건 검증 · 성공 28 (469s)
+  35건 검증 · 성공 32 (579s)
+  40건 검증 · 성공 37 (636s)
+  45건 검증 · 성공 42 (778s)
+  50건 검증 · 성공 47 (886s)
+  55건 검증 · 성공 52 (952s)
+  60건 검증 · 성공 57 (1069s)
+  65건 검증 · 성공 61 (1114s)
+  70건 검증 · 성공 66 (1188s)
+Segmentation fault (core dumped)
+server quit
+  75건 검증 · 성공 71 (1527s)
+  80건 검증 · 성공 76 (1599s)
+  85건 검증 · 성공 81 (1686s)
+  90건 검증 · 성공 86 (1783s)
+  95건 검증 · 성공 90 (1870s)
+  100건 검증 · 성공 93 (1939s)
+  105건 검증 · 성공 98 (2004s)
+  110건 검증 · 성공 102 (2144s)
+  115건 검증 · 성공 107 (2250s)
+  120건 검증 · 성공 111 (2315s)
+  125건 검증 · 성공 116 (2387s)
+  130건 검증 · 성공 121 (2476s)
+  135건 검증 · 성공 126 (2575s)
+  140건 검증 · 성공 131 (2643s)
+  145건 검증 · 성공 136 (2725s)
+  150건 검증 · 성공 141 (2784s)
+  155건 검증 · 성공 146 (2839s)
+  160건 검증 · 성공 151 (2894s)
+  165건 검증 · 성공 156 (2931s)
+  170건 검증 · 성공 161 (2964s)
+  175건 검증 · 성공 166 (3033s)
+  180건 검증 · 성공 170 (3070s)
+  185건 검증 · 성공 175 (3124s)
+  190건 검증 · 성공 180 (3186s)
+  195건 검증 · 성공 185 (3277s)
+  200건 검증 · 성공 190 (3367s)
+  205건 검증 · 성공 194 (3423s)
+  210건 검증 · 성공 199 (3461s)
+  215건 검증 · 성공 203 (3544s)
+  220건 검증 · 성공 208 (3648s)
+  225건 검증 · 성공 213 (3723s)
+  230건 검증 · 성공 218 (3759s)
+  235건 검증 · 성공 223 (3814s)
+  240건 검증 · 성공 228 (3864s)
+  245건 검증 · 성공 233 (3945s)
+  250건 검증 · 성공 238 (3999s)
+
+■ TRAIN — assert 변환 동적 검증
+   premise 텍스트 못 찾음              1756
+   원본이 이미 오류(스킵)                  429
+   소스 파일 없음                       337
+   계획 cut 사용                      250
+   검증                             250
+   ✓ 변환 성공                        238
+   admit 시도                       237
+   ✓ admit 만으로 suffix 통과          235
+   suffix 검증 시도                   193
+   ✓ suffix 까지 통과                 193
+   ★ PrintingAll 폴백으로 성공           44
+   계획 없음(스킵)                       25
+   ✗ 변환 실패                         12
+   ✗ admit 만으로는 suffix 실패           2
+   원본 suffix 실패(스킵)                 1
+
+   변환 성공률(시도분): 238/250 = 95.2%
+   적용률(포기 포함)  : 250/250 = 100.0%   — 포기 0건
+
+   ✓ 이름 침범 0건 (state·앞증명·뒤증명·premise 전부 대조)
+
+   ■ 실패 유형 (많은 순)
+   [  1회] X X: X: X X
+          원래: apply beq_string_false_iff in H.
+          변환: assert (∀ x y : string, beq_string x y = false ↔ x ≠ y) as H_asrt0. { exact beq_string_false_iff. }
+          오류: Syntax Error: Lexer: Undefined token
+   [  1회] X X: [X] X X '<=' (in [X]).
+          원래: rewrite !leb_le, !le_lteq.
+          변환: assert (forall p q, (p <=? q) = true <-> p <= q) as H_asrt0. { exact leb_le. }
+          오류: Syntax error: [term] expected after '<=' (in [term]).
+   [  1회] X X g X X X in X X X.
+          원래: unfold forall_eq_rect, forall_sig_eq_rect; simpl.
+          변환: assert (forall A B (f : forall a : A, B a) (P :  g : _ | (forall a, f a = g a)  -> Type) (k : P (exi
+          오류: The variable g was not found in the current environment.
+   [  1회] In X t, t' : Tm H : t :: X H0 : t' :: X H1 : t X H2 : X X : Tm, t' |-> X X X "…" X X  "…" 
+          원래: pose (lhs := progress_helper_Nat H H1).
+          변환: assert (forall t : Tm, (t :: Nat) -> (t val) -> (exists n : nat, t = num n)) as H_asrt0. { exact pro
+          오류: In environment
+t, t' : Tm
+H : t :: Nat
+H0 : t' :: Nat
+H1 : t val
+H2 : exists t'0 : Tm, t' |-> t'0
+The term "progress_helper_Nat" has type
+ "?t :: Nat 
+   [  1회] In X A : X i, j : Z x : A l : X A H : i > 0 Hi : X j = 0%X X X "…" X X "…" X it is X to X 
+          원래: now rewrite !skipn_nil.
+          변환: assert (forall n, skipn n ([] : list A) = []) as H_asrt0. { exact skipn_nil. }
+          오류: In environment
+A : Type
+i, j : Z
+x : A
+l : list A
+H : i > 0
+Hi : Z.to_nat j = 0%nat
+The term "skipn_nil" has type "forall (A : Type) (n : nat), skipn 
+   [  1회] X X R X X X in X X X.
+          원래: rewrite plus_assoc.
+          변환: assert (forall a b c : R, a + b + c = a + (b + c)) as H_asrt0. { exact plus_assoc. }
+          오류: The variable R was not found in the current environment.
+   [  1회] X X X X X X in X X X.
+          원래: intros; generalize (eqlistA_eq _ _ _ (elements_Equal_eqlistA H)); clea
+          변환: assert (forall (elt:Set)(l l' : list (U.t*elt)), eqlistA (@O.eqke elt) l l' -> l=l') as H_asrt0. { e
+          오류: The variable elt was not found in the current environment.
+   [  1회] In X A : X κ, μ : X n : κ ≠ μ Γ : X → X x : ∀ v v0 : X, op A (X (X Γ κ v) μ v0) v, v0 : X 
+          원래: rewrite put_swap.
+          변환: assert (forall κ μ Γ x y, κ ≠ μ → put (put Γ κ x) μ y = put (put Γ μ y) κ x) as H_asrt0. { exact put
+          오류: In environment
+A : sort
+κ, μ : string
+n : κ ≠ μ
+Γ : string → Type
+x : ∀ v v0 : Type, op A (put (put Γ κ v) μ v0)
+v, v0 : Type
+The term "put_swap" has 
+   [  1회] E is X in X X of F: X X X of X X X X X.
+          원래: assert (Hg2 := bij_on_image g Hg).
+          변환: assert (forall E F : Type (h : E -> F), (inj h) -> bij (fun x => exist (image_set h (fun _ => True))
+          오류: E is dependent in the type of F: cannot interpret both of them with the same
+type.
+   [  1회] X X: ',' or ')' X X [X X 200] (in [X]).
+          원래: rewrite t_update_eq.
+          변환: assert (forall (A : Type) (m : total_map A) x v, (x !-> v ; m) x = v) as H_asrt0. { exact t_update_e
+          오류: Syntax error: ',' or ')' expected after [term level 200] (in [term]).
+   [  1회] X X A X X X in X X X.
+          원래: rewrite 2 (proj2 (log2_up_null _)) in H.
+          변환: assert (A /\ B -> B) as H_asrt0. { exact proj2. }
+          오류: The variable A was not found in the current environment.
+   [  1회] In X l, l' : X H : X l l' n : X X X "…" X X "…" X it is X to X X  "…".
+          원래: apply Permutation_symm.
+          변환: assert (forall a b, Permutation a b -> Permutation b a) as H_asrt0. { exact Permutation_symm. }
+          오류: In environment
+l, l' : List
+H : Permutation l l'
+n : nat
+The term "Permutation_symm" has type "Permutation ?l ?r -> Permutation ?r ?l"
+while it is exp

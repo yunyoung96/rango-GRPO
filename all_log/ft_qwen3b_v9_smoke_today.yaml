@@ -1,0 +1,70 @@
+bf16: true
+dataloader_num_workers: 4
+dataloader_persistent_workers: true
+dataloader_prefetch_factor: 4
+eval_accumulation_steps: 1
+eval_steps: 100000
+example_collator:
+  alias: proof-premise
+  out_tokens: 128
+  premise_tokens: 896
+  proof_tokens: 256
+  script_tokens: 512
+  state_tokens: 1024
+gradient_accumulation_steps: 4
+gradient_checkpointing: true
+hard_seq_len: 2048
+ignore_data_skip: true
+keep_every: 5000
+learning_rate: 0.0001
+load_best_model_at_end: false
+load_in_4bit: false
+logging_steps: 1
+lr_scheduler_type: cosine
+max_grad_norm: 0.5
+max_steps: 12
+model_name: Qwen/Qwen2.5-Coder-3B-Instruct
+num_eval_examples: 4
+num_train_epochs: 1
+output_dir: models/rango-qwen3b-v9-smoke-today
+peft_lora_alpha: 16
+peft_lora_r: 64
+per_device_eval_batch_size: 1
+per_device_train_batch_size: 4
+save_steps: 100000
+save_total_limit: null
+tactic_data:
+  cache_loc: /tmp/smoke-cache
+  collator_conf:
+    alias: proof-premise
+    out_tokens: 128
+    premise_tokens: 896
+    proof_tokens: 256
+    script_tokens: 512
+    state_tokens: 1024
+  data_loc: /tmp/coq-dataset
+  formatter_conf:
+    alias: general
+    n_step_conf:
+      alias: one
+    num_premises: 100
+    num_proofs: 12
+    premise:
+      alias: sparse
+      context_format_alias: basic
+      kind: tfidf
+      premise_filter:
+        known_filter: proj-thm
+      premise_format_alias: basic
+      sentence_db_loc: /tmp/coq-dataset/sentences.db
+    proof_ret:
+      alias: sparse
+      data_loc: /tmp/coq-dataset
+      kind: bm25
+      max_examples: 20
+      sentence_db_loc: /tmp/coq-dataset/sentences.db
+  hard_seq_len: 2048
+  model_name: Qwen/Qwen2.5-Coder-3B-Instruct
+  sentence_db_loc: /tmp/coq-dataset/sentences.db
+  shuffled_index_loc: data/ft6.7b-shuffled-index.json
+warmup_steps: 2

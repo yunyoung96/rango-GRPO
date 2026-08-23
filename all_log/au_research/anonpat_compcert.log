@@ -1,0 +1,143 @@
+
+★ cut 파일 커버리지 부족 — 조용히 기능이 죽는다.
+   파일        data/cut_plans_all.jsonl
+   스캔 범위    [0, 0)
+   필요 범위    [0, 177,207)   (Split.TEST)
+   범위 밖 스텝은 cut 치환도 CUT_DROP_HOPELESS 도 작동하지 않는다.
+   메우려면:  python3 scripts/build_cuts.py 197207 test <out> 0
+   (의도한 부분 실행이면 CUTS_ALLOW_PARTIAL=1)
+
+
+■ TEST/AbsInt-CompCert · 예제 266 · 익명 참조 예제 42 (15.8%)
+
+     등식·case                  1
+     등식·change                1
+     등식·destruct              2
+     등식·eapply                1
+     등식·exploit               1
+     등식·rewrite               5
+     등식·unfold                3
+     비등식·apply                8
+     비등식·assert               1
+     비등식·eapply               3
+     비등식·generalize           2
+     비등식·now                  1
+     비등식·replace              1
+     비등식·rewrite              1
+
+────────────────────────────────────────────────────────────────────────────────────────────
+[TEST idx=15087]  repos/AbsInt-CompCert/flocq/Prop/Round_odd.v
+  goal 결론 : T1
+  {|
+    Fnum := T2 (f3 beta fexp (- x)); Fexp := f4 (- x)
+  |} =
+T1 {| Fnum := - T2 (f3 beta fexp x); Fexp := f4 x |}
+  참조      : T1  (premise 순위 9)
+  그 선언   : Definition T1 (f : float beta) := (IZR (Fnum f) * bpow beta (Fexp f))%R.
+  gold      : unfold T1; simpl.
+────────────────────────────────────────────────────────────────────────────────────────────
+[TEST idx=56634]  repos/AbsInt-CompCert/lib/Integers.v
+  goal 결론 : 0 <= f0 y + f0 z <= f1
+  참조      : L26  (premise 순위 16)
+  그 선언   : Remark L26: 2 * f4 - 1 <= f1.
+  gold      : generalize L26; lia.
+────────────────────────────────────────────────────────────────────────────────────────────
+[TEST idx=173154]  repos/AbsInt-CompCert/backend/RTLgenproof.v
+  goal 결론 : forward_simulation (CminorSel.f6 prog) (f6 tprog)
+  참조      : L0  (premise 순위 48)
+  그 선언   : Lemma L0: forward_simulation L1 L2.
+  gold      : eapply L0 with (order := f10).
+────────────────────────────────────────────────────────────────────────────────────────────
+[TEST idx=46565]  repos/AbsInt-CompCert/cfrontend/Cop.v
+  goal 결론 : match f12 with
+| C0 =>
+    Int.f3 16
+      match f12 with
+      | C0 => Int.f3 16 i
+      | C1 => Int.f4 16 i
+      end
+| C1 =>
+    Int.f4 16
+      match f12 with
+      | C0 => Int
+  참조      : f12  (premise 순위 None)
+  그 선언   : (프롬프트에서 못 찾음)
+  gold      : destruct f12; [apply Int.sign_ext_idem|apply Int.zero_ext_idem]; compute; intuition congruence.
+────────────────────────────────────────────────────────────────────────────────────────────
+[TEST idx=168395]  repos/AbsInt-CompCert/flocq/Core/Ulp.v
+  goal 결론 : (pred x <= pred y)%R
+  참조      : L4  (premise 순위 23)
+  그 선언   : Theorem L4 : forall x y, F x -> F y -> (x < y)%R -> (x <= pred y)%R.
+  gold      : apply L4 with (2 := Fy).
+────────────────────────────────────────────────────────────────────────────────────────────
+[TEST idx=25848]  repos/AbsInt-CompCert/flocq/Prop/Double_rounding.v
+  goal 결론 : (0 <= f1 x - fexp1 (f1 x + 1))%Z
+  참조      : f1  (premise 순위 None)
+  그 선언   : (프롬프트에서 못 찾음)
+  gold      : cut (fexp1 (f1 x + 1) <= f1 x)%Z.
+────────────────────────────────────────────────────────────────────────────────────────────
+[TEST idx=31298]  repos/AbsInt-CompCert/backend/NeedDomain.v
+  goal 결론 : nlive (C1 stk1 gl1) b ofs <-> nlive (C1 stk2 gl2) b ofs
+  참조      : L5  (premise 순위 27)
+  그 선언   : Theorem L5: forall s1 s2, f4 s1 s2 = true <-> (forall x, In x s1 <-> In x s2).
+  gold      : rewrite ISet.L5 in H0.
+────────────────────────────────────────────────────────────────────────────────────────────
+[TEST idx=59148]  repos/AbsInt-CompCert/backend/Stackingproof.v
+  goal 결론 : 0 <= pos + 4 * ofs <= Ptrofs.modulus - 1
+  참조      : L25  (premise 순위 7)
+  그 선언   : Lemma L25: forall (ty: typ), typesize ty > 0.
+  gold      : generalize (L25 ty).
+────────────────────────────────────────────────────────────────────────────────────────────
+[TEST idx=3338]  repos/AbsInt-CompCert/common/Globalenvs.v
+  goal 결론 : Mem.loadbytes m3 b 0 sz = Some (bytes_of_init_data_list init)
+  참조      : L0  (premise 순위 31)
+  그 선언   : Lemma L0: forall b il m p m', store_init_data_list m b p il = Some m' -> readbytes_as_zero m b p (init_data_list_size il) -> Mem.loadbytes m' b p (init_data_list_size il) = Some (b
+  gold      : eapply L0; eauto.
+────────────────────────────────────────────────────────────────────────────────────────────
+[TEST idx=14909]  repos/AbsInt-CompCert/flocq/Core/Ulp.v
+  goal 결론 : (0 <= f1 x)%R
+  참조      : L1  (premise 순위 30)
+  그 선언   : Lemma L1 : forall x, (0 < x)%R -> F x -> (0 <= f1 x)%R.
+  gold      : now apply L1.
+────────────────────────────────────────────────────────────────────────────────────────────
+[TEST idx=90739]  repos/AbsInt-CompCert/x86/Asmgenproof1.v
+  goal 결론 : Val.f2 (Val.f8 ob (rs rd) (rs r2) ty)
+  (f9
+     rs # rd <-
+     match f10 (f11 c0) rs with
+     | Some true => rs r2
+     | Some false => rs rd
+     | None => Vundef
+     end rd) 
+  참조      : f10  (premise 순위 None)
+  그 선언   : (프롬프트에서 못 찾음)
+  gold      : set (v :=  match f10 (f11 c0) rs with
+     | Some true => rs r2
+     | Some false => rs rd
+     | None => Vundef
+     end).
+────────────────────────────────────────────────────────────────────────────────────────────
+[TEST idx=69289]  repos/AbsInt-CompCert/common/Values.v
+  goal 결론 : match
+  (if Int.f2 i0 Int.f3 then C3 (Int.f4 Int.one i0) else C2)
+with
+| C3 n2 => C3 (Int.mul i n2)
+| _ => C2
+end = (if Int.f2 i0 Int.f3 then C3 (Int.f4 i i0) else C2)
+  참조      : f2  (premise 순위 None)
+  그 선언   : (프롬프트에서 못 찾음)
+  gold      : case (Int.f2 i0 Int.f3); auto.
+────────────────────────────────────────────────────────────────────────────────────────────
+[TEST idx=122148]  repos/AbsInt-CompCert/common/Globalenvs.v
+  goal 결론 : Mem.unchanged_on P m m'
+  참조      : L16  (premise 순위 17)
+  그 선언   : Lemma L16: forall m1 m2 m3, unchanged_on m1 m2 -> unchanged_on m2 m3 -> unchanged_on m1 m3.
+  gold      : apply Mem.L16 with m''.
+────────────────────────────────────────────────────────────────────────────────────────────
+[TEST idx=51549]  repos/AbsInt-CompCert/lib/Coqlib.v
+  goal 결론 : (if f1 x y then a else b) = b
+  참조      : f1  (premise 순위 23)
+  그 선언   : Definition f1: forall (x y: Z), {x <= y} + {x > y} := Z_le_gt_dec.
+  gold      : case (f1 x y); intros.
+
+→ 저장 42건

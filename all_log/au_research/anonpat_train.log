@@ -1,0 +1,94 @@
+
+■ TRAIN · 예제 411 · 익명 참조 예제 36 (8.8%)
+
+     등식·apply                 3
+     등식·destruct              1
+     등식·elim                  1
+     등식·now                   1
+     등식·rewrite               6
+     등식·unfold                1
+     비등식·apply                5
+     비등식·by                   1
+     비등식·case                 1
+     비등식·eapply               2
+
+────────────────────────────────────────────────────────────────────────────────────────────
+[TRAIN idx=795208]  repos/DmxLarchey-Ramsey/src/ramsey_paper.v
+  goal 결론 : P b
+  참조      : L25  (premise 순위 None)
+  그 선언   : (프롬프트에서 못 찾음)
+  gold      : apply HP1; apply L25; rewrite <- Ha; auto.
+────────────────────────────────────────────────────────────────────────────────────────────
+[TRAIN idx=51940]  repos/coq-community-corn/transc/PowerSeries.v
+  goal 결론 : f0 y [<] f0 (S n)
+  참조      : L6  (premise 순위 42)
+  그 선언   : Lemma L6 : forall m n : nat, m < n -> (f0 m:R) [<] f0 n.
+  gold      : apply L6.
+────────────────────────────────────────────────────────────────────────────────────────────
+[TRAIN idx=222087]  repos/dominiquedevriese-fixismu-coq/BacktransFI/InjectExtract.v
+  goal 결론 : ((f0 (T1 n (f1 τ₁) ⊎ T1 n (f1 τ₂)))[
+ f2 F.unit])⇑
+  참조      : L0  (premise 순위 32)
+  그 선언   : Lemma L0 {ty γ} : (f0 ty)[γ] = f0 ty.
+  gold      : rewrite L0.
+────────────────────────────────────────────────────────────────────────────────────────────
+[TRAIN idx=41061]  repos/barras-cic-model/HF.v
+  goal 결론 : z ∈ {f2 y0}
+  참조      : L14  (premise 순위 16)
+  그 선언   : Lemma L14 : forall x, C0 (f2 x) = x.
+  gold      : rewrite L14.
+────────────────────────────────────────────────────────────────────────────────────────────
+[TRAIN idx=1642284]  repos/omosan0627-basics/TaPL/code/chapter3_error.v
+  goal 결론 : multistep (If (Pred t1) t2 t3) Wrong
+  참조      : L0  (premise 순위 16)
+  그 선언   : Lemma L0: forall t t' t2 t3, multistep t t' -> multistep (If t t2 t3) (If t' t2 t3).
+  gold      : apply L0.
+────────────────────────────────────────────────────────────────────────────────────────────
+[TRAIN idx=1803852]  repos/coq-community-coq-art/tutorial_inductive_co_inductive_types/SRC/
+  goal 결론 : False
+  참조      : L1  (premise 순위 33)
+  그 선언   : Lemma L1 : forall n p , S n <= p -> p = 0 -> False.
+  gold      : eapply L1; eauto.
+────────────────────────────────────────────────────────────────────────────────────────────
+[TRAIN idx=1385236]  repos/ytakata69-proof-indistinguishable-objectives/ind_obj.v
+  goal 결론 : calO .⊆ T4 Op /\ outp_sigmap ⊆ Op
+  참조      : L6  (premise 순위 11)
+  그 선언   : Lemma L6 : forall A B C, C ⊆ A /\ C ⊆ B <-> C ⊆ A ∩ B.
+  gold      : apply L6 in Hinc.
+────────────────────────────────────────────────────────────────────────────────────────────
+[TRAIN idx=372520]  repos/HydLa-Coq-Impl-of-Denotational-Semantics/src/BouncingParticle.v
+  goal 결론 : Is_true (f0 T0 init) /\
+Is_true (f0 (f1 T1) fall) /\
+Is_true (f0 (f1 T2) bounce)
+  참조      : L1  (premise 순위 26)
+  그 선언   : Lemma L1: f1 T1 = [[[]$ x''(t) = Some(-10); $ x''(t) = Some(-10)]; [$ x''(t) = Some(-10)]].
+  gold      : rewrite -> L1.
+────────────────────────────────────────────────────────────────────────────────────────────
+[TRAIN idx=1505574]  repos/micro-policies-verified-ifc/basic_machines/FaultRoutine.v
+  goal 결론 : HT (f0 (f1 f2 ++ f1 f3 ++ f4) f5)
+  (fun (m : f6) (s : f7) => m = m0 /\ s = (0, f8) ::: s0)
+  (fun (m : f6) (s : f7) => m = m0 /\ s = (0, f8) ::: s0)
+  참조      : L12  (premise 순위 16)
+  그 선언   : Lemma L12: forall c (P' P Q: HProp), HT c P Q -> (forall m s, P' m s -> P m s) -> HT c P' Q.
+  gold      : eapply L12.
+────────────────────────────────────────────────────────────────────────────────────────────
+[TRAIN idx=1013100]  repos/coq-community-corn/algebra/CPoly_Degree.v
+  goal 결론 : T2 0 n (fun i0 : nat => f0 i (_C_ (f0 i0 p) [*] _X_ [^] i0))
+[=] T2 0 n (fun i0 : nat => f0 i0 p [*] f0 i (_X_ [^] i0))
+  참조      : L10  (premise 순위 26)
+  그 선언   : Lemma L10 : forall m n f f1, (forall i, f i [=] f1 i) -> T2 m n f [=] T2 m n f1.
+  gold      : apply L10.
+────────────────────────────────────────────────────────────────────────────────────────────
+[TRAIN idx=588420]  repos/uds-psl-MPCTT/coq/solver.v
+  goal 결론 : s :: A <<= s :: B
+  참조      : K0  (premise 순위 None)
+  그 선언   : (프롬프트에서 못 찾음)
+  gold      : K0.
+────────────────────────────────────────────────────────────────────────────────────────────
+[TRAIN idx=224662]  repos/nicolasmarti-hol-in-coq/hol.v
+  goal 결론 : forall b1 b2, ((|- b1) -> (|- b2)) -> (|- b1 ==> b2)
+  참조      : f4  (premise 순위 None)
+  그 선언   : (프롬프트에서 못 찾음)
+  gold      : exact f4.
+
+→ /tmp/anonpat_TRAIN.json  (36건)

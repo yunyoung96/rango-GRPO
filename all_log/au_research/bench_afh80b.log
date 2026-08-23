@@ -1,0 +1,35 @@
+   [v9_env] 27개 적용: AUGMENT_V2=1 CUTS_PATH=data/cut_plans_all.jsonl CUT_DROP_HOPELESS=1 DEFS_TOKENS=300 DP_CACHE_SIZE=2048 DYNAMIC_PADDING=1 …
+■ 검색 비용 분해   data_points 13,896 파일 · stage1=5,000
+
+   [compcert] 파일 214개
+   ── compcert  (스텝 40)
+      풀 크기   중앙 1,010 · 최소 0 · 최대 3,477
+      ① 풀 조립                   3.48 ms    10.2%
+      ② premise 토큰화            5.23 ms    15.3%
+      ③ tfidf                  5.14 ms    15.0%
+      ④ eqx 재랭킹               20.35 ms    59.5%
+      합계                      34.21 ms   (중앙 26.2 ms)
+
+   ── 전체 무작위(대조)  (스텝 40)
+      풀 크기   중앙 0 · 최소 0 · 최대 1,942
+      ① 풀 조립                   0.98 ms    13.9%
+      ② premise 토큰화            0.77 ms    11.0%
+      ③ tfidf                  0.85 ms    12.1%
+      ④ eqx 재랭킹                4.43 ms    62.9%
+      합계                       7.04 ms   (중앙 0.4 ms)
+
+■ 캐시 워밍 후 (추론 조건)
+
+   ── compcert (캐시 워밍 후)
+      스텝 38 × 2회
+      1회차  전체  27.99 ms · eqx  11.83 ms
+      2회차  전체  23.51 ms · eqx  11.50 ms   ← 추론의 실제 조건
+      eqx 비중  1회차 42.3%  →  2회차 48.9%
+
+■ 요약
+   프로젝트                        풀(중앙)    ③ tfidf      ④ eqx         합계  eqx 비중
+   compcert                    1,010      5.14ms     20.35ms     34.21ms    59.5%
+   전체 무작위(대조)                      0      0.85ms      4.43ms      7.04ms    62.9%
+
+   ※ ④ 는 stage1 상한이 걸려 풀이 커져도 안 는다. ②③ 은 풀에 비례한다.
+     → 풀이 클수록 eqx 비중은 **줄어든다**. eqx 를 빼도 그만큼밖에 못 줄인다.

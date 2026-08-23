@@ -1,0 +1,16 @@
+   … 15/60 파일 · 이름 8,973
+   … 30/60 파일 · 이름 8,994
+   … 45/60 파일 · 이름 11,156
+   … 60/60 파일 · 이름 11,168
+
+■ stdlib 선언 이름 11,168개 · 파일 325개 → data/stdlib_names.json
+   negb_involutive        stdlib ✓
+   pos_INR                stdlib ✓
+   map_length             stdlib ✓
+   CRplus_0_r             stdlib ✓
+   Forall_impl            stdlib ✓
+   Rinv_0_lt_compat       stdlib ✓
+   proof_irrelevance      stdlib ✓
+   circonscrit            아님
+   holds                  아님
+   app_nil_r              stdlib ✓

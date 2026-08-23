@@ -1,0 +1,19 @@
+   [v9_env] 27개 적용: AUGMENT_V2=1 CUTS_PATH=data/cut_plans_all.jsonl CUT_DROP_HOPELESS=1 DEFS_TOKENS=300 DP_CACHE_SIZE=2048 DYNAMIC_PADDING=1 …
+   200/400  (95s · 0.48s/건)
+   400/400  (146s · 0.37s/건)
+
+■ 결과 (완성 프롬프트 400건)
+
+   L6 ★ 정답이 쓰는 이름이 프롬프트에 **아예 없다**                          43   10.75%
+        idx=75165 proof_irrelevance ← assert (prop_extensionality -> proof_irrelevance) as H_asrt0
+        idx=75165 prop_extensionality ← assert (prop_extensionality -> proof_irrelevance) as H_asrt0
+        idx=125275 ps_function_f ← by move:(ps_function_f(prl_dl_index_p2 H iI)); aw.
+   N3 같은 문장이 두 번 (이름만 다름)                                   40   10.00%
+   Q3 premise 중복                                            14    3.50%
+   Q4 [STATE] 가 비었다                                         70   17.50%
+   S3 빈 [PREMISES]                                          96   24.00%
+   T1 2048 초과                                               36    9.00%
+   cut 적용                                                   25    6.25%
+
+★ 치명 항목:
+   · L6 ★ 정답이 쓰는 이름이 프롬프트에 **아예 없다**  (43건)

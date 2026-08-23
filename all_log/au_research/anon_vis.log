@@ -1,0 +1,15 @@
+
+■ 표본 2500
+       └ [PREMISES] 에 선언으로          147 ( 53.1%)
+     ★ 프롬프트 어디에도 없음                   6 (  2.2%)
+     보임                             271 ( 97.8%)
+   익명 참조                            277 (100.0%)
+   섹션: {'PROOFS': 145, 'PREMISES': 207, 'SCRIPT': 120, 'LTAC': 12, 'DEFINITIONS': 119, 'STATE': 91, 'TYPES': 14, 'NOTATION': 2}
+     ✗ idx=1642284 L0 ← apply L0.
+     ✗ idx=1185437 L5 ← rewrite !L5; set f1 := Lg _ _; set f2 := Lg _ _.
+     ✗ idx=728108 L0 ← apply L0; auto.
+     ✗ idx=1634275 L17 ← apply L17.
+     ✗ idx=974080 L0 ← apply L0; auto;
+      apply L1; auto.
+     ✗ idx=974080 L1 ← apply L0; auto;
+      apply L1; auto.

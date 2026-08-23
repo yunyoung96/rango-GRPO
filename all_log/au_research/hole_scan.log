@@ -1,0 +1,25 @@
+   [v9_env] 27개 적용: AUGMENT_V2=1 CUTS_PATH=data/cut_plans_all.jsonl CUT_DROP_HOPELESS=1 DEFS_TOKENS=300 DP_CACHE_SIZE=2048 DYNAMIC_PADDING=1 …
+   200/400  (76s · 0.38s/건)
+   400/400  (115s · 0.29s/건)
+
+■ 결과 (완성 프롬프트 400건)
+
+   L6 ★ 정답이 쓰는 이름이 프롬프트에 **아예 없다**                          44   11.00%
+        idx=75165 prop_extensionality ← assert (prop_extensionality -> proof_irrelevance) as H_asrt0
+        idx=75165 proof_irrelevance ← assert (prop_extensionality -> proof_irrelevance) as H_asrt0
+        idx=80176 have ← have ox:= (L19 oix).
+   N3 같은 문장이 두 번 (이름만 다름)                                   39    9.75%
+   Q3 premise 중복                                            14    3.50%
+   Q4 [STATE] 가 비었다                                         70   17.50%
+   S3 빈 [PREMISES]                                          96   24.00%
+   T1 2048 초과                                               36    9.00%
+   cut 적용                                                   24    6.00%
+   ★ 예외 RuntimeError                                         1    0.25%
+        idx=5011 
+★ 예제 캐시가 **다른 설정**으로 만들어졌다 — 그대로 쓰면 조용히 다른 실험이 된다.
+   캐시: /tmp/ft-qwen3b-v9-cache
+   저장된 설정: 4824a918c3295a59  RETRIEVAL_MODE=structural RETRIEVAL_STAGE1=5000 R
+
+★ 치명 항목:
+   · L6 ★ 정답이 쓰는 이름이 프롬프트에 **아예 없다**  (44건)
+   · ★ 예외 RuntimeError  (1건)

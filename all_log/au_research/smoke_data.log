@@ -1,0 +1,32 @@
+   [v9_env] 35개 적용: ADMIT_MIN_FILES=2 AUGMENT_V2=1 CUTS_PATH=data/cut_plans_all.jsonl CUT_DROP_HOPELESS=1 DEFS_TOKENS=300 DP_CACHE_SIZE=2048 …
+■ TRAIN 총 2,009,606 스텝 · 표본 400 · hard_seq_len 2048
+
+   … 100/400 (27s)
+   … 200/400 (76s)
+   … 300/400 (110s)
+   … 400/400 (148s)
+
+■ 결과 (예제 400 · 148s)
+
+       └ final (H_asrt 를 쓴다)               7  (  1.8%)
+       ├ assert (명제를 세운다)                  5  (  1.2%)
+     §DEFINITIONS                        319  ( 79.8%)
+     §LTAC                                67  ( 16.8%)
+     §NOTATION                           162  ( 40.5%)
+     §PREMISES                           400  (100.0%)
+     §PROOFS                             400  (100.0%)
+     §SCRIPT                             400  (100.0%)
+     §STATE                              400  (100.0%)
+     §TYPES                              211  ( 52.8%)
+     ⚠ hard_seq_len 초과                    46  ( 11.5%)
+   ★ cut — assert/final                   12  (  3.0%)
+   ★ cut 후보 — close(exact L) 형태            5  (  1.2%)
+   예제                                    400  (100.0%)
+   정규화 적용                                396  ( 99.0%)
+
+   ■ 무작위성 — 서로 다른 파일 **365개** / 예제 400개  (한 파일 최다 5회)
+      방문 순서 앞 12개: Basics.v · JMLRac_3_Correct.v · Numbers.v · Cauchy_COF.v · Stlc_sound.v · nonZerosLemma.v · Equalities.v · bool.v · gpaco3.v · Basics.v · Basics.v · milieu.v
+
+   ■ 길이  중앙 1566 · p90 2086 · p99 2656 · 최대 2702   (상한 2048)
+
+   ■ 폐기  DROP_HALLUC 0건 · uncovered 0건

@@ -1,0 +1,19 @@
+
+■ 결과 (완성 프롬프트 600건)
+
+   ★ 예외 RuntimeError                                       600  100.00%
+        idx=3343 
+★ 예제 캐시가 **다른 설정**으로 만들어졌다 — 그대로 쓰면 조용히 다른 실험이 된다.
+   캐시: /tmp/ft-qwen3b-v9-cache
+   저장된 설정: 39a512a0827f2d30  RETRIEVAL_MODE=eqx RETRIEVAL_STAGE1=5000 RERANK_P
+        idx=6686 
+★ 예제 캐시가 **다른 설정**으로 만들어졌다 — 그대로 쓰면 조용히 다른 실험이 된다.
+   캐시: /tmp/ft-qwen3b-v9-cache
+   저장된 설정: 39a512a0827f2d30  RETRIEVAL_MODE=eqx RETRIEVAL_STAGE1=5000 RERANK_P
+        idx=10029 
+★ 예제 캐시가 **다른 설정**으로 만들어졌다 — 그대로 쓰면 조용히 다른 실험이 된다.
+   캐시: /tmp/ft-qwen3b-v9-cache
+   저장된 설정: 39a512a0827f2d30  RETRIEVAL_MODE=eqx RETRIEVAL_STAGE1=5000 RERANK_
+
+★ 치명 항목:
+   · ★ 예외 RuntimeError  (600건)

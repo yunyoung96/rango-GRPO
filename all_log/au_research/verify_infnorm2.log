@@ -1,0 +1,29 @@
+
+★ cut 파일 커버리지 부족 — 조용히 기능이 죽는다.
+   파일        data/cut_plans_all.jsonl
+   스캔 범위    [0, 0)
+   필요 범위    [0, 177,207)   (Split.TEST)
+   범위 밖 스텝은 cut 치환도 CUT_DROP_HOPELESS 도 작동하지 않는다.
+   메우려면:  python3 scripts/build_cuts.py 197207 test <out> 0
+   (의도한 부분 실행이면 CUTS_ALLOW_PARTIAL=1)
+
+
+■ TEST · 예제 200
+
+       ├ 매핑 자체가 다름                        70
+     매핑 있음                               200
+     매핑 항목                              5773
+   A 프롬프트에 보이는 익명 토큰                    5653
+   B 왕복 성공                               200
+   C 미지 이름 보존                            200
+   D ★프롬프트 불일치                            70
+   D 학습 프롬프트와 동일                         130
+   예제                                    200
+
+   매핑 있는 예제 200/200 · 항목 평균 28.9
+     [replace] 학습: 'L15'
+           평가: 'Ple'
+     [replace] 학습: 'L21'
+           평가: 'round'
+     [replace] 학습: 'L7'
+           평가: 'cpring'

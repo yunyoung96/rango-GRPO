@@ -1,0 +1,31 @@
+   [v9_env] 27개 적용: AUGMENT_V2=1 CUTS_PATH=data/cut_plans_all.jsonl CUT_DROP_HOPELESS=1 DEFS_TOKENS=300 DP_CACHE_SIZE=2048 DYNAMIC_PADDING=1 …
+
+■ 결과 (예제 400)
+
+       └ func_defs 에 없음                              2
+       └ func_defs 에 있음                              4
+     ✓ 닿음(합계)                                        6
+     ✓ 씨앗으로 닿음: PROOFS본문                             6
+   ★ 결손 있는 예제                                       15
+   ★★ 어디에도 없음 — 주입 불가                               11
+   결손 이름                                            17
+   예제                                              400
+
+   ★★ **주입으로 닿을 수 없는 비율** 11/17 = 64.7%
+   ✓ 씨앗으로 닿는 비율 35.3% — 이 몫만 주입으로 고칠 수 있다
+
+   ■ 어디에도 없는 예
+     isequiv_adjointify         ← srapply isequiv_adjointify.
+     quantifiers                ← (* move both quantifiers into the context: *)
+  intros n
+     intu                       ← remember intu as p.
+     preimage                   ← (* We choose a preimage by [grp_quotient_map]. *)
+      
+     merely                     ← (* We choose a preimage by [grp_quotient_map]. *)
+      
+     forall                     ← assert (forall P:Prop, P \/ ~ P) as H_asrt0.
+     Indutivo                   ← (* Caso Indutivo *)
+ -
+     srdf                       ← have srdf: substrate r = f4 f by  move: oa => [_ sr _].
+     cancelL                    ← rapply (cancelL (transport_const (f2 i j g x) _)).
+     forall                     ← assert (forall (P:Prop) (p1 p2:P), p1 = p2) as H_asrt0.

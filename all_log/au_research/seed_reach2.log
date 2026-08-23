@@ -1,0 +1,26 @@
+   [v9_env] 27개 적용: AUGMENT_V2=1 CUTS_PATH=data/cut_plans_all.jsonl CUT_DROP_HOPELESS=1 DEFS_TOKENS=300 DP_CACHE_SIZE=2048 DYNAMIC_PADDING=1 …
+
+■ 결과 (예제 600)
+
+       └ func_defs 에 없음                              4
+       └ func_defs 에 있음                              5
+     ✓ 닿음(합계)                                        9
+     ✓ 씨앗으로 닿음: PROOFS본문                             8
+     ✓ 씨앗으로 닿음: 스크립트                                 1
+   ★ 결손 있는 예제                                       15
+   ★★ 어디에도 없음 — 주입 불가                                7
+   결손 이름                                            16
+   예제                                              600
+
+   ★★ **주입으로 닿을 수 없는 비율** 7/16 = 43.8%
+   ✓ 씨앗으로 닿는 비율 56.2% — 이 몫만 주입으로 고칠 수 있다
+
+   ■ 어디에도 없는 예
+     isequiv_adjointify         ← srapply isequiv_adjointify.
+     intu                       ← remember intu as p.
+     merely                     ← (* We choose a preimage by [grp_quotient_map]. *)
+      
+     srdf                       ← have srdf: substrate r = f4 f by  move: oa => [_ sr _].
+     cancelL                    ← rapply (cancelL (transport_const (f2 i j g x) _)).
+     Tbt                        ← have Tbt: f0 C1 T0 by fprops.
+     setU2_2                    ← by move => [ha _]; apply:setU2_2.

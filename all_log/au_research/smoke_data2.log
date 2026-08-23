@@ -1,0 +1,32 @@
+   [v9_env] 36개 적용: ADMIT_MIN_FILES=2 AUGMENT_V2=1 CUTS_PATH=data/cut_plans_all.jsonl CUT_DROP_HOPELESS=1 DEFS_TOKENS=300 DP_CACHE_SIZE=2048 …
+■ TRAIN 총 2,009,606 스텝 · 표본 400 · hard_seq_len 2048
+
+   … 100/400 (43s)
+   … 200/400 (77s)
+   … 300/400 (110s)
+   … 400/400 (138s)
+
+■ 결과 (예제 400 · 138s)
+
+       └ final (H_asrt 를 쓴다)              10  (  2.5%)
+       ├ assert (명제를 세운다)                 10  (  2.5%)
+     §DEFINITIONS                        341  ( 85.2%)
+     §LTAC                                69  ( 17.2%)
+     §NOTATION                           167  ( 41.8%)
+     §PREMISES                           400  (100.0%)
+     §PROOFS                             400  (100.0%)
+     §SCRIPT                             400  (100.0%)
+     §STATE                              400  (100.0%)
+     §TYPES                              229  ( 57.2%)
+     ⚠ hard_seq_len 초과                    25  (  6.2%)
+   ★ cut — assert/final                   20  (  5.0%)
+   ★ cut 후보 — close(exact L) 형태           15  (  3.8%)
+   예제                                    400  (100.0%)
+   정규화 적용                                393  ( 98.2%)
+
+   ■ 무작위성 — 서로 다른 파일 **377개** / 예제 400개  (한 파일 최다 3회)
+      방문 순서 앞 12개: regexp.v · Gt.v · Imp.v · BHTowerNotation.v · ZIter.v · CMTprofile.v · GroupTheory.v · SeqSeries.v · a4.v · ListComplements.v · AltAuto.v · CPseudoMSpaces.v
+
+   ■ 길이  중앙 1524 · p90 1961 · p99 2653 · 최대 2690   (상한 2048)
+
+   ■ 폐기  DROP_HALLUC 7건 · uncovered 0건

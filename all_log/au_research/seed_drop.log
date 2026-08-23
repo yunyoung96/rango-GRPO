@@ -1,0 +1,38 @@
+   [v9_env] 27개 적용: AUGMENT_V2=1 CUTS_PATH=data/cut_plans_all.jsonl CUT_DROP_HOPELESS=1 DEFS_TOKENS=300 DP_CACHE_SIZE=2048 DYNAMIC_PADDING=1 …
+   … 50/150
+   … 100/150
+   … 150/150
+
+■ 결과 (예제 150)
+
+       (출처 premise)                                 250
+       (출처 가설)                                      364
+       (출처 결론)                                      191
+       (출처 스크립트)                                    432
+     ① _bad_head 탈락                                2517
+     ② _STDLIB 탈락                                    12
+     ③ 인덱스에 없음                                     1903
+     ④ pick_def 실패(동명 모호·프로젝트 불일치)                  694
+     ⑤ 모듈 별칭                                          1
+     ✓ 살아남음                                        1237
+     씨앗출처 premise                                  2018
+     씨앗출처 가설                                       1350
+     씨앗출처 결론                                        880
+     씨앗출처 스크립트                                     2116
+   씨앗(중복제거)                                        6364
+   예제                                               150
+
+   씨앗 → 정의 생존율  1237/6364 = 19.44%
+   예제당 살아남은 정의  8.2개
+
+   ■ pick_def 실패 예
+     EM                     후보   6개 · proj=repos/kazkob-Berardi/berardi.v
+     Bool                   후보  20개 · proj=repos/kazkob-Berardi/berardi.v
+     sf                     후보   3개 · proj=repos/mvmramos-cfg/closure.v
+     inl                    후보   7개 · proj=repos/mvmramos-cfg/closure.v
+     s2                     후보   2개 · proj=repos/mvmramos-cfg/closure.v
+     s3                     후보   2개 · proj=repos/mvmramos-cfg/closure.v
+     s'                     후보   5개 · proj=repos/mvmramos-cfg/closure.v
+     H2                     후보   8개 · proj=repos/mvmramos-cfg/closure.v
+     H1                     후보   9개 · proj=repos/mvmramos-cfg/closure.v
+     s1                     후보   3개 · proj=repos/mvmramos-cfg/closure.v

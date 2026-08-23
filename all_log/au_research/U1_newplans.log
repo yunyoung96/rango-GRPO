@@ -1,0 +1,13 @@
+CUTS_PATH=data/cut_plans_all.jsonl  RETRIEVAL_MODE=eqx
+
+■ 결과 (완성 프롬프트 300건)
+
+   L5 정답이 프롬프트 꼬리와 겹친다                                       1    0.33%
+   N3 같은 문장이 두 번 (이름만 다름)                                   24    8.00%
+   Q3 premise 중복                                             5    1.67%
+   Q4 [STATE] 가 비었다                                         45   15.00%
+   S3 빈 [PREMISES]                                          62   20.67%
+   T1 2048 초과                                               30   10.00%
+   cut 적용                                                   14    4.67%
+
+✓ 치명 항목 없음

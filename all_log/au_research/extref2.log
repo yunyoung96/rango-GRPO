@@ -1,0 +1,34 @@
+   [v9_env] 27개 적용: AUGMENT_V2=1 CUTS_PATH=data/cut_plans_all.jsonl CUT_DROP_HOPELESS=1 DEFS_TOKENS=300 DP_CACHE_SIZE=2048 DYNAMIC_PADDING=1 …
+   … 300/400 (115s)
+   … 400/400 (149s)
+
+■ 결과 (예제 400)
+
+     (참고) 그 tactic 이름도 안 보임                5
+     (참고) 정답 첫 토큰이 비표준 tactic             19
+     안 보이는 이름 수                           20
+     외부 참조 없음                            310
+     외부 참조 이름 수                          133
+   ★ 외부 참조를 쓰는 예제                         90
+   ★★ 그중 환각(하나라도 안 보임)                    17
+   예제                                    400
+
+   ★★ **외부 참조를 쓰는 예제 중 환각** 17/90 = 18.9%
+   (참고) 전체 예제 대비 4.2%
+
+   ■ 이름 종류별  (안 보임 / 전체)
+     Definition           8 /    35  ( 22.9% 안 보임)  결손 중  40.0%
+     미상                   5 /    28  ( 17.9% 안 보임)  결손 중  25.0%
+     Field                3 /    17  ( 17.6% 안 보임)  결손 중  15.0%
+     Constructor          3 /    32  (  9.4% 안 보임)  결손 중  15.0%
+     Axiom                1 /     3  ( 33.3% 안 보임)  결손 중   5.0%
+     Fixpoint             0 /     3  (  0.0% 안 보임)  결손 중   0.0%
+     Lemma                0 /    15  (  0.0% 안 보임)  결손 중   0.0%
+
+   ■ '미상' 실제 예 (오탐 확인용)
+     Z_of_nat                 ← apply mod_trans with ((1 - 1) * alpha + Z_of_nat n * beta)%Z
+     Indutivo                 ← (* Caso Indutivo *)
+ -
+     srdf                     ← have srdf: substrate r = domain f by  move: oa => [_ sr _].
+     Tbt                      ← have Tbt: inc C1 C2 by fprops.
+     Build_Diagram            ← srapply Build_Diagram.

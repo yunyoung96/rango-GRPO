@@ -1,0 +1,36 @@
+   [v9_env] 27개 적용: AUGMENT_V2=1 CUTS_PATH=data/cut_plans_all.jsonl CUT_DROP_HOPELESS=1 DEFS_TOKENS=600 DP_CACHE_SIZE=2048 DYNAMIC_PADDING=1 …
+   … 300/400 (116s)
+   … 400/400 (152s)
+
+■ 결과 (예제 400)
+
+     (stdlib — 안다고 가정)                    10
+     (참고) stdlib 포함하면 결손 있는 예제            24
+     (참고) 그 tactic 이름도 안 보임                5
+     (참고) 정답 첫 토큰이 비표준 tactic             19
+     안 보이는 이름 수                           17
+     외부 참조 없음                            315
+     외부 참조 이름 수                          117
+   ★ 외부 참조를 쓰는 예제                         85
+   ★★ 그중 환각(하나라도 안 보임)                    15
+   예제                                    400
+
+   ★★ **외부 참조를 쓰는 예제 중 환각** 15/85 = 17.6%
+   (참고) 전체 예제 대비 3.8%
+
+   ■ 이름 종류별  (안 보임 / 전체)
+     Definition           7 /    34  ( 20.6% 안 보임)  결손 중  41.2%
+     미상                   4 /    26  ( 15.4% 안 보임)  결손 중  23.5%
+     Constructor          3 /    20  ( 15.0% 안 보임)  결손 중  17.6%
+     Field                2 /    14  ( 14.3% 안 보임)  결손 중  11.8%
+     Axiom                1 /     5  ( 20.0% 안 보임)  결손 중   5.9%
+     Fixpoint             0 /     2  (  0.0% 안 보임)  결손 중   0.0%
+     Lemma                0 /    15  (  0.0% 안 보임)  결손 중   0.0%
+     Fact                 0 /     1  (  0.0% 안 보임)  결손 중   0.0%
+
+   ■ '미상' 실제 예 (오탐 확인용)
+     Indutivo                 ← (* Caso Indutivo *)
+ -
+     srdf                     ← have srdf: substrate r = f4 f by  move: oa => [_ sr _].
+     Tbt                      ← have Tbt: f0 C1 T0 by fprops.
+     Build_Diagram            ← srapply Build_Diagram.

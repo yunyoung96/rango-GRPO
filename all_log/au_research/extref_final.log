@@ -1,0 +1,34 @@
+   [v9_env] 27개 적용: AUGMENT_V2=1 CUTS_PATH=data/cut_plans_all.jsonl CUT_DROP_HOPELESS=1 DEFS_TOKENS=300 DP_CACHE_SIZE=2048 DYNAMIC_PADDING=1 …
+   … 300/600 (117s)
+
+■ 결과 (예제 600)
+
+     (stdlib — 안다고 가정)                    15
+     (참고) stdlib 포함하면 결손 있는 예제            25
+     (참고) 그 tactic 이름도 안 보임                6
+     (참고) 정답 첫 토큰이 비표준 tactic             27
+     안 보이는 이름 수                           12
+     외부 참조 없음                            501
+     외부 참조 이름 수                          130
+   ★ 외부 참조를 쓰는 예제                         99
+   ★★ 그중 환각(하나라도 안 보임)                    11
+   예제                                    600
+
+   ★★ **외부 참조를 쓰는 예제 중 환각** 11/99 = 11.1%
+   (참고) 전체 예제 대비 1.8%
+
+   ■ 이름 종류별  (안 보임 / 전체)
+     Definition           7 /    45  ( 15.6% 안 보임)  결손 중  58.3%
+     미상                   2 /    31  (  6.5% 안 보임)  결손 중  16.7%
+     Lemma                1 /    19  (  5.3% 안 보임)  결손 중   8.3%
+     Constructor          1 /     8  ( 12.5% 안 보임)  결손 중   8.3%
+     Field                1 /    16  (  6.2% 안 보임)  결손 중   8.3%
+     Corollary            0 /     1  (  0.0% 안 보임)  결손 중   0.0%
+     Fixpoint             0 /     2  (  0.0% 안 보임)  결손 중   0.0%
+     Fact                 0 /     2  (  0.0% 안 보임)  결손 중   0.0%
+     Axiom                0 /     4  (  0.0% 안 보임)  결손 중   0.0%
+     Theorem              0 /     2  (  0.0% 안 보임)  결손 중   0.0%
+
+   ■ '미상' 실제 예 (오탐 확인용)
+     Build_Diagram            ← srapply Build_Diagram.
+     TyUni                    ← capply TyUni.

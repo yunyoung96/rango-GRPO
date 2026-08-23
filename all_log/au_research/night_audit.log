@@ -1,0 +1,20 @@
+■ 학습 경로 감사   TRAIN 2,009,606 · 구간 9곳 × 40건 = 360건
+
+■ 결과 (검사 360건)
+
+   A ★ 예외 RuntimeError                            360  100.0%
+        idx=0 
+★ 예제 캐시가 **다른 설정**으로 만들어졌다 — 그대로 쓰면 조용히 다른 실험이 된다.
+   캐시: /tmp/ft-qwen3b-v9-cache
+   저장된 설정: 39a512a0827f2d30  RETRIEVAL_MODE=eqx RETRIEVAL_STA
+        idx=1 
+★ 예제 캐시가 **다른 설정**으로 만들어졌다 — 그대로 쓰면 조용히 다른 실험이 된다.
+   캐시: /tmp/ft-qwen3b-v9-cache
+   저장된 설정: 39a512a0827f2d30  RETRIEVAL_MODE=eqx RETRIEVAL_STA
+        idx=2 
+★ 예제 캐시가 **다른 설정**으로 만들어졌다 — 그대로 쓰면 조용히 다른 실험이 된다.
+   캐시: /tmp/ft-qwen3b-v9-cache
+   저장된 설정: 39a512a0827f2d30  RETRIEVAL_MODE=eqx RETRIEVAL_STA
+
+★ 치명 항목:
+   · A ★ 예외 RuntimeError  (360건)

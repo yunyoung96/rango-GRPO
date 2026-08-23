@@ -1,0 +1,50 @@
+   [v9_env] 27개 적용: AUGMENT_V2=1 CUTS_PATH=data/cut_plans_all.jsonl CUT_DROP_HOPELESS=1 DEFS_TOKENS=300 DP_CACHE_SIZE=2048 DYNAMIC_PADDING=1 …
+■ 검색 비용 분해   data_points 13,894 파일 · stage1=5,000
+
+   [compcert] 파일 214개
+   ── compcert  (스텝 60)
+      풀 크기   중앙 2,135 · 최소 0 · 최대 3,477
+      ① 풀 조립                   3.09 ms    13.4%
+      ② premise 토큰화            4.92 ms    21.3%
+      ③ tfidf                  4.82 ms    20.8%
+      ④ eqx 재랭킹               10.28 ms    44.5%
+      합계                      23.12 ms   (중앙 19.7 ms)
+
+   [fourcolor] 파일 115개
+   ── fourcolor  (스텝 60)
+      풀 크기   중앙 2,858 · 최소 2,237 · 최대 9,818
+      ① 풀 조립                   3.03 ms     8.2%
+      ② premise 토큰화            8.72 ms    23.5%
+      ③ tfidf                  7.51 ms    20.2%
+      ④ eqx 재랭킹               17.91 ms    48.2%
+      합계                      37.18 ms   (중앙 22.8 ms)
+
+   ── 전체 무작위(대조)  (스텝 60)
+      풀 크기   중앙 0 · 최소 0 · 최대 4,934
+      ① 풀 조립                   0.94 ms     7.4%
+      ② premise 토큰화            1.02 ms     8.0%
+      ③ tfidf                  1.39 ms    10.9%
+      ④ eqx 재랭킹                9.39 ms    73.7%
+      합계                      12.73 ms   (중앙 0.4 ms)
+
+■ 캐시 워밍 후 (추론 조건)
+
+   ── compcert (캐시 워밍 후)
+      스텝 38 × 2회
+      1회차  전체  16.30 ms · eqx   4.35 ms
+      2회차  전체  15.49 ms · eqx   4.18 ms   ← 추론의 실제 조건
+      eqx 비중  1회차 26.7%  →  2회차 27.0%
+   ── fourcolor (캐시 워밍 후)
+      스텝 52 × 2회
+      1회차  전체  17.56 ms · eqx   6.83 ms
+      2회차  전체  18.91 ms · eqx   6.82 ms   ← 추론의 실제 조건
+      eqx 비중  1회차 38.9%  →  2회차 36.0%
+
+■ 요약
+   프로젝트                        풀(중앙)    ③ tfidf      ④ eqx         합계  eqx 비중
+   compcert                    2,135      4.82ms     10.28ms     23.12ms    44.5%
+   fourcolor                   2,858      7.51ms     17.91ms     37.18ms    48.2%
+   전체 무작위(대조)                      0      1.39ms      9.39ms     12.73ms    73.7%
+
+   ※ ④ 는 stage1 상한이 걸려 풀이 커져도 안 는다. ②③ 은 풀에 비례한다.
+     → 풀이 클수록 eqx 비중은 **줄어든다**. eqx 를 빼도 그만큼밖에 못 줄인다.

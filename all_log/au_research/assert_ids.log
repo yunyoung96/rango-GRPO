@@ -1,0 +1,38 @@
+   [v9_env] 27개 적용: AUGMENT_V2=1 CUTS_PATH=data/cut_plans_all.jsonl CUT_DROP_HOPELESS=1 DEFS_TOKENS=300 DP_CACHE_SIZE=2048 DYNAMIC_PADDING=1 …
+■ 계획 cut 256,714건
+   cut 후보 1,200개 확보
+
+   … assert 50건 (87s)
+   … assert 100건 (153s)
+   … assert 150건 (203s)
+   … assert 200건 (260s)
+
+■ 결과 (assert 스텝 200건)
+
+     ✓ 보임                                119
+     기본 어휘(모델이 앎)                        101
+   assert 스텝                             200
+   ★ 안 보임                                 29
+   자유 식별자                                148
+
+   자유 식별자 가시율 119/148 = 80.4%
+
+   ■ 어디서 보이나 (상위)
+     STATE+PREMISES                  53   44.5%
+     STATE+DEFINITIONS               18   15.1%
+     STATE+SCRIPT                    11    9.2%
+     PREMISES                         9    7.6%
+     STATE                            8    6.7%
+     STATE+PROOFS                     4    3.4%
+     SCRIPT                           3    2.5%
+     TYPES                            2    1.7%
+
+   ■ 안 보이는 예
+     idx=1042977 clear  ←  forall (x y:Block), ([empty *** (clear x)] |- (holds x) *** (((table x
+     idx=1042977 holds  ←  forall (x y:Block), ([empty *** (clear x)] |- (holds x) *** (((table x
+     idx=1042977 table  ←  forall (x y:Block), ([empty *** (clear x)] |- (holds x) *** (((table x
+     idx=1042977 o  ←  forall (x y:Block), ([empty *** (clear x)] |- (holds x) *** (((table x
+     idx=1042977 One  ←  forall (x y:Block), ([empty *** (clear x)] |- (holds x) *** (((table x
+     idx=1042977 on  ←  forall (x y:Block), ([empty *** (clear x)] |- (holds x) *** (((table x
+     idx=1201742 circonscrit  ←  forall A B C, triangle A B C -> (exists O : PO , circonscrit O A B C /
+     idx=1201742 distance  ←  forall A B C, triangle A B C -> (exists O : PO , circonscrit O A B C /

@@ -1,0 +1,15 @@
+  예시1: 매핑 {"sets'": 'K0', 'sets': 'K1', 'removeDups': 'K2', 'someMatch': 'K3', 'doSubtract': 'K4'}
+    [LTAC] Ltac K0 tac := unfold In, constant, universe, check, union, intersection, minus, complement, f6, subset, scomp in *; tau
+    정답   right.
+  예시2: 매핑 {'not_in_L': 'K0', 'gather_vars_with': 'K1', 'gather_vars': 'K2', 'beautify_fset': 'K3', 'pick_fresh_gen': 'K4', 'pick_fresh': 'K5'}
+    [LTAC] Ltac K1 F := let rec gather V := (match goal with | H:?S |- _ => let FH := constr:(F H) in match V with | empty => gathe
+    정답   -
+  예시3: 매핑 {'not_in_L': 'K0', 'gather_vars_with': 'K1', 'gather_vars': 'K2', 'beautify_fset': 'K3', 'pick_fresh_gen': 'K4', 'pick_fresh': 'K5'}
+    [LTAC] Ltac K1 F := let rec gather V := (match goal with | H:?S |- _ => let FH := constr:(F H) in match V with | empty => gathe
+    정답   inversion H0.
+
+■ 표본 300
+   K 매핑 있는 예제           40
+   K 항목수                110
+   [LTAC] 있는 예제         41
+   K 익명화 발생률 40/300 = 13.3%

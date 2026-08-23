@@ -1,0 +1,220 @@
+   [v9_env] 27개 적용: AUGMENT_V2=1 CUTS_PATH=data/cut_plans_all.jsonl CUT_DROP_HOPELESS=1 DEFS_TOKENS=300 DP_CACHE_SIZE=2048 DYNAMIC_PADDING=1 …
+■ TRAIN 4,000 표본에서 '어디에도 없는' 사례 15개 덤프
+
+────────────────────────────────────────────────────────────────────────────────────────────────
+[1] idx=495028   이름 = isequiv_adjointify   종류 = Definition
+   파일   repos/HoTT-Coq-HoTT/theories/Limits/Pullback.v
+   정답   srapply isequiv_adjointify.
+   goal   IsPullback
+  (fun z : {d : D & P d * Q d} => 1 : (z.1; fst z.2).1 = (z.1; snd z.2).1)
+   가설   D: Type
+P: D -> Type
+Q: D -> Type
+   섹션별 존재:  PREMISES=X · PROOFS=X · SCRIPT=X · TYPES=X · DEFINITIONS=X · LTAC=X
+   원본에도 없음: premise 26개 · proofs 12개
+   func_defs: 후보 4개   → 주입 재료는 있다(씨앗이 못 닿았을 뿐)
+────────────────────────────────────────────────────────────────────────────────────────────────
+[2] idx=639865   이름 = intu   종류 = Constructor
+   파일   repos/uds-psl-coq-synthetic-incompleteness/theories/FOL/Semantics/Tarski/FullSoundness.v
+   정답   remember intu as p.
+   goal   A ⊢I phi -> valid_ctx A phi
+   가설   Σ_funcs: funcs_signature
+Σ_preds: preds_signature
+ff: falsity_flag
+A: list form
+phi: form
+   섹션별 존재:  PREMISES=X · PROOFS=X · SCRIPT=X · TYPES=X · DEFINITIONS=X · LTAC=X
+   원본에도 없음: premise 100개 · proofs 12개
+   func_defs: 없음   → 인덱스에도 없다
+────────────────────────────────────────────────────────────────────────────────────────────────
+[3] idx=914199   이름 = merely   종류 = Definition
+   파일   repos/HoTT-Coq-HoTT/theories/Algebra/AbSES/PullbackFiberSequence.v
+   정답   (* We choose a preimage by [grp_quotient_map]. *)
+      assert (f : merely (hfiber grp_quotient_map y)).
+   goal   Tr (-1)
+  (hfiber
+     (cxfib
+        (phomotopy_homotopy_hset
+           (fun a : A =>
+            ap (projection E)
+              (let X :=
+        
+   가설   H: Univalence
+A: AbGroup
+B: AbGroup
+C: AbGroup
+E: AbSES C B
+F: AbSES E A
+p: abses_pullback (inclusion E) F $== pt
+y: abs
+   섹션별 존재:  PREMISES=X · PROOFS=X · SCRIPT=X · TYPES=X · DEFINITIONS=X · LTAC=X
+   원본에도 없음: premise 100개 · proofs 12개
+   func_defs: 후보 2개   → 주입 재료는 있다(씨앗이 못 닿았을 뿐)
+────────────────────────────────────────────────────────────────────────────────────────────────
+[4] idx=419978   이름 = cancelL   종류 = Definition
+   파일   repos/HoTT-Coq-HoTT/theories/Colimits/Colimit.v
+   정답   rapply (cancelL (transport_const (f2 i j g x) _)).
+   goal   ap (Colimit_rec P C) (colimp i j g x) = legs_comm C i j g x
+   가설   G: Graph
+D: Diagram G
+P: Type
+C: Cocone D P
+i, j: G
+g: G i j
+x: D i
+   섹션별 존재:  PREMISES=X · PROOFS=X · SCRIPT=X · TYPES=X · DEFINITIONS=X · LTAC=X
+   원본에도 없음: premise 23개 · proofs 12개
+   func_defs: 후보 1개   → 주입 재료는 있다(씨앗이 못 닿았을 뿐)
+   … 500/4000 · 결손 9 · 어디에도없음 4
+────────────────────────────────────────────────────────────────────────────────────────────────
+[5] idx=196014   이름 = setU2_2   종류 = Lemma
+   파일   repos/coq-community-gaia/theories/ordinals/sset13a.v
+   정답   by move => [ha _]; apply:setU2_2.
+   goal   t = J (cnf_degree x) (Vr y (cnf_degree x) +c Vr x (cnf_degree x)) ->
+inc t (range x \cup range y)
+   가설   x, y: Set
+ox: cnfp x
+oy: cnfp y
+cpd: cnf_all_smaller x y
+oz: cnfp (cnf_nm x y)
+xz: x <> emptyset
+xnz: cnfp x /\ x <> emp
+   섹션별 존재:  PREMISES=X · PROOFS=X · SCRIPT=X · TYPES=X · DEFINITIONS=X · LTAC=X
+   원본에도 없음: premise 100개 · proofs 12개
+   func_defs: 없음   → 인덱스에도 없다
+────────────────────────────────────────────────────────────────────────────────────────────────
+[6] idx=960905   이름 = card_Nint1c   종류 = Lemma
+   파일   repos/coq-community-gaia/theories/sets/sset9.v
+   정답   have cE: cardinal E = n by rewrite card_Nint1c.
+   goal   cardinal T = binom n \2c
+   가설   n: Set
+nN: natp n
+E: Set
+T: Set
+oN: natp \1c
+tN: natp \2c
+le2n: \2c <=c n
+   섹션별 존재:  PREMISES=X · PROOFS=X · SCRIPT=X · TYPES=X · DEFINITIONS=X · LTAC=X
+   원본에도 없음: premise 100개 · proofs 12개
+   func_defs: 없음   → 인덱스에도 없다
+────────────────────────────────────────────────────────────────────────────────────────────────
+[7] idx=139014   이름 = cs_bin_op_strext   종류 = Definition
+   파일   repos/coq-community-corn/algebra/CGroups.v
+   정답   apply (cs_bin_op_strext _ csg_op x [0] y [0]).
+   goal   x [#] [0] or y [#] [0]
+   가설   G: CGroup
+x, y: G
+H: x [+] y [#] [0]
+   섹션별 존재:  PREMISES=X · PROOFS=X · SCRIPT=X · TYPES=X · DEFINITIONS=X · LTAC=X
+   원본에도 없음: premise 100개 · proofs 12개
+   func_defs: 후보 1개   → 주입 재료는 있다(씨앗이 못 닿았을 뿐)
+────────────────────────────────────────────────────────────────────────────────────────────────
+[8] idx=627496   이름 = Acc_intro   종류 = Constructor
+   파일   repos/UniMath-Schools/UniMath/sub/coq/theories/ZArith/Zwf.v
+   정답   apply Acc_intro; unfold T0; intros.
+   goal   Acc (Zwf c) a
+   가설   c: Z
+f: Z -> nat
+n: nat
+a: Z
+H: (f a < 0)%nat \/ a < c
+H0: a < c
+   섹션별 존재:  PREMISES=X · PROOFS=X · SCRIPT=X · TYPES=X · DEFINITIONS=X · LTAC=X
+   원본에도 없음: premise 0개 · proofs 0개
+   func_defs: 없음   → 인덱스에도 없다
+────────────────────────────────────────────────────────────────────────────────────────────────
+[9] idx=606195   이름 = cartpairB_Out   종류 = Lemma
+   파일   repos/LASER-UMASS-TacTok/coq_projects/functions-in-zfc/Functions_in_ZFC.v
+   정답   Proof cartpairB_Out.
+   goal   forall A B X Y : Ens, IN (PAIR X Y) (Cartesian A B) -> IN Y B
+   가설   (없음)
+   섹션별 존재:  PREMISES=X · PROOFS=X · SCRIPT=X · TYPES=X · DEFINITIONS=X · LTAC=X
+   원본에도 없음: premise 100개 · proofs 12개
+   func_defs: 없음   → 인덱스에도 없다
+────────────────────────────────────────────────────────────────────────────────────────────────
+[10] idx=1506893   이름 = inv_pp   종류 = Definition
+   파일   repos/HoTT-Coq-HoTT/theories/Homotopy/Join/Core.v
+   정답   rewrite <- inv_pp.
+   goal   (ap k (jglue a b))^ @ ((ap10 ha1 tt)^)^ = (g b)^
+   가설   H: Univalence
+m, n: trunc_index
+A: Type
+B: Type
+H0: IsConnected (Tr m) A
+H1: IsConnected (Tr n) B
+C: Type
+H2: IsTrunc (m
+   섹션별 존재:  PREMISES=X · PROOFS=X · SCRIPT=X · TYPES=X · DEFINITIONS=X · LTAC=X
+   원본에도 없음: premise 100개 · proofs 12개
+   func_defs: 후보 2개   → 주입 재료는 있다(씨앗이 못 닿았을 뿐)
+────────────────────────────────────────────────────────────────────────────────────────────────
+[11] idx=1856964   이름 = add_com   종류 = Constructor
+   파일   repos/potan-lz_cert/lz.v
+   정답   Search "add_com".
+   goal   a + (b - a) - (b - a) = a
+   가설   a, b: nat
+H: a <= b
+   섹션별 존재:  PREMISES=X · PROOFS=X · SCRIPT=X · TYPES=X · DEFINITIONS=X · LTAC=X
+   원본에도 없음: premise 3개 · proofs 3개
+   func_defs: 없음   → 인덱스에도 없다
+   … 1000/4000 · 결손 22 · 어디에도없음 11
+────────────────────────────────────────────────────────────────────────────────────────────────
+[12] idx=1926420   이름 = ZeroR   종류 = 미상
+   파일   repos/coq-community-corn/reals/iso_CReals.v
+   정답   assert (forall n, ZeroR [<] nring (S n)) as H_asrt0.
+   goal   Six [*] K [#] [0]
+   가설   IR: CReals
+g, h: R_COrdField IR
+e: IR
+X: [0] [<] e
+K: IR
+H6: Prop
+H2: Prop
+H3: [0] [<] K
+H4: {N : nat & forall m : nat, 
+   섹션별 존재:  PREMISES=X · PROOFS=X · SCRIPT=X · TYPES=X · DEFINITIONS=X · LTAC=X
+   원본에도 없음: premise 100개 · proofs 12개
+   func_defs: 없음   → 인덱스에도 없다
+────────────────────────────────────────────────────────────────────────────────────────────────
+[13] idx=79444   이름 = eqn   종류 = Axiom
+   파일   repos/sosnovskaya-SoftwareFoundations/Basics.v
+   정답   destruct n as [| n'] eqn:E.
+   goal   (n + 1 =? 0) = false
+   가설   n: nat
+   섹션별 존재:  PREMISES=X · PROOFS=X · SCRIPT=X · TYPES=X · DEFINITIONS=X · LTAC=X
+   원본에도 없음: premise 9개 · proofs 12개
+   func_defs: 후보 17개   → 주입 재료는 있다(씨앗이 못 닿았을 뿐)
+────────────────────────────────────────────────────────────────────────────────────────────────
+[14] idx=12271   이름 = E_IfFalse   종류 = Constructor
+   파일   repos/snu-sf-class-sf202002/5-Hoare2/Imp.v
+   정답   (* if command *)
+    apply E_IfFalse.
+   goal   (X !-> 2) =[ if X <= 1 then Y := 3 else Z := 4 end ]=> (Z !-> 4; X !-> 2)
+   가설   (없음)
+   섹션별 존재:  PREMISES=X · PROOFS=X · SCRIPT=X · TYPES=X · DEFINITIONS=X · LTAC=X
+   원본에도 없음: premise 32개 · proofs 12개
+   func_defs: 없음   → 인덱스에도 없다
+────────────────────────────────────────────────────────────────────────────────────────────────
+[15] idx=1643545   이름 = fs1   종류 = 미상
+   파일   repos/coq-community-gaia/theories/sets/sset10.v
+   정답   have [sf [ff _] f0 fs1 fs2] := (L5 h a pN).
+   goal   [/\ function_prop f Nat E, Vf f \0c = a,
+    forall n : Set, n <c p -> Vf f (csucc n) = h n (Vf f n)
+  & forall n : Set, natp n -> ~ n <=c p -> Vf f n
+   가설   E: Set
+h: fterm2
+a, p: Set
+f: Set
+pN: natp p
+aE: inc a E
+ag: forall n x : Set, inc x E -> n <c p -> inc (h n x) E
+st: su
+   섹션별 존재:  PREMISES=X · PROOFS=X · SCRIPT=X · TYPES=X · DEFINITIONS=X · LTAC=X
+   원본에도 없음: premise 100개 · proofs 12개
+   func_defs: 없음   → 인덱스에도 없다
+
+================================================================================================
+     씨앗으로 닿음                        15
+   ★ 어디에도 없음                        16
+   결손                               31
+   예제                             1111

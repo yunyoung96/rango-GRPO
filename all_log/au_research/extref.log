@@ -1,0 +1,39 @@
+   [v9_env] 27개 적용: AUGMENT_V2=1 CUTS_PATH=data/cut_plans_all.jsonl CUT_DROP_HOPELESS=1 DEFS_TOKENS=300 DP_CACHE_SIZE=2048 DYNAMIC_PADDING=1 …
+   … 200/400 (82s)
+   … 300/400 (114s)
+   … 400/400 (148s)
+
+■ 결과 (예제 400)
+
+     안 보이는 이름 수                           82
+     외부 참조 없음                            118
+     외부 참조 이름 수                          392
+   ★ 외부 참조를 쓰는 예제                        282
+   ★★ 그중 환각(하나라도 안 보임)                    74
+   예제                                    400
+
+   ★★ **외부 참조를 쓰는 예제 중 환각** 74/282 = 26.2%
+   (참고) 전체 예제 대비 18.5%
+
+   ■ 이름 종류별  (안 보임 / 전체)
+     미상                  47 /   172  ( 27.3% 안 보임)  결손 중  57.3%
+     Definition          21 /    89  ( 23.6% 안 보임)  결손 중  25.6%
+     Constructor          6 /    49  ( 12.2% 안 보임)  결손 중   7.3%
+     Field                4 /    23  ( 17.4% 안 보임)  결손 중   4.9%
+     Axiom                4 /    17  ( 23.5% 안 보임)  결손 중   4.9%
+     Lemma                0 /    36  (  0.0% 안 보임)  결손 중   0.0%
+     Fixpoint             0 /     6  (  0.0% 안 보임)  결손 중   0.0%
+
+   ■ '미상' 실제 예 (오탐 확인용)
+     srapply                  ← srapply isequiv_adjointify.
+     Qed                      ← Qed.
+     Qed                      ← Qed.
+     Qed                      ← Qed.
+     Qed                      ← Qed.
+     Qed                      ← Qed.
+     eqapply                  ← eqapply HT2.
+     Qed                      ← Qed.
+     Qed                      ← Qed.
+     Qed                      ← Qed.
+     Qed                      ← Qed.
+     assumption               ← assumption.

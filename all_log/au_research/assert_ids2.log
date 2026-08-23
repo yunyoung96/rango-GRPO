@@ -1,0 +1,45 @@
+   [v9_env] 27개 적용: AUGMENT_V2=1 CUTS_PATH=data/cut_plans_all.jsonl CUT_DROP_HOPELESS=1 DEFS_TOKENS=300 DP_CACHE_SIZE=2048 DYNAMIC_PADDING=1 …
+■ 계획 cut 256,714건
+   cut 후보 1,500개 확보
+
+   … assert 50건 (87s)
+   … assert 100건 (153s)
+   … assert 150건 (202s)
+   … assert 200건 (260s)
+   … assert 250건 (338s)
+
+■ 결과 (assert 스텝 250건)
+
+      (그 예제의 결손 개수 1)                     19
+      (그 예제의 결손 개수 2)                      6
+      (그 예제의 결손 개수 5+)                     1
+     ✓ 보임                                164
+     기본 어휘(모델이 앎)                        116
+     예제: 전부 보임                           224
+   assert 스텝                             250
+   ★ 안 보임                                 37
+   ★★ 예제: 하나라도 안 보임                       26
+   자유 식별자                                201
+
+   ★★ **예제 단위** 가시율 224/250 = 89.6%
+   자유 식별자 가시율 164/201 = 81.6%
+
+   ■ 어디서 보이나 (상위)
+     STATE+PREMISES                  70   42.7%
+     STATE+DEFINITIONS               24   14.6%
+     STATE+SCRIPT                    20   12.2%
+     PREMISES                        13    7.9%
+     STATE                            8    4.9%
+     SCRIPT                           7    4.3%
+     STATE+PROOFS                     5    3.0%
+     PREMISES+PROOFS                  3    1.8%
+
+   ■ 안 보이는 예
+     idx=1042977 clear  ←  forall (x y:Block), ([empty *** (clear x)] |- (holds x) *** (((table x
+     idx=1042977 holds  ←  forall (x y:Block), ([empty *** (clear x)] |- (holds x) *** (((table x
+     idx=1042977 table  ←  forall (x y:Block), ([empty *** (clear x)] |- (holds x) *** (((table x
+     idx=1042977 o  ←  forall (x y:Block), ([empty *** (clear x)] |- (holds x) *** (((table x
+     idx=1042977 One  ←  forall (x y:Block), ([empty *** (clear x)] |- (holds x) *** (((table x
+     idx=1042977 on  ←  forall (x y:Block), ([empty *** (clear x)] |- (holds x) *** (((table x
+     idx=1201742 circonscrit  ←  forall A B C, triangle A B C -> (exists O : PO , circonscrit O A B C /
+     idx=1201742 distance  ←  forall A B C, triangle A B C -> (exists O : PO , circonscrit O A B C /

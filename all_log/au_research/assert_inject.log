@@ -1,0 +1,35 @@
+   [v9_env] 27개 적용: AUGMENT_V2=1 CUTS_PATH=data/cut_plans_all.jsonl CUT_DROP_HOPELESS=1 DEFS_TOKENS=300 DP_CACHE_SIZE=2048 DYNAMIC_PADDING=1 …
+■ func_defs 80,716 항목
+   … 50/250
+
+■ 결과 (assert 스텝 250건)
+
+     ① 인덱스에 없음                             9
+     ① 인덱스에 있음                            26
+     ② pick_def 가 못 고름(동명 모호)              5
+     ② pick_def 성공                        21
+     전부 보임                               224
+   assert 스텝                             250
+   ★ 결손 있는 예제                             26
+   결손 이름                                  35
+
+   ★ 주입 가능률 (결손 이름 기준) 21/35 = 60.0%
+
+   ③ 토큰 비용 (결손 있는 예제당)
+      중앙 29 · p90 79 · 최대 194
+      현재 DEFS_TOKENS=300 예산 대비
+
+   ■ 예
+     idx=1042977
+        결손 ['clear', 'holds', 'table', 'o', 'One', 'on']
+        holds → Fixpoint holds (e : seq R) (f : formula R) {struct f} : Prop := match f with | B
+        One → Class One A := one: A.
+     idx=1201742
+        결손 ['circonscrit']
+        circonscrit → Definition circonscrit (O A B C : PO) : Prop := isocele O A B /\ isocele O A C.
+     idx=1805034
+        결손 ['l', 'sin_in']
+        sin_in → Definition sin_in (x l:R) : Prop := infinite_sum (fun i:nat => sin_n i * x ^ i) 
+     idx=1487100
+        결손 ['CRasCauchy_IR']
+        CRasCauchy_IR → Definition CRasCauchy_IR (x:CR) : Cauchy_IR := Build_CauchySeq _ _ (CRasCauchy_I

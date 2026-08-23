@@ -1,0 +1,62 @@
+[08-22 23:35] ── 진행 중인 exp_abcd 종료 대기
+[08-23 00:26] ── 랭커 실험 (전용 캐시 · CACHE_MAX_PAGE=0)
+[08-23 00:26]    uni test 시작
+[08-23 00:26]    uni test rc=3
+[08-23 00:26]    uni train 시작
+[08-23 00:27]    uni train rc=3
+[08-23 00:27]    uni val 시작
+[08-23 00:27]    uni val rc=3
+[08-23 00:27]    lex val 시작
+[08-23 00:27]    lex val rc=3
+[08-23 00:27]    lex test 시작
+[08-23 00:28]    lex test rc=3
+[08-23 00:28] ── 환각률 최종 재측정
+[08-23 00:32]    환각률 rc=0
+[08-23 00:32] ── 학습 경로 전수 검증
+■ cut 치환 배선 검사
+
+   ✓ (1) gold 가 전부 보이면 **cut 하지 않는다**   rewrite add_comm, mul_comm.
+   ✓ (2) 안 보이는 것**만** assert · 보이는 것은 그대로   assert (forall x y : nat, x * y = y * x) as H_asrt0. { exact mul_comm. } ⏎ rewrite add_comm, H_asrt0.
+   ✓ (2') 둘 다 안 보이면 둘 다 assert   assert (forall x y : nat, x + y = y + x) as H_asrt0. { exact add_comm. } ⏎ assert (forall x y : 
+   ✓ (3) 전체 조립이 되면 **모든 부분집합도** 된다 (생성 시점 검증의 전제)
+   ✓ (4) `add_comm'` 을 `add_comm` 으로 오인하지 않는다   assert (forall x y : nat, x + y = y + x) as H_asrt0. { exact add_comm. }
+
+==============================================================
+✓ 배선 정상
+[08-23 00:32]    verify_cut_wiring rc=0
+■ 하위스텝 분해 검사
+
+   sub 0 [assert] assert (forall x y : nat, x + y = y + x) as H_asrt0.
+   sub 1 [close ] exact add_comm.
+   sub 2 [assert] assert (forall x y : nat, x * y = y * x) as H_asrt1.
+   sub 3 [close ] exact mul_comm.
+   sub 4 [final ] rewrite H_asrt0, H_asrt1.
+
+   ✓ G6  missing lemma k=2 → 하위스텝 2k+1 = 5개   5개
+   ✓ G6b 순서가 assert·close·assert·close·final
+   ✓ G3  각 하위스텝이 tactic 하나 (통째로 남지 않는다)
+   ✓ G4  H_asrt 이름이 하위스텝 사이에서 일관   ['H_asrt0', 'H_asrt1']
+
+■ 하위스텝별 상태 (G2)
+
+   sub 0:  가설 [n, Hn]  ⊢ Q n
+   sub 1:  가설 [n, Hn]  ⊢ forall x y : nat, x + y = y + x
+   sub 2:  가설 [n, Hn, H_asrt0]  ⊢ Q n
+   sub 3:  가설 [n, Hn, H_asrt0]  ⊢ forall x y : nat, x * y = y * x
+   sub 4:  가설 [n, Hn, H_asrt0, H_asrt1]  ⊢ Q n
+
+   ✓ G2  goal 과 가설이 하위스텝마다 정확히 맞는다
+   ✓ G2b 원래 가설(Γ)이 보존된다
+   ✓ G2c [SCRIPT] 가 앞선 하위스텝을 포함하고 자기 자신은 없다   sub4 스크립트에 assert 2개 + exact 2개
+   ✓ G5  선택이 결정적 (같은 sid → 항상 같은 하위스텝)
+   ✓ G7  조각 최대 22토큰 < 전체 67토큰 (예산 여유가 생긴다)
+   ✓ G8  assert 가 없으면 하위스텝이 1개(원래 tactic 그대로)
+
+==============================================================
+✓ 전 항목 통과
+[08-23 00:32]    verify_substep rc=0
+[08-23 00:39]    verify_u1 rc=0
+[08-23 00:39]    scan_prompts rc=1
+[08-23 00:39]    preflight_random rc=1
+[08-23 00:40]    audit_train_path rc=1
+[08-23 00:40] ===== 밤샘 종료 =====

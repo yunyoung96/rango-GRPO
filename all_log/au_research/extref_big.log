@@ -1,0 +1,90 @@
+   [v9_env] 27개 적용: AUGMENT_V2=1 CUTS_PATH=data/cut_plans_all.jsonl CUT_DROP_HOPELESS=1 DEFS_TOKENS=300 DP_CACHE_SIZE=2048 DYNAMIC_PADDING=1 …
+   … 300/12000 (116s)
+   … 700/12000 (249s)
+   … 1200/12000 (389s)
+   … 1400/12000 (443s)
+   … 2500/12000 (772s)
+   … 4300/12000 (1265s)
+   … 4700/12000 (1377s)
+   … 5700/12000 (1652s)
+   … 7100/12000 (2032s)
+   … 8100/12000 (2329s)
+   … 8300/12000 (2389s)
+   … 9000/12000 (2598s)
+   … 9300/12000 (2673s)
+   … 9700/12000 (2784s)
+   … 10700/12000 (3049s)
+   … 11000/12000 (3142s)
+   … 11800/12000 (3399s)
+
+■ 결과 (예제 12000)
+
+     (stdlib — 안다고 가정)                   179
+     (참고) stdlib 포함하면 결손 있는 예제           461
+     (참고) 그 tactic 이름도 안 보임               82
+     (참고) 정답 첫 토큰이 비표준 tactic            381
+     안 보이는 이름 수                          394
+     외부 참조 없음                          10336
+     외부 참조 이름 수                         2343
+   ★ 외부 참조를 쓰는 예제                       1664
+   ★★ 그중 환각(하나라도 안 보임)                   304
+   예제                                  12000
+
+   ★★ **외부 참조를 쓰는 예제 중 환각** 304/1664 = 18.3%
+   (참고) 전체 예제 대비 2.5%
+
+   ■ 이름 종류별  (안 보임 / 전체)
+     미상                 159 /   541  ( 29.4% 안 보임)  결손 중  40.4%
+     Definition          99 /   767  ( 12.9% 안 보임)  결손 중  25.1%
+     Lemma               51 /   309  ( 16.5% 안 보임)  결손 중  12.9%
+     Constructor         33 /   171  ( 19.3% 안 보임)  결손 중   8.4%
+     Field               25 /   338  (  7.4% 안 보임)  결손 중   6.3%
+     Axiom               14 /    90  ( 15.6% 안 보임)  결손 중   3.6%
+     Fixpoint             7 /    46  ( 15.2% 안 보임)  결손 중   1.8%
+     Theorem              3 /    33  (  9.1% 안 보임)  결손 중   0.8%
+     Instance             1 /     5  ( 20.0% 안 보임)  결손 중   0.3%
+     Fact                 1 /    14  (  7.1% 안 보임)  결손 중   0.3%
+     Corollary            1 /     5  ( 20.0% 안 보임)  결손 중   0.3%
+     Proposition          0 /    19  (  0.0% 안 보임)  결손 중   0.0%
+     Remark               0 /     1  (  0.0% 안 보임)  결손 중   0.0%
+     Let                  0 /     4  (  0.0% 안 보임)  결손 중   0.0%
+
+   ■ tactic 종류별  (외부참조 쓰는 예제 / 환각 / 비율)
+     tactic                 씀      환각      환각률      외부참조 없음
+     apply                278      42    15.1%          815
+     assert               235      68    28.9%          277
+     xact                 208       3     1.4%          139
+     rewrite              124       9     7.3%          559
+     unfold               123       7     5.7%          188
+     destruct              74      23    31.1%          405
+     have                  71      22    31.0%           25
+     move                  32      21    65.6%           70
+     intros                29       1     3.4%          927
+     pose                  28       5    17.9%            6
+     replace               24       0     0.0%           32
+     exists                24       6    25.0%          140
+     now                   21       0     0.0%           70
+     induction             20       5    25.0%          172
+     ?                     18       5    27.8%         1369
+     by                    18       3    16.7%           48
+     cut                   18       1     5.6%           18
+     generalize            17       1     5.9%           32
+     elim                  16       1     6.2%           84
+     auto                  15       3    20.0%           96
+     set                   14       6    42.9%           16
+     simpl                 11       1     9.1%          381
+
+   ■ '미상' 실제 예 (오탐 확인용)
+     Build_Diagram            ← srapply Build_Diagram.
+     TyUni                    ← capply TyUni.
+     H3'                      ← assert (H3':= H3).
+     lzg                      ← move: (cg _ ya) => [z zf lzg].
+     ZeroR                    ← assert (forall n, ZeroR [<] nring (S n)) as H_asrt0.
+     loa                      ← move:(infinite_card_limit2 ica) => loa.
+     fs1                      ← have [sf [ff _] f0 fs1 fs2] := (L5 h a pN).
+     fs2                      ← have [sf [ff _] f0 fs1 fs2] := (L5 h a pN).
+     nzsimpl                  ← unfold Z.pred, Z.succ, Z.eq; intro n; simpl; now nzsimpl.
+     order_tac                ← move:pyz;rewrite -eq2; move => [aux _]; order_tac.
+     Hcmp'                    ← destruct (AsciiOT.compare c2 c1) as [? | ? | ?] f2:Hcmp'.
+     OneR                     ← astepl (OneR[*]one_div_succ (n + (n + (n + 0)) + 2)[+]
+   (T

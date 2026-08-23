@@ -1,0 +1,30 @@
+   [v9_env] 27개 적용: AUGMENT_V2=1 CUTS_PATH=data/cut_plans_all.jsonl CUT_DROP_HOPELESS=1 DEFS_TOKENS=300 DP_CACHE_SIZE=2048 DYNAMIC_PADDING=1 …
+   200/600  (83s · 0.42s/건)
+   400/600  (147s · 0.37s/건)
+   600/600  (215s · 0.36s/건)
+
+■ 결과 (완성 프롬프트 600건)
+
+   L5 정답이 프롬프트 꼬리와 겹친다                                       3    0.50%
+   L6 ★ 정답이 쓰는 이름이 프롬프트에 **아예 없다**                          69   11.50%
+        idx=3343 Defined [Definition] ← Defined.
+        idx=106976 Proof [정의(func_defs)] ← Proof.
+        idx=130377 Proof [정의(func_defs)] ← Proof using A dec.
+   L6-분류 Axiom                                               1    0.17%
+   L6-분류 Constructor                                         3    0.50%
+   L6-분류 Definition                                         23    3.83%
+   L6-분류 Field                                               3    0.50%
+   L6-분류 Fixpoint                                            1    0.17%
+   L6-분류 Lemma                                               3    0.50%
+   L6-분류 미상                                                 30    5.00%
+   L6-분류 정의(func_defs)                                       5    0.83%
+   N2b 같은 이름·같은 명제가 여러 줄 (무해)                                2    0.33%
+   N3 같은 문장이 두 번 (이름만 다름)                                   70   11.67%
+   Q3 premise 중복                                            25    4.17%
+   Q4 [STATE] 가 비었다                                        111   18.50%
+   S3 빈 [PREMISES]                                         138   23.00%
+   T1 2048 초과                                               51    8.50%
+   cut 적용                                                   39    6.50%
+
+★ 치명 항목:
+   · L6 ★ 정답이 쓰는 이름이 프롬프트에 **아예 없다**  (69건)

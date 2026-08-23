@@ -1,0 +1,24 @@
+■ 계획 cut 256,714건  (data/cut_plans_all.jsonl)
+   인덱스 6,154개 훑어 cut 후보 750개 (적중률 12.19%)
+
+   … cut 50건 (192s)
+   … cut 100건 (338s)
+   … cut 150건 (597s)
+   … cut 200건 (708s)
+   … cut 250건 (802s)
+
+■ 결과 (cut 프롬프트 250건 / 시도 640건)
+
+     ✓ 프롬프트에 있다                                       2
+     하위스텝 assert                                    122
+     하위스텝 final/통짜                                  128
+   U1 ★ exact 대상이 프롬프트에 없다                            1
+        idx=279484 rclo14_rclo ← assert (forall clo r, rclo14 clo (rclo14 clo r) <14= rclo14 clo r) as H_asrt0. {
+   cut 프롬프트                                         250
+   exact 대상                                           3
+   계획은 있으나 cut 미적용(gold 가 보였다)                      390
+
+   exact 대상 가시율 2/3 = 66.7%
+
+★ 치명 항목:
+   · U1 ★ exact 대상이 프롬프트에 없다  (1건)
