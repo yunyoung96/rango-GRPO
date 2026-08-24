@@ -74,10 +74,15 @@ def gold_steps(thm) -> list[str]:
 
 idx = [int(x) for x in Path("data/compcert_bs2_rand200_idx.txt").read_text().split()][:N]
 env = dict(os.environ)
-env.update(dict(
-    EXEC_ADAPTER=CKPT, TACTIC_LEADING_NL="1", AUGMENT_V2="1", RERANK_PREMISES="1",
-    INJECT_TYPES="1", INJECT_DEFS="1", HARD_SEQ_LEN="4096", TYPES_TOKENS="300",
-    DEFS_TOKENS="300", FUNC_DEFS_PATH="data/func_defs_v3.json", HF_HUB_OFFLINE="1"))
+# ★ 프롬프트 설정은 **체크포인트의 training_conf 가 전파**한다(HARD_SEQ_LEN·OUT_TOKENS).
+#   여기서 못박으면 학습과 어긋나 정규화의 _L# 번호가 밀린다 — 4096 하드코딩을 제거했다.
+#   TACTIC_LEADING_NL 도 이제 STRIP_TARGET_NL 에서 유도되므로 넘기지 않는다.
+env.update(dict(EXEC_ADAPTER=CKPT, HF_HUB_OFFLINE="1", CUTS_ALLOW_PARTIAL="1"))
+for _k in ("HARD_SEQ_LEN", "OUT_TOKENS", "TACTIC_LEADING_NL"):
+    env.pop(_k, None)
+# ★ alias 는 **학습 포매터와 같아야** 한다. rango-grpo 는 num_premises=50·num_proofs=20 라
+#   v9 학습(100·12)과 어긋나고, premise 개수가 달라지면 _L# 번호가 통째로 밀린다.
+ALIAS = os.environ.get("GP_ALIAS", "rango-v9")
 
 res = {r: [0, 0] for r in RATIOS}          # 비율 → [성공, 시도]
 skip = {r: 0 for r in RATIOS}              # prefix 가 Coq 에 안 먹힌 건 분모에서 뺀다
@@ -107,7 +112,7 @@ def run_one(job, gpu):
     e["CUDA_VISIBLE_DEVICES"] = gpu
     try:
         p = subprocess.run(
-            ["python3", "scripts/run_thm.py", "run", "rango-grpo", "test", str(i),
+            ["python3", "scripts/run_thm.py", "run", ALIAS, "test", str(i),
              "--timeout", str(TIMEOUT)],
             env=e, capture_output=True, text=True, timeout=TIMEOUT + 900)
         out, err = p.stdout, p.stderr
