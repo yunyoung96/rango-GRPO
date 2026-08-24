@@ -719,6 +719,29 @@ def get_tactic_confs(model_alias: str, split: Split) -> list[TacticGenConf]:
             _exec = os.environ.get("EXEC_ADAPTER", "models/rango-grpo/adapter")
             return [DecoderTacticGenConf(Path(_exec), [formatter])]
 
+        case "rango-v9" | "rango-qwen3b-v9":
+            # ★★ v9 SFT (Qwen2.5-Coder-3B-Instruct + LoRA r64) — `ft_qwen3b_v9_conf.yaml` 로 학습.
+            #
+            #   기존 `rango-grpo` alias 를 그대로 쓰면 **학습과 어긋난다**:
+            #       학습  num_premises=100 · num_proofs=12
+            #       grpo  num_premises= 50 · num_proofs=20
+            #   premise 개수가 반이면 [PREMISES] 구성이 달라지고, 정규화가 "프롬프트에
+            #   실제로 실린 premise" 만 대상으로 하므로 **`_L#` 번호가 통째로 밀린다.**
+            #   이 모델은 이름을 100% 익명화해 학습됐으므로 그 어긋남이 그대로 손실이다.
+            #
+            #   premise/proof 검색기 설정(tfidf·bm25·proj-thm 필터·basic 포맷)은
+            #   v9 yaml 과 **글자 그대로 같다** — 개수만 맞추면 된다.
+            #   랭커는 rango_defaults 의 RETRIEVAL_MODE=afh70 이 검색기 안에서 적용된다.
+            formatter = GeneralFormatterConf(
+                premise_client_conf=tfidf_premise_conf,
+                proof_retriever_conf=bm25_proof_conf,
+                num_premises=100,
+                num_proofs=12,
+            )
+            _exec = os.environ.get(
+                "EXEC_ADAPTER", "models/rango-qwen3b-v9-ft/checkpoint-12000")
+            return [DecoderTacticGenConf(Path(_exec), [formatter])]
+
         case "rango-grpo-fix":
             # base 정정 재학습: 기존 rango-grpo 는 **base** 위에서 학습되고 **instruct** 위에 배포됐다
             #   (adapter_config 의 base_model_name_or_path = instruct, 추론 서버가 이를 따름).

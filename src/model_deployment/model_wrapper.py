@@ -289,7 +289,16 @@ class DecoderLocalWrapper:
             if _m:
                 tactics = [apply_inverse(t, _m) for t in tactics]
 
-        if os.environ.get("TACTIC_LEADING_NL", "0") == "1":
+        # ★★ 기본값을 **학습 설정에서 유도**한다 — 별도 env 로 두면 잊는다(실제로 잊었다).
+        #   학습이 정답의 선행 개행을 떼면(`STRIP_TARGET_NL=1`, 지금 프로덕션 기본값)
+        #   모델은 개행 없이 뱉는다. 그러면 탐색기가 `script + tactic` 으로 이어붙일 때
+        #   `Theorem X : stmt.` + `Proof.` → `stmt.Proof` 가 되어 Coq 이 **한정이름**으로
+        #   읽는다 → "Syntax error: '.' expected after [gallina]".
+        #   실측: 이 한 줄이 빠져 rand200 한 정리가 600초 동안 같은 오류를 1,387번 냈다.
+        #   두 설정은 **논리적으로 같은 하나의 사실**이므로 따로 두면 안 된다.
+        #   (명시 env 는 여전히 이긴다 — 절제 실험용.)
+        _lead = os.environ.get("TACTIC_LEADING_NL")
+        if _lead == "1" or (_lead is None and _D.flag("STRIP_TARGET_NL")):
             # STRIP_TARGET_NL=1 로 학습한 모델(Qwen 계열)은 선행 개행 없이 tactic 을 뱉는다.
             # 탐색기는 cur_proof_script + tactic 으로 이어붙이므로 개행이 없으면
             # "...end.Proof." 처럼 붙어 Coq 이 한정이름으로 파싱한다 → 반드시 복원한다.
@@ -380,6 +389,24 @@ class DecoderLocalWrapper:
         example_collator_conf = example_collator_conf_from_yaml(
             training_conf["example_collator"]
         )
+        # ★★ **체크포인트의 학습 설정을 이 프로세스의 단일 출처로 만든다.**
+        #
+        #   래퍼는 여기서 읽은 `hard_seq_len` 으로 자르는데, 프롬프트를 만드는
+        #   collator 쪽(`tactic_data`)은 `rango_defaults` 를 본다. 둘이 다르면
+        #   **정규화가 깨진다**:
+        #     정규화는 "프롬프트에 실제로 실리고 **절단 후에도 보이는**" premise 만
+        #     대상으로 삼는다(`_vis`). 그 창이 실제 절단(2048)보다 넓으면(3072),
+        #     잘려나갈 premise 에까지 `_L#` 을 배정한다 → 모델은 프롬프트 어디에도
+        #     없는 `_L7` 을 보게 되고, 그건 정확히 우리가 없애려던 환각이다.
+        #   그리고 `room = hard − base − out_tokens − margin` 도 같은 값을 써야
+        #   주입량이 학습과 같아진다.
+        #
+        #   env 가 **명시적으로** 주어졌으면 그것을 존중한다(절제 실험용).
+        #   추론 프로세스 안에서만 설정하므로 학습 경로로 새지 않는다.
+        for _k, _v in (("HARD_SEQ_LEN", hard_seq_length),
+                       ("OUT_TOKENS", training_conf["example_collator"].get("out_tokens"))):
+            if _v and not os.environ.get(_k):
+                os.environ[_k] = str(_v)
         example_collator = example_collator_from_conf(example_collator_conf)
         tokenizer = get_tokenizer(
             get_required_arg("model_name", training_conf), add_eos=False
