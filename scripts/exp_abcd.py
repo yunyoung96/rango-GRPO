@@ -68,7 +68,7 @@ from tactic_gen.tier_rank import (TierRanker, declname, prem_struct,  # noqa: E4
                                   goal_stmt, prem_stmt,
                                   au_f_alpha, hinge, _rrf_of,
                                   path_set, path_sim,
-                                  ultra_sim, au_jaccard_sim)
+                                  ultra_sim, au_jaccard_sim, RRF_K)
 
 # ★ C 국면 질의의 binder 를 개명할지. 기본 끔(옛 측정과 비교 가능하게).
 #   켜면 "모델이 자기 말로 assert 를 쓴 경우" 를 재는 것이고, 그것이 실전 조건이다.
@@ -145,9 +145,28 @@ _AFH = re.compile(r"^(afh|afx)([1-9]\d?|100)$")
 #   (자기검사로 확인한다). 즉 여기서도 eqx 는 족의 끝점이다.
 _ULT = re.compile(r"^ult([1-9]\d?|100)$")
 _KNOWN = _KNOWN | {"ultlex", "ultrrf"}
+# ★★ `cah<τ>` — **같은 삼각커널을 A 국면 쌍에 건다.**
+#
+#   확립된 두 사실이 정확히 맞물린다:
+#     · 상시 켜진 연속 구조 신호는 A 를 해친다 (cov −6.9pp · RRF(F₁) −8.5pp)
+#     · 희소·자기게이팅 신호는 A 를 전혀 안 해친다 (EQ_W: A 가 rrf 와 소수점까지 동일)
+#   그런데 희소화 장치(hinge)가 **C 국면 쌍(전체명제 ↔ 전체goal)에만** 걸려 있고,
+#   거기서 A 기여는 실측 0 이다 (afh 족 전체에서 A·R 44.9 · A·ALL 36.4 평평).
+#
+#   A 국면이 던지는 질문은 다른 쌍이다 — "이 premise 의 **결론**이 goal 의
+#   **부분항**과 맞는가"(rewrite 면 등식 양변). 그 쌍의 AU 가 `sig_anti_unify` 로
+#   이미 계산돼 있는데, 지금까지 **RRF 로 상시 켜서만** 써 봤다(=`au`, 규칙대로 짐).
+#
+#       cah<τ>  = afh70 + W·h_τ(AU_concl(p, g))
+#       cahx    = afh70 + W·1[단일화됨]              (τ→1 극한 = sig_applicable)
+#       cams<τ> = afh70 + W·h_τ(매칭부분항 크기)      (연속판 A′ 에 같은 커널)
+#   대조군 `caR` = afh70 + RRF(AU_concl)  ← 상시 켜기. 규칙대로면 A 를 해쳐야 한다.
+_CAH = re.compile(r"^(cah|cams)([1-9]\d?|100)$")
+_KNOWN = _KNOWN | {"cahx", "caR"}
 _ADA = re.compile(r"^(ultada|afada)(\d{1,4})?$")
 _bad = [r for r in RANKERS if r not in _KNOWN
-        and not _AFH.match(r) and not _ULT.match(r) and not _ADA.match(r)]
+        and not _AFH.match(r) and not _ULT.match(r) and not _ADA.match(r)
+        and not _CAH.match(r)]
 if _bad:
     sys.stderr.write(f"알 수 없는 랭커: {_bad}\n사용 가능: {sorted(_KNOWN)}\n")
     sys.exit(2)
@@ -204,6 +223,9 @@ EQFIRE = collections.Counter()
 # ★ 랭커별 소요 시간 — "큰 프로젝트에서 쓸 수 있나" 의 답이 여기 있다.
 #   신호 계산(구조 파싱 등)은 랭커마다 다르고, 어떤 것은 후보 5,000개를 전부
 #   파싱해야 한다. 목표지표만 보면 그 비용이 안 보인다.
+# ★★ 발화율 계기 (retrieval-theory.md §9 "아직 못 한 것" — 성질 S 의 실측 뒷받침).
+#   커널이 되려면 **희소**해야 한다. 어떤 쌍이 실제로 희소한가를 후보 통과율로 잰다.
+FIRE = collections.Counter()
 RTIME = collections.Counter()
 RCALL = collections.Counter()
 
@@ -428,6 +450,34 @@ def rank_all(state, texts, pool, tf, tr, kinds, docs=None, names=None,
             W = float(os.environ.get("AU_HINGE_W", "3.0"))
             fv = af_vals()
             out[k] = [rrf[j] + W * hinge(fv[j], tau) for j in range(n)]
+        elif _CAH.match(k) or k in ("cahx", "caR"):
+            # ★★ A 국면 커널 — `afh70` 위에 **결론↔부분항** 커널을 하나 더 얹는다.
+            #   C 국면 커널은 그대로 두고(확립된 이득), 얹은 항만이 차이다.
+            #   두 커널은 서로 다른 국면에서 발화하므로(자기게이팅) 충돌하지 않는다.
+            W = float(os.environ.get("AU_HINGE_W", "3.0"))
+            WA = float(os.environ.get("CAH_W", "3.0"))
+            if not FIRE["_done"] or True:            # 질의마다 한 번만 센다
+                if k == RANKERS[-1]:                 # 마지막 랭커에서만 (중복 방지)
+                    _fv = af_vals()
+                    FIRE["질의"] += 1; FIRE["후보"] += len(cand)
+                    for _j in cand:
+                        if _fv[_j] > 0.70: FIRE["C쌍 F1>0.70"] += 1
+                        if au[_j]  > 0.70: FIRE["A쌍 AU>0.70"] += 1
+                        if au[_j]  > 0.50: FIRE["A쌍 AU>0.50"] += 1
+                        if ms[_j]  > 0.70: FIRE["A'쌍 크기>0.70"] += 1
+                        if apl[_j] >= 1.0: FIRE["A 이진 적용가능"] += 1
+            cbase = [rrf[j] + W * hinge(af_vals()[j], 0.70) for j in range(n)]
+            if k == "cahx":
+                add = [apl[j] for j in range(n)]           # 이진 — τ→1 극한
+            elif k == "caR":
+                _r = _rrf_of(au)                           # ★ 대조군: 상시 켜기
+                add = [_r[j] / (1.0 / RRF_K) for j in range(n)]   # RRF 를 [0,1] 로
+                WA = float(os.environ.get("CAR_W", "0.017"))      # RRF 한 항 크기로
+            else:
+                _t = int(_CAH.match(k).group(2)) / 100.0
+                _src = ms if k.startswith("cams") else au
+                add = [hinge(_src[j], _t) for j in range(n)]
+            out[k] = [cbase[j] + WA * add[j] for j in range(n)]
         elif k.startswith("afx"):
             # ★★ **사전식 구현** — `afh<τ>` 와 같은 순서를 주는지 실측으로 확인한다.
             #
@@ -1404,6 +1454,15 @@ if D:
             per = RTIME[r] / max(RCALL[r], 1)
             print(f"      {r:16s}{per*1000:11.3f}{RTIME[r]:10.1f}{RCALL[r]:8d}"
                   f"   {per/max(_b,1e-12):5.1f}x")
+
+    if FIRE["질의"]:
+        _q, _c = FIRE["질의"], max(FIRE["후보"], 1)
+        print("\n【F】 발화율 — 커널이 되려면 **희소**해야 한다")
+        print("      같은 후보 풀에서 각 신호가 후보의 몇 %를 통과시키나.")
+        print(f"      질의 {_q}건 · 후보 총 {_c:,}개")
+        for _k in ("C쌍 F1>0.70", "A쌍 AU>0.70", "A쌍 AU>0.50",
+                   "A'쌍 크기>0.70", "A 이진 적용가능"):
+            print(f"      {_k:18s} {FIRE[_k]:9,}개  = {FIRE[_k]/_c*100:7.3f}%")
 
     if EQFIRE:
         print(f"\n【E】 eq 항이 실제로 언제 발화하나 (성질 S 의 실측)")
