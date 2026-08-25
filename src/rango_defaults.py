@@ -45,6 +45,12 @@ PROD_DEFAULTS: dict[str, str] = {
     'INJECT_SKIP_STDLIB'      : '1',
     'INJECT_TYPES'            : '1',
     'NORMALIZE_INFERENCE'     : '1',
+    # ★ 펑터 인스턴스 전개 — 아직 **실험 중**이라 기본값은 꺼짐.
+    #   Module N := F(A). 로 생겨나는 N.member 를 검색 풀에 되살린다.
+    #   근거·측정은 all_log/docs/premise/functor-names.md
+    'FUNCTOR_EXPAND'          : '0',
+    'FUNCTOR_EXPAND_MAX'      : '4000',
+    'FUNCTOR_EXPAND_CONCRETE' : '1',   # 전개 시 elt/X.t 를 인자 모듈의 t 로 치환
     'OUT_TOKENS'              : '256',
     'NORMALIZE_LTAC'          : '1',
     'NORMALIZE_NAMES'         : '1',

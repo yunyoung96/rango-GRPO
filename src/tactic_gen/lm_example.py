@@ -425,8 +425,17 @@ class GeneralFormatter:
                 _rp(f"    쿼리 focused_goal ⊢ {focused_goal.goal}")
                 _rp(f"    쿼리 hyp_ids : {prem_hyp_ids}")
                 _rp(f"    쿼리 goal_ids: {prem_goal_ids}")
+            # ★ 펑터 인스턴스 전개(FUNCTOR_EXPAND=1, 기본 꺼짐).
+            #   Module N := F(A). 로 생겨나는 N.member 는 **선언이 없어** 풀에 못 든다.
+            #   풀에 있는 F 의 선언을 N 이름으로 복제해 이름을 Coq 이 보는 것과 맞춘다.
+            #   랭킹 **전에** 넣어야 다른 후보와 공정하게 경쟁한다.
+            from premise_selection.functor_expand import expand as _fx
+            _avail = _fx(filtered_result.avail_premises,
+                         getattr(dp_obj, "file_context", None)
+                         and getattr(dp_obj.file_context, "file", None)
+                         or getattr(dp_obj, "dp_name", None))
             all_relevant_premises = self.premise_client.get_ranked_premises(
-                step_idx, proof, dp_obj, filtered_result.avail_premises, training
+                step_idx, proof, dp_obj, _avail, training
             )
             _rp(f"    전체 후보: {len(all_relevant_premises)}개  →  top5:")
             for j, p in enumerate(all_relevant_premises[:5]):

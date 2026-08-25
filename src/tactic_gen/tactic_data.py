@@ -1723,6 +1723,8 @@ _CACHE_STAMP_KEYS = (
     "FUNC_DEFS_PATH", "AUGMENT_V2", "CACHE_MAX_PAGE",
     # ★ 검색 **풀 구성**을 바꾸는 것 — 캐시된 예제 자체가 달라지므로 반드시 도장에 넣는다.
     "PREMISE_ADMIT_USED", "ADMIT_MIN_FILES", "ADMIT_MIN_USES",
+    # ★ 검색 풀 자체를 넓히므로 캐시된 예제가 달라진다 — 반드시 도장에.
+    "FUNCTOR_EXPAND", "FUNCTOR_EXPAND_MAX", "FUNCTOR_EXPAND_CONCRETE",
 )
 
 
