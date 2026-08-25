@@ -1,0 +1,87 @@
+
+[PREMISES]
+Lemma _L19: _f12 p.(prog_main).
+Lemma _L18: forall id, In id p.(prog_public) -> _f12 id.
+Inductive _f7 (F: Type): Type := | Internal: F -> _f7 F | External: external_function -> _f7 F.
+Notation mem := Mem.mem.
+Definition mem := mem'.
+Theorem _L17: forall ge id b, find_symbol ge id = Some b -> invert_symbol ge b = Some id.
+Definition _f7 := AST._f7 function.
+Definition _L16 (p tp: _f6) : Prop := exists u: IS.t, valid_used_set p u /\ match_prog_1 u p tp.
+Definition _L15 := Genv.t _f7 unit.
+Theorem shift_symbol_address: forall ge id ofs delta, symbol_address ge id (Ptrofs.add ofs delta) = Val.offset_ptr (symbol_address ge id ofs) delta.
+Theorem shift_symbol_address: forall ge id ofs delta, symbol_address ge id (Ptrofs.add ofs delta) = Val.offset_ptr (symbol_address ge id ofs) delta.
+Definition _L14: memval -> memval -> Prop := memval_inject inject_id.
+Theorem _L11: forall ge id b, invert_symbol ge b = Some id -> find_symbol ge id = Some b.
+Definition _L13 (al: list (builtin_arg A)) (vl: list _f0) : Prop := list_forall2 eval_builtin_arg al vl.
+Lemma _L10: forall f f' v1 v2, memval_inject f v1 v2 -> inject_incr f f' -> memval_inject f' v1 v2.
+Remark _L3: forall (A: Type) (a b: list A), list_norepet (a ++ b) -> list_norepet (b ++ a).
+Lemma _L7: forall j id ofs, meminj_preserves_globals j -> _f12 id -> Val.inject j (Genv.symbol_address ge id ofs) (Genv.symbol_address tge id ofs).
+Remark _L4: forall id b b', Genv.find_symbol ge id = Some b -> Genv.find_symbol tge id = Some b' -> _f3 b = Some(b', 0).
+Lemma _L6: forall f n, list_forall2 (memval_inject f) (List.repeat _T1 n) (List.repeat _T1 n).
+Lemma _L5: forall f chunk v, list_forall2 (memval_inject f) (List.repeat _T1 (size_chunk_nat chunk)) (encode_val chunk v).
+Lemma _L12: forall f v1 v2 q, Val.inject f v1 v2 -> list_forall2 (memval_inject f) (inj_value q v1) (inj_value q v2).
+Lemma _L2: forall f bl, list_forall2 (memval_inject f) (_f13 bl) (_f13 bl).
+Remark _L8: forall (l: list A) (l': list B), mmap l = _T0 l' -> list_forall2 (fun x y => f x = _T0 y) l l'.
+Lemma _L1: forall f vl, list_forall2 (memval_inject f) (List.repeat _T1 (length vl)) vl.
+Inductive list_forall2: list A -> list B -> Prop := | list_forall2_nil: list_forall2 nil nil | list_forall2_cons: forall a1 al b1 bl, P a1 b1 -> list_forall2 al bl -> list_forall2 (a1 :: al) (b1 :: bl).
+Theorem _L9: forall f v1 v2 chunk, Val.inject f v1 v2 -> list_forall2 (memval_inject f) (encode_val chunk v1) (encode_val chunk v2).
+Lemma _L0: forall a2 b2 a1 b1, list_forall2 a1 b1 -> list_forall2 a2 b2 -> list_forall2 (a1 ++ a2) (b1 ++ b2).
+[PROOFS]
+Lemma _L20: forall b b' delta, _f3 b = Some(b', delta) -> delta = 0 /\ exists id gd, Genv.find_symbol ge id = Some b /\ Genv.find_symbol tge id = Some b' /\ Genv.find_def ge b = Some gd /\ Genv.find_def tge b' = Some gd /\ (forall i, ref_def gd i -> _f12 i).
+Proof.
+  intros. exploit init_meminj_invert; eauto. intros (A & id & B & C).
+  assert (exists gd, (prog_defmap p)!id = Some gd).
+  { apply prog_defmap_dom. eapply Genv.find_symbol_inversion; eauto. }
+  destruct H0 as [gd DM]. rewrite Genv.find_def_symbol in DM.
+  destruct DM as (b'' & P & Q). fold ge in P. rewrite P in B; inv B.
+  fold ge in Q. exploit defs_inject. apply init_meminj_preserves_globals.
+  eauto. eauto. intros (X & _ & Y).
+  split. auto. exists id, gd; auto.
+Qed.
+[STATE]
+p, tp: _f6
+used: IS.t
+USED_VALID: valid_used_set p used
+TRANSF: match_prog_1 used p tp
+ge: Genv.t _f7 unit
+tge: Genv.t _f7 unit
+pm: PTree.t (_f8 _f7 unit)
+m, tm: mem
+IM: Genv._f9 p = Some m
+TIM: Genv._f9 tp = Some tm
+i1: init_data
+il: list init_data
+IHil: (forall id : _f10, _f11 il id -> _f12 id) ->
+list_forall2 (memval_inject _f3) (Genv._f5 ge il)
+  (Genv._f5 tge il)
+H: forall id : _f10, _f11 (i1 :: il) id -> _f12 id
+
+list_forall2 (memval_inject _f3)
+  (Genv._f4 ge i1 ++ Genv._f5 ge il)
+  (Genv._f4 tge i1 ++ Genv._f5 tge il)
+[SCRIPT]
+Lemma _G0: forall il, (forall id, _f11 il id -> _f12 id) -> list_forall2 (memval_inject _f3) (Genv._f5 ge il) (Genv._f5 tge il).
+Proof.
+  induction il as [ | i1 il]; simpl; intros.
+- constructor.
+-
+[TYPES]
+Record _T0 : Set := { _f0 : A; key : nat }.
+Inductive _f0: Type := | _C0: _f0 | _C1: int -> _f0 | _C2: int64 -> _f0 | _C3: float -> _f0 | _C4: float32 -> _f0 | _C5: block -> ptrofs -> _f0.
+Inductive _f1 (T : Type) : nat -> Type := | _C6 : _f1 T 0 | _C7 : forall n, T -> _f1 T n -> _f1 T (S n).
+Inductive _f2 {A: Type} {s: state}: Type := R (x: A) (s': state) (I: sincr s s').
+[DEFINITIONS]
+Definition _f3 : meminj := fun b => match Genv.invert_symbol ge b with | Some id => match Genv.find_symbol tge id with | Some b' => Some (b', 0) | None => None end | None => None end.
+Definition _f4 (i: init_data): list memval
+Fixpoint _f5 (il: list init_data): list memval := match il with | nil => nil | i :: il => _f4 i ++ _f5 il end.
+Definition _f6 := AST._f6 _f7 unit.
+Definition _f7 := AST._f7 function.
+Definition _f8 := AST._f8 Cminor._f7 unit.
+Definition _f9 (p: _f6 F V) := alloc_globals (globalenv p) Mem.empty p.(prog_defs).
+Definition _f10 := positive.
+Definition _f11 (il: list init_data) (id: _f10) : Prop := exists ofs, In (Init_addrof id ofs) il.
+Definition _f12 (id: _f10) : Prop := IS.In id used.
+CoFixpoint _T1 (P:prg) (t:trace) : trace := match t with | tnil => tundef P | tundef Q => tundef P | tcons x xs => tcons x (_T1 P xs) end.
+Definition _f13 (bl: list byte) : list memval := List.map Byte bl.
+[TACTIC]
