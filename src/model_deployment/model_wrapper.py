@@ -289,6 +289,20 @@ class DecoderLocalWrapper:
             if _m:
                 tactics = [apply_inverse(t, _m) for t in tactics]
 
+        # ★ 절제 실험용 — `assert` 후보를 버린다 (`NO_ASSERT=1`, 기본 꺼짐).
+        #   `CUT_SUBSTEP` 은 **학습 데이터** 경로에만 있어(tactic_data.py) 추론엔 영향이 없다.
+        #   모델은 이미 cut 패턴을 배웠으므로, 추론에서 끄려면 후보를 걸러야 한다.
+        #   실측 근거(rand200 200정리):
+        #     · 고유 assert 명제 3,486개 중 gold lemma 재구성은 2.0% 뿐, 81.6%는 근거 없는 명제
+        #     · assert 를 시도한 정리 성공률 17.3% vs 안 쓴 정리 59.0%
+        #       (다만 어려운 정리에서만 꺼내므로 인과는 불확실 — 그래서 이 절제를 만든다)
+        #     · 반대로 성공 60개 중 5개는 assert 로 풀었다(설계대로의 3단 체인)
+        if os.environ.get("NO_ASSERT", "0") == "1":
+            import re as _re
+            _keep = [t for t in tactics if not _re.match(r"\s*e?assert\b", t)]
+            if _keep:
+                tactics = _keep
+
         # ★★ 기본값을 **학습 설정에서 유도**한다 — 별도 env 로 두면 잊는다(실제로 잊었다).
         #   학습이 정답의 선행 개행을 떼면(`STRIP_TARGET_NL=1`, 지금 프로덕션 기본값)
         #   모델은 개행 없이 뱉는다. 그러면 탐색기가 `script + tactic` 으로 이어붙일 때
