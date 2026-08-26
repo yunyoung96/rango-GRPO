@@ -62,6 +62,16 @@ apply L a b.                      (* 위치 나열 — CompCert 에는 사실상
 인자가 몇 개인지, 어느 게 암묵인지 몰라도 된다.
 `apply (L a _ c)` 는 **자리를 알아야** 한다 — arity 와 순서를 틀리면 바로 죽는다.
 
+`with` 뒤에 이름 하나만 오는 형태도 있다(**괄호도 `:=` 도 없다**):
+
+```coq
+apply Rle_trans with x.                    (* 첫 미결정 변수를 x 로 *)
+apply agree_change_sp with (parent_sp s).  (* 항으로 — parent_sp 는 정의(함수) *)
+```
+
+이때 뒤에 오는 것은 대개 **데이터**(변수·정의·생성자)지 증명이 아니다.
+증명이 오는 경우는 §1-7 에서 따로 본다.
+
 ### 1-4. 방향 — 가설에 적용
 
 ```coq
@@ -94,6 +104,33 @@ refine (L _ _ e _).         (* 구멍 뚫린 항. 구멍이 새 goal 이 된다 
 apply  <  eapply  <  apply … with  <  apply (L a _ c)  <  refine  <  exact
  ↑ 전부 자동                              ↑ 자리를 알아야                 ↑ 전부 수동
 ```
+
+### 1-7. ★ 한 tactic 이 lemma 를 **여러 개** 부르는 형태
+
+`apply L1 with L2` 같은 것이 실제로 있다. 세 갈래인데 **뜻이 전부 다르다.**
+
+```coq
+(* ㉮ 가설 자리를 다른 증명으로 채운다 — 이것이 "apply L1 with L2" 다 *)
+apply Rlt_le_trans with (2 := proj1 Hx').   (* L1 의 2번째 전제를 proj1 Hx' 로 *)
+apply Rle_not_lt with (1 := H).             (* 1번째 전제를 가설 H 로 *)
+now apply H2 with (3 := Rle_refl x).        (* 3번째 전제를 stdlib lemma 로 *)
+
+(* ㉯ 차례로 적용한다 — 쉼표 *)
+apply eventually_and_invariant; eauto using subject_reduction, wt_prog.
+now apply F2R_neq_0, Zgt_not_eq.            (* L1 적용 후 첫 subgoal 에 L2 *)
+
+(* ㉰ 항 안에 lemma 가 들어간다 — 괄호 적용 *)
+apply (combine_comparison_cmp_sound valu c v v0 res res'); auto.
+```
+
+**㉮ 의 `(N := proof)` 가 핵심이다.** `N` 은 lemma 의 **N 번째 전제**를 가리키고,
+거기에 넣는 것은 **증명**이다 — 가설(`H1`)일 수도, 다른 lemma(`Rle_refl x`)일 수도,
+합성(`proj1 Hx'`)일 수도 있다. 이름으로 지정하는 `(x := e)` 와 달리 **숫자**를 쓴다
+(전제에는 이름이 없으므로).
+
+> 모델이 이 형태를 내려면 **lemma 를 두 개 동시에 떠올려야** 한다.
+> 하나는 뼈대(`Rlt_le_trans`), 하나는 그 구멍을 메울 증명(`proj1 Hx'`).
+> 검색이 둘 다 실어 줘야 한다는 뜻이다 — v10 이 gold 를 **전부** 끼워 넣는 이유.
 
 ---
 
@@ -161,6 +198,27 @@ setoid_rewrite L.           (* 동치관계(setoid) 아래에서 *)
 rewrite_strat (topdown L).  (* 재작성 전략 지정 *)
 ```
 
+**`rewrite` 도 lemma 를 여러 개 쓴다** — 오히려 `apply` 보다 흔하다.
+
+```coq
+(* ㉮ 쉼표 나열 — rewrite 의 다중 lemma 는 대부분 이것이다 *)
+rewrite Zzero_ext_spec, zlt_false, Z.shiftr_spec.
+rewrite andb_true_r, orb_false_r; auto.
+
+(* ㉯ 부수 전제를 다른 증명으로 채운다 — apply 의 (N := proof) 와 같다 *)
+rewrite F2R_change_exp with (1 := H).
+rewrite cexp_inbetween_float with (1 := Px) (2 := Bx).
+rewrite round_AW_UP with (1 := Rabs_pos _).      (* stdlib lemma 를 넣는다 *)
+rewrite Rnd_N_pt_unique with (3 := Hm) (4 := Rxf) (5 := Rxg).   (* 세 개 *)
+
+(* ㉰ 항 적용 *)
+try rewrite (ireg_of_eq _ _ EQ); try rewrite (freg_of_eq _ _ EQ).
+```
+
+㉮ 는 **순차**다(`L1` 로 고치고, 그 결과에 `L2`). ㉯ 는 **동시**다
+(`L1` 하나를 쓰는데 그 전제를 메우는 데 다른 증명이 필요).
+하나라도 실패하면 **전체가 실패**한다 — 부분 성공이 없다.
+
 ### 2-8. 전부 합친 최대형
 
 ```coq
@@ -196,6 +254,64 @@ rewrite <- (L a b) at 2 in H by lia.
 
 ★ **`apply L a b` (괄호 없는 위치 나열)는 10회 = 0.0%** 다. 그나마도 파싱 artifact.
 CompCert 는 인자를 줄 때 **항상** `with (x := e)` 아니면 `(L a b)` 를 쓴다.
+
+---
+
+## 3.5. ★ lemma 를 몇 개나 쓰나 — 실측
+
+CompCert `.v` 297개 · `apply`/`eapply`/`rewrite`/`erewrite` 호출 **21,223회**.
+tactic 한 줄 안에서 **선언이 실재하는 이름**을 몇 개 부르는지 셌다
+(sentence DB 의 선언 이름 37,569개와 대조 · 가설/지역이름은 안 셈).
+
+| tactic | 호출 | lemma 0개 | **1개** | **2개** | **3개 이상** |
+|---|---|---|---|---|---|
+| `apply` | 9,426 | 25.1% | 65.2% | **6.4%** | **3.3%** |
+| `eapply` | 3,104 | 33.3% | 64.0% | 2.5% | 0.2% |
+| `rewrite` | 8,535 | 38.5% | 50.9% | **7.5%** | **3.1%** |
+| `erewrite` | 158 | 44.9% | 52.5% | 1.9% | 0.6% |
+
+**`apply` 9.7% · `rewrite` 10.6% 가 lemma 를 둘 이상 쓴다.** 드물지 않다.
+(0개는 `apply H`(가설)·`rewrite IHn`(귀납가설) 같은 지역 이름만 쓰는 경우다.)
+
+### 여러 개일 때 어떤 형태인가
+
+| 형태 | 건수 | 예 |
+|---|---|---|
+| `rewrite` 쉼표 나열 | 409 | `rewrite andb_true_r, orb_false_r; auto.` |
+| `apply … with <항>` | 299 | `apply agree_change_sp with (parent_sp s).` |
+| `rewrite (L a b)` 항 적용 | 258 | `rewrite (ireg_of_eq _ _ EQ)` |
+| `apply (L a b)` 항 적용 | 216 | `apply (combine_comparison_cmp_sound valu c v …)` |
+| `apply` 쉼표 나열 | 102 | `now apply F2R_neq_0, Zgt_not_eq.` |
+
+### ★ `with (N := 증명)` — 두 lemma 를 동시에 떠올려야 하는 형태
+
+`with` 뒤에 오는 것의 정체를 갈라 보면:
+
+| | 건수 |
+|---|---|
+| `apply … with (N := 가설/지역)` | **253** |
+| **`apply … with (N := 증명 lemma)`** | **91** |
+| `apply … with (N := 정의)` | 27 |
+| `rewrite … with (N := 가설/지역)` | **138** |
+| **`rewrite … with (N := 증명 lemma)`** | 2 |
+| `rewrite … with (N := 정의)` | 5 |
+
+**`apply L1 with (N := L2)` 로 진짜 증명 lemma 를 넣는 것이 91건.** 대표 예:
+
+```coq
+apply Rlt_le_trans with (2 := proj1 Hx').
+apply Rlt_trans   with (1 := proj2 Hx').
+now apply H2      with (3 := Rle_refl x).
+eapply Rle_trans  with (2 := F2R_ge _ K).
+```
+
+`proj1`/`proj2` 가 33건씩으로 가장 많다 — 연언 가설에서 한쪽을 꺼내 전제에 꽂는 관용구다.
+
+> **이 형태가 v10 에 직접 걸린다.** 모델이 뼈대(`Rlt_le_trans`)와 구멍을 메울
+> 증명(`proj1 Hx'`)을 **동시에** 떠올려야 하므로, 검색이 **둘 다** 실어 줘야 한다.
+> gold 를 하나만 끼워 넣으면 나머지 하나는 여전히 프롬프트에 없다 —
+> v10 이 `MAX_INJECT = 0`(무제한)으로 **전부** 끼워 넣는 이유다
+> ([v10/README.md §5.6](../../v10/README.md)).
 
 ---
 
@@ -267,6 +383,12 @@ rewrite L →  rewrite <- L
 ---
 
 ## 부록 — 재현
+
+```bash
+python3 scripts/count_multi_lemma.py   # §3.5 lemma 개수 분포
+python3 scripts/count_with_args.py     # §3.5 with 인자의 정체
+```
+
 
 ```bash
 python3 - <<'PY'
