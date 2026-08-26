@@ -434,8 +434,21 @@ class GeneralFormatter:
                          getattr(dp_obj, "file_context", None)
                          and getattr(dp_obj.file_context, "file", None)
                          or getattr(dp_obj, "dp_name", None))
+            # ★ goal_override 를 **검색에도** 먹인다.
+            #   get_ranked_premises 는 `step = proof.steps[step_idx]` 로 원본 step 을
+            #   다시 꺼내므로(premise_client.py:437), 위에서 만든 복사본이 닿지 않는다.
+            #   → step 을 갈아끼운 얕은 proof 복사본을 넘긴다. 원본은 캐시되므로 불변.
+            #   또 training 캐시는 (file, proof, step) 키라 **원본 goal 의 순위**를
+            #   돌려준다. 합성 goal 일 때는 캐시를 쓰면 안 된다.
+            _rank_proof, _rank_training = proof, training
+            if goal_override is not None:
+                import copy as _cp2
+                _rank_proof = _cp2.copy(proof)
+                _rank_proof.steps = list(proof.steps)
+                _rank_proof.steps[step_idx] = step
+                _rank_training = False
             all_relevant_premises = self.premise_client.get_ranked_premises(
-                step_idx, proof, dp_obj, _avail, training
+                step_idx, _rank_proof, dp_obj, _avail, _rank_training
             )
             _rp(f"    전체 후보: {len(all_relevant_premises)}개  →  top5:")
             for j, p in enumerate(all_relevant_premises[:5]):

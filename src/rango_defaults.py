@@ -62,6 +62,33 @@ PROD_DEFAULTS: dict[str, str] = {
     'NOTATION_PROJ_MAX'       : '20',
     'NOTATION_TOKENS'         : '220',
     'PREMISE_ADMIT_USED'      : '1',
+    # ── ★ v10 (현행) — gold lemma 를 프롬프트에 **끼워 넣어** 조립을 가르친다 ──────
+    #
+    #   v9 의 assert(cut) 는 "이름을 모를 때 빠져나갈 구멍" 을 가르쳤다. 실측:
+    #     · 생성 assert 의 명제 ↔ gold signature 겹침 **중앙 43%** (≥80% 가 15.8%)
+    #       = 절반 가까이가 gold lemma 의 **재진술**이다
+    #     · 그런데 `{ exact L }` 로 이어지는 것은 **18.3%** 뿐이고
+    #       **54.2%** 가 `Proof.` 무의미 반복으로 샌다
+    #     · `NO_ASSERT=1` A/B 는 무효과였다 (30.0% → 30.5%, b=0 c=1, p=1.000)
+    #     · 오라클: 이름만 정해 주면 **70~74%** 조립. 같은 이름을 premise 에 꽂으면 13~34%
+    #   → 못하는 것은 조립이 아니라 **고르기**다. 그러면 학습에서 할 일은
+    #     "고를 것이 반드시 거기 있는" 예제를 주는 것이다.
+    #   근거 전문: all_log/docs/v10/README.md
+    #             all_log/docs/v9/checkpoint25000/assert_reality.md
+    #
+    #   ★ **여기가 v10 의 단일 출처다.** shell 로 export 하지 않는다 —
+    #     `source` 를 잊으면 조용히 v9 로 도는데, 결과만 보고는 설정이 빠진 건지
+    #     알고리즘이 나쁜 건지 구분할 수 없다(v9 에서 RERANK_PREMISES 로 겪었다).
+    #   ※ v9 재현(절제 실험)은 env 로 덮어쓴다:
+    #        V10_PREMISE_INJECT=0 CUT_SUBSTEP=1 python3 ...
+    #   ※ 이 값들은 **학습 경로(`collate`)에서만** 읽힌다. 추론은 `collate_input` 이라
+    #     평가에 새지 않는다(model_wrapper.py:293 과 같은 이유).
+    'V10_PREMISE_INJECT'      : '1',   # 주입 ON (cut/assert 는 자동으로 꺼진다)
+    'CUT_SUBSTEP'             : '0',   # ★ assert(cut) 안 씀 — v10 의 핵심
+    'V10_INJECT_MAX'          : '3',   # 한 스텝에 끼워 넣을 gold 개수 상한
+    'V10_INJECT_STATS'        : '0',   # 분기 통계를 주기적으로 찍는다
+    'V10_DB_FALLBACK'         : '1',   # 계획이 없으면 sentence DB 로 선언문을 찾는다
+    'V10_SENTENCE_DB'         : '/tmp/coq-dataset/sentences.db',
     'PREMISE_PACK'            : 'hybrid',
     'PREMISE_PACK_TOPK'       : '4',
     'RERANK_PREMISES'         : '1',

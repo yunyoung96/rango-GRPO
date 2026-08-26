@@ -1185,6 +1185,31 @@ class ProofPremiseCollator:
         #   여기서 끄지 않으면 프롬프트만 먼저 익명화되어 정답과 어긋난다.
         input_str = self.collate_input(tokenizer, example, normalize=False)
 
+        # ①-a′ ★★ v10 — gold lemma 를 **프롬프트에 끼워 넣는다** (all_log/docs/v10/README.md)
+        #
+        #   v9 는 gold 가 안 보이면 `assert (P)` 로 **명제를 세우는 법**을 가르쳤다(①-b).
+        #   실측 결과 그게 독이었다 — 모델이 만든 assert 의 절반 이상이 gold lemma 명제의
+        #   재진술인데(커버리지 중앙 43%, 상위 17.5%는 80% 이상) 그걸 **스스로 못 닫는다**
+        #   (assert 뒤 close 의 99.8% 가 "name not found"). assert 가 **이름을 모를 때
+        #   빠져나갈 구멍**이 됐다.
+        #
+        #   오라클이 가리키는 곳은 하나다 — 이름만 정해 주면 70~74% 는 조립한다.
+        #   못하는 것은 조립이 아니라 **고르기**다. 그러면 학습에서 할 일은
+        #   "고를 것이 반드시 거기 있는" 예제를 주는 것이다.
+        #
+        #     (1) 외부 참조 없음            → 그대로
+        #     (2-a) gold 가 이미 보인다      → 그대로 (검색이 제 일을 한 예제다)
+        #     (2-b) gold 가 안 보인다        → 실리는 premise 하나를 빼고 gold 를 끼운다
+        #
+        #   ★ V10 이 켜지면 ①-b(cut/assert)는 **통째로 건너뛴다**. 둘을 같이 켜면
+        #     같은 스텝에 주입과 assert 가 겹쳐 정답이 두 갈래가 된다.
+        _v10 = _D.flag("V10_PREMISE_INJECT")
+        if _v10:
+            from tactic_gen import v10_inject as _v10m
+            example, _br = _v10m.inject(self, tokenizer, example, input_str)
+            if _br == "(2-b)":
+                input_str = self.collate_input(tokenizer, example, normalize=False)
+
         # ①-b ★ cut 치환 (how-to-learn.txt §3)
         #   gold tactic 이 쓰는 lemma L 이 검색 결과에 없으면, 모델은 프롬프트에서
         #   읽을 수 없는 이름을 지어내야 한다 — 배울 수 없는 예제다(실측 15.2%).
@@ -1208,7 +1233,7 @@ class ProofPremiseCollator:
         #       (1) gold 가 전부 보인다        → gold tactic 그대로
         #       (2) 일부가 안 보인다           → 그것들만 assert 해서 조립
         #       (3) 계획이 없다(hopeless)      → `resolved_example` 이 이미 걸러냈다
-        if _D.get("CUTS_PATH"):
+        if _D.get("CUTS_PATH") and not _v10:
             from tactic_gen import cut_lookup
             _ck = (f"{getattr(example, 'file_name', '')}:"
                    f"{getattr(example, 'proof_idx', '')}:"
@@ -1263,8 +1288,10 @@ class ProofPremiseCollator:
             # ★ 가망 없는 스텝(how-to-learn §3 의 (3))은 **정규화를 끈다.**
             #   정답이 프롬프트에 없는 이름을 쓰는데 정규화까지 하면 `L92` 같은
             #   무의미 토큰을 외우게 된다. 진짜 이름이 그나마 낫다.
+            #   ★ v10 은 gold 를 끼워 넣어 정답이 항상 보이므로 이 예외가 필요 없다.
+            #     여기서 끄지 않으면 (2-b) 스텝만 **정규화가 빠진 다른 분포**가 된다.
             _skip_norm = False
-            if _D.get("CUTS_PATH"):
+            if _D.get("CUTS_PATH") and not _v10:
                 from tactic_gen import cut_lookup
                 _skip_norm = cut_lookup.is_hopeless(key)
             if _skip_norm:
@@ -2103,7 +2130,11 @@ class LmDataset(Dataset):
 
         선택은 **결정적**이다(sid 해시) — 캐시·재개가 어긋나면 안 된다.
         """
-        if os.environ.get("CUT_SUBSTEP", "1") != "1":
+        if _D.flag("V10_PREMISE_INJECT"):
+            return None        # ★ v10 은 assert 를 안 쓴다 — gold 를 프롬프트에 끼운다
+        # ★ 기본값은 `src/rango_defaults.py` 가 단일 출처다(v10 에서 '0').
+        #   env 는 절제 실험용 덮어쓰기로만 쓴다.
+        if _D.get("CUT_SUBSTEP", "1") != "1":
             return None
         if not _D.get("CUTS_PATH"):
             return None
@@ -2145,6 +2176,11 @@ class LmDataset(Dataset):
         가르치는 셈이다. `CUT_DROP_HOPELESS=1` 이면 학습에서 제외한다.
         """
         if not _D.get("CUTS_PATH"):
+            return False
+        # ★ v10 에서는 "가망 없음" 이 사라진다 — gold lemma 를 프롬프트에 **끼워 넣으므로**
+        #   정답이 항상 보인다. v9 가 버리던 6.7% 가 v10 에서는 **가장 값진 예제**다
+        #   (검색이 못 찾는 경우의 조립을 가르치는 유일한 표본).
+        if _D.flag("V10_PREMISE_INJECT"):
             return False
         from tactic_gen import cut_lookup
         return cut_lookup.is_hopeless(

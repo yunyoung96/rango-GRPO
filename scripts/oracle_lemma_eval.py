@@ -170,6 +170,7 @@ for i in mine:
 
             # ── B. 오라클 검색: gold lemma 선언문을 premise 맨 앞에 꽂는다
             okB = hitB = None
+            rB = []
             dt = _dt
             if dt:
                 import copy as _copy
@@ -199,7 +200,7 @@ for i in mine:
             fout.write(json.dumps(dict(idx=i, k=k, gold=gold, gname=gname,
                                        in_prompt=in_prompt, has_decl=has_decl, decl_how=_how,
                                        A=rA[:3], okA=okA, hitA=hitA,
-                                       okB=okB, hitB=hitB, okC=okC,
+                                       B=rB[:3], okB=okB, hitB=hitB, okC=okC,
                                        C=fullC[:3]), ensure_ascii=False) + "\n")
         except Exception:
             S["오류"] += 1
