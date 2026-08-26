@@ -63,7 +63,16 @@ STATS: dict[str, int] = {
     "폴백 조회 성공": 0,
     "폴백 조회 실패": 0,
     "명제 아님(제외)": 0,
+    "(2-b) 못 넣어 예제 폐기": 0,
+    "못 넣음(치명)": 0,
+    "못 넣음(stdlib·면제)": 0,
 }
+
+# ★ 직전 `inject()` 가 **끼우지 못한** gold lemma 이름. 비어 있지 않으면 그 예제는
+#   정답이 프롬프트에 없는 이름을 쓴다 = v9 의 hopeless 와 같은 상태다.
+#   `LmDataset._hallucinates` 가 이걸 보고 예제를 **버린다**(V10_REQUIRE_ALL=1).
+#   안 버리면 "볼 수 없는 이름을 지어내라" 고 가르치게 된다 — v10 이 없애려던 바로 그 해악.
+LAST_UNPLACED: list = []
 
 
 def _seen(name: str, text: str) -> bool:
@@ -223,6 +232,35 @@ def _db_decl(name: str):
     return got
 
 
+def visible(collator, tokenizer, example, name: str) -> bool:
+    """이 이름이 **모델이 실제로 보는 프롬프트**에 남는가 — 프로덕션과 같은 경로로 본다.
+
+    `_window()` 는 창 계산을 다시 구현한 것이라 프로덕션과 어긋날 수 있다
+    (rerank 의 `proof_state` 전달, `allocate_and_fmt` 의 reverse 등).
+    최종 판정은 `collate_input` **그 자체**로 해야 한다.
+
+    ★ 그리고 창에 들었다고 끝이 아니다. 학습은
+      `tok(s, max_length=HARD_SEQ_LEN, truncation=True)` 이고 토크나이저의
+      `truncation_side="left"` 다. `[PREMISES]` 가 프롬프트 **맨 앞**이므로
+      넘치면 **premise 가 먼저 잘린다.** 그래서 절단까지 재현해서 확인한다.
+      정답(`out_tokens`)이 뒤에 붙으므로 그만큼 보수적으로 뺀다.
+    """
+    try:
+        s = collator.collate_input(tokenizer, example, normalize=False)
+    except TypeError:
+        s = collator.collate_input(tokenizer, example)
+    if not _seen(name, s):
+        return False
+    hard = _D.num("HARD_SEQ_LEN", 3072) - _D.num("OUT_TOKENS", 256)
+    try:
+        ids = tokenizer(s, add_special_tokens=False)["input_ids"]
+    except Exception:
+        return True
+    if len(ids) <= hard:
+        return True
+    return _seen(name, tokenizer.decode(ids[-hard:], skip_special_tokens=True))
+
+
 def plan_lemmas(example) -> Optional[list[tuple[str, str]]]:
     """이 스텝이 쓰는 **외부 lemma (이름, 명제)** 목록. 외부 참조가 없으면 `[]`.
 
@@ -264,6 +302,27 @@ def plan_lemmas(example) -> Optional[list[tuple[str, str]]]:
     return out
 
 
+def _is_stdlib(name: str) -> bool:
+    """stdlib 이름인가 — **모델의 상식**으로 보고 익명화도 안 하는 것들.
+
+    `NORMALIZE_SKIP_STDLIB=1` 이라 정규화에서 빠지고, `_hallucinates` 의 어휘 필터도
+    같은 이유로 면제한다. 그러니 stdlib gold 를 못 끼웠다고 예제를 버리면 안 된다 —
+    **판정 기준을 세 곳에서 같게** 맞춘다(안 맞추면 학습과 측정이 어긋난다).
+    """
+    try:
+        from tactic_gen.normalize_names import is_stdlib_name
+        return is_stdlib_name(name)
+    except Exception:
+        return False
+
+
+def _fail(name: str) -> None:
+    """끼우지 못한 것을 기록한다. stdlib 은 기록하지 않는다(§_is_stdlib)."""
+    STATS["못 넣음(stdlib·면제)" if _is_stdlib(name) else "못 넣음(치명)"] += 1
+    if not _is_stdlib(name):
+        LAST_UNPLACED.append(name)
+
+
 def inject(collator, tokenizer, example, input_str: str) -> tuple[Any, str]:
     """v10 본체. `(새 example, 분기이름)` 을 돌려준다. example 은 필요할 때만 복사한다.
 
@@ -272,6 +331,7 @@ def inject(collator, tokenizer, example, input_str: str) -> tuple[Any, str]:
     import copy as _cp
 
     STATS["스텝"] += 1
+    LAST_UNPLACED.clear()
     lems = plan_lemmas(example)
     if lems is None:
         STATS["계획 없음"] += 1
@@ -333,15 +393,21 @@ def inject(collator, tokenizer, example, input_str: str) -> tuple[Any, str]:
                 if longest is not None:
                     prem = [p for p in prem if p != longest]
                 prem = [decl] + [p for p in prem if p != decl]
-            # 검증 — 정말 창 안에 들어왔나
-            ranked2, idxs2 = _window(collator, tokenizer, prem)
-            if any(ranked2[i] == decl for i in idxs2):
+            # 검증 — **프로덕션 경로**로 정말 프롬프트에 남는가 (절단까지)
+            _probe = _cp.copy(example)
+            _probe.premises = prem
+            if visible(collator, tokenizer, _probe, nm):
                 placed = True
                 break
         if placed:
             done += 1
         else:
             STATS["(2-b) 끼웠으나 창 밖"] += 1
+            _fail(nm)
+
+    # ★ 상한(V10_INJECT_MAX)에 걸려 **손도 못 댄** 것도 못 넣은 것이다.
+    for nm, _ in miss[max(1, _D.num("V10_INJECT_MAX", 3)):]:
+        _fail(nm)
 
     if done == 0:
         STATS["(2-b) 실패(포기)"] += 1

@@ -2223,6 +2223,17 @@ class LmDataset(Dataset):
             full = self.example_collator.collate(self.tokenizer, example)
         except Exception:
             return False                      # 못 만들면 판정하지 않는다(보수적)
+        # ★★ v10 보장 — 주입이 **끼우지 못한** gold lemma 가 있으면 이 예제는 버린다.
+        #   창에 들었는지는 v10_inject 가 프로덕션 경로(collate_input + 하드 절단)로
+        #   확인한다. 못 넣었다는 것은 정답이 **프롬프트에 없는 이름**을 쓴다는 뜻이고,
+        #   그대로 학습하면 "볼 수 없는 이름을 지어내라" 고 가르치는 셈이다 —
+        #   v10 이 없애려던 바로 그 해악이다. 아래 어휘 필터(stdlib 면제)로는
+        #   못 잡는다(gold 가 stdlib 이면 "안다" 고 보고 통과시킨다).
+        if _D.flag("V10_PREMISE_INJECT") and _D.flag("V10_REQUIRE_ALL"):
+            from tactic_gen import v10_inject as _v10m
+            if _v10m.LAST_UNPLACED:
+                _v10m.STATS["(2-b) 못 넣어 예제 폐기"] += 1
+                return True
         if "[TACTIC]" not in full:
             return False
         prompt, target = full.rsplit("[TACTIC]", 1)

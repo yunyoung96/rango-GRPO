@@ -174,6 +174,7 @@ gold 이름으로 끼우는 셈이다. → 이름이 **정확히** 일치하는�
 | `CUT_SUBSTEP` | **`0`** | assert(cut) 안 씀 — v10 의 핵심 |
 | `V10_INJECT_MAX` | `3` | 한 스텝에 끼워 넣을 gold 개수 상한 |
 | `V10_DB_FALLBACK` | `1` | 계획이 없으면 sentence DB 로 선언문 조회 |
+| `V10_REQUIRE_ALL` | **`1`** | 못 끼운 gold 가 남으면 그 예제를 **버린다** (§5.6) |
 | `V10_SENTENCE_DB` | `/tmp/coq-dataset/sentences.db` | 폴백 DB 위치 |
 | `V10_INJECT_STATS` | `0` | 분기 통계 출력 |
 
@@ -234,6 +235,71 @@ python3 src/tactic_gen/train_decoder.py all_log/ft_qwen3b_v10_smoke_conf.yaml
 V10_PREMISE_INJECT=0 CUT_SUBSTEP=1 \
   python3 src/tactic_gen/train_decoder.py all_log/ft_qwen3b_v9_smoke_conf.yaml
 ```
+
+---
+
+## 5.6. ★ 커버리지 보장 — "정답이 프롬프트에 있다" 가 정말 성립하나
+
+`scripts/v10_coverage.py` · TRAIN 900 + VAL 400 표본 · 외부참조(비-stdlib) 151 스텝.
+
+**두 숫자를 갈라야 한다. 섞으면 v10 을 잘못 평가한다:**
+
+| | 스텝 기준 | lemma 기준 |
+|---|---|---|
+| **① 검색 성공률** (주입 **전** · 랭커의 성질) | **80.1%** | 80.4% |
+| **② ★ 가시성** (주입 **후** · v10 의 목표) | **99.3%** | 99.3% |
+| **② 를 학습에 들어가는 예제로만** (폐기 제외) | **150/150 = 100%** | 100% |
+
+**★ 버그(넣었다 했는데 안 보임) 0건.**
+
+| 스플릿 | n | ① | ② | 진입분 |
+|---|---|---|---|---|
+| TRAIN s0 | 20 | 80.0% | **100%** | 20/20 |
+| TRAIN s1 | 31 | 77.4% | **100%** | 31/31 |
+| TRAIN s2 | 29 | 82.8% | **100%** | 29/29 |
+| VAL s0 | 31 | 83.9% | **100%** | 31/31 |
+| VAL s1 | 40 | 77.5% | 97.5% | **39/39** |
+
+VAL s1 의 1건은 `V10_REQUIRE_ALL` 이 잡아 **예제를 폐기**했다 — 설계대로다.
+
+### 보장은 어떻게 성립하나 — 세 겹
+
+**① 검증을 프로덕션 경로로 한다.** `_window()` 는 창 계산을 다시 구현한 것이라
+프로덕션과 어긋날 수 있다(rerank 의 `proof_state` 전달, `allocate_and_fmt` 의 reverse).
+`visible()` 은 **`collate_input` 그 자체**로 판정한다.
+
+**② 하드 절단까지 재현한다.** 창에 들었다고 끝이 아니다:
+
+```python
+tokenizer.truncation_side = "left"                    # tactic_data.py:1700
+tok(s, max_length=HARD_SEQ_LEN, truncation=True)
+```
+
+`[PREMISES]` 가 프롬프트 **맨 앞**이라 넘치면 **premise 가 먼저 잘린다.**
+`visible()` 은 절단을 재현해 확인한다(정답 `out_tokens` 만큼 보수적으로 뺀다).
+
+**③ 못 넣었으면 예제를 버린다** (`V10_REQUIRE_ALL=1`).
+이것이 없으면 lemma 2개 중 1개만 들어가도 통과하고, `V10_INJECT_MAX` 상한에 걸려
+**손도 못 댄** 것은 세지도 않았다. 남으면 정답이 프롬프트에 없는 이름을 쓰는 것이고,
+그대로 학습하면 **"볼 수 없는 이름을 지어내라"** 고 가르치는 셈이다 —
+v10 이 없애려던 바로 그 해악이다. `_hallucinates` 의 어휘 필터로는 못 잡는다
+(gold 가 stdlib 이면 "안다" 고 보고 통과시킨다).
+
+> 정확한 표현은 **"정답이 항상 프롬프트에 있다"** 가 아니라
+> **"정답이 프롬프트에 있거나, 그 예제는 학습에서 빠진다"** 다.
+
+### stdlib 은 세지 않는다 — 판정 기준을 세 곳에서 같게
+
+`NORMALIZE_SKIP_STDLIB=1` 이라 stdlib 이름(13,819개, `data/stdlib_names.json`)은
+**익명화하지 않는다** — 모델의 상식이고 어느 프로젝트에서나 통하기 때문이다.
+`_hallucinates` 도 같은 이유로 면제한다.
+
+그러면 v10 도 같아야 한다. stdlib gold 를 못 끼웠다고 예제를 버리면
+**세 곳의 기준이 어긋나** 학습과 측정이 따로 논다. `v10_inject._is_stdlib()` 이
+`normalize_names.is_stdlib_name()` 을 그대로 부른다(단일 출처).
+
+실측으로 걸린 사례: `cond_pos`·`ring_opp_def` 는 stdlib 이라 sentence DB 에 없다.
+기준을 맞추기 전에는 이 둘이 "안 보임" 으로 잡혀 가시성이 95.1% 로 나왔다.
 
 ---
 

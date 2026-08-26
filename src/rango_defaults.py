@@ -88,6 +88,10 @@ PROD_DEFAULTS: dict[str, str] = {
     'V10_INJECT_MAX'          : '3',   # 한 스텝에 끼워 넣을 gold 개수 상한
     'V10_INJECT_STATS'        : '0',   # 분기 통계를 주기적으로 찍는다
     'V10_DB_FALLBACK'         : '1',   # 계획이 없으면 sentence DB 로 선언문을 찾는다
+    # ★ 끼우지 못한 gold 가 하나라도 있으면 그 예제를 **버린다**(DROP_HALLUC 경로).
+    #   이것이 "정답은 항상 프롬프트에 있다" 를 **보장**으로 만든다 — 없으면
+    #   lemma 2개 중 1개만 들어가도 통과해서 v9 와 같은 환각 학습이 남는다.
+    'V10_REQUIRE_ALL'         : '1',
     'V10_SENTENCE_DB'         : '/tmp/coq-dataset/sentences.db',
     'PREMISE_PACK'            : 'hybrid',
     'PREMISE_PACK_TOPK'       : '4',
