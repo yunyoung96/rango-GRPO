@@ -64,35 +64,15 @@ PROD_DEFAULTS: dict[str, str] = {
     'PREMISE_ADMIT_USED'      : '1',
     # ── ★ v10 (현행) — gold lemma 를 프롬프트에 **끼워 넣어** 조립을 가르친다 ──────
     #
-    #   v9 의 assert(cut) 는 "이름을 모를 때 빠져나갈 구멍" 을 가르쳤다. 실측:
-    #     · 생성 assert 의 명제 ↔ gold signature 겹침 **중앙 43%** (≥80% 가 15.8%)
-    #       = 절반 가까이가 gold lemma 의 **재진술**이다
-    #     · 그런데 `{ exact L }` 로 이어지는 것은 **18.3%** 뿐이고
-    #       **54.2%** 가 `Proof.` 무의미 반복으로 샌다
-    #     · `NO_ASSERT=1` A/B 는 무효과였다 (30.0% → 30.5%, b=0 c=1, p=1.000)
-    #     · 오라클: 이름만 정해 주면 **70~74%** 조립. 같은 이름을 premise 에 꽂으면 13~34%
-    #   → 못하는 것은 조립이 아니라 **고르기**다. 그러면 학습에서 할 일은
-    #     "고를 것이 반드시 거기 있는" 예제를 주는 것이다.
-    #   근거 전문: all_log/docs/v10/README.md
-    #             all_log/docs/v9/checkpoint25000/assert_reality.md
+    #   ★★ **v10 설정은 여기 없다.** `src/tactic_gen/v10_inject.py` 상단의
+    #     **파이썬 변수**가 단일 출처다 (ENABLED · MAX_INJECT · REQUIRE_ALL · …).
+    #     이 표는 env 이름 → 기본값 매핑이라 결국 shell 로 덮어쓸 수 있는데,
+    #     그러면 `source` 를 잊었을 때 조용히 다른 설정으로 돈다.
+    #     새 설정은 env 로 만들지 않는다.
     #
-    #   ★ **여기가 v10 의 단일 출처다.** shell 로 export 하지 않는다 —
-    #     `source` 를 잊으면 조용히 v9 로 도는데, 결과만 보고는 설정이 빠진 건지
-    #     알고리즘이 나쁜 건지 구분할 수 없다(v9 에서 RERANK_PREMISES 로 겪었다).
-    #   ※ v9 재현(절제 실험)은 env 로 덮어쓴다:
-    #        V10_PREMISE_INJECT=0 CUT_SUBSTEP=1 python3 ...
-    #   ※ 이 값들은 **학습 경로(`collate`)에서만** 읽힌다. 추론은 `collate_input` 이라
-    #     평가에 새지 않는다(model_wrapper.py:293 과 같은 이유).
-    'V10_PREMISE_INJECT'      : '1',   # 주입 ON (cut/assert 는 자동으로 꺼진다)
-    'CUT_SUBSTEP'             : '0',   # ★ assert(cut) 안 씀 — v10 의 핵심
-    'V10_INJECT_MAX'          : '3',   # 한 스텝에 끼워 넣을 gold 개수 상한
-    'V10_INJECT_STATS'        : '0',   # 분기 통계를 주기적으로 찍는다
-    'V10_DB_FALLBACK'         : '1',   # 계획이 없으면 sentence DB 로 선언문을 찾는다
-    # ★ 끼우지 못한 gold 가 하나라도 있으면 그 예제를 **버린다**(DROP_HALLUC 경로).
-    #   이것이 "정답은 항상 프롬프트에 있다" 를 **보장**으로 만든다 — 없으면
-    #   lemma 2개 중 1개만 들어가도 통과해서 v9 와 같은 환각 학습이 남는다.
-    'V10_REQUIRE_ALL'         : '1',
-    'V10_SENTENCE_DB'         : '/tmp/coq-dataset/sentences.db',
+    #   근거: all_log/docs/v10/README.md
+    #         all_log/docs/v9/checkpoint25000/assert_reality.md
+    #   절제(v9 재현):  import tactic_gen.v10_inject as v10;  v10.ENABLED = False
     'PREMISE_PACK'            : 'hybrid',
     'PREMISE_PACK_TOPK'       : '4',
     'RERANK_PREMISES'         : '1',

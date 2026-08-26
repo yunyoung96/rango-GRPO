@@ -50,13 +50,33 @@ from typing import Any, Optional
 
 import rango_defaults as _D
 
+# ── ★ 설정 — **파이썬 변수다. 환경변수가 아니다.** ────────────────────────────
+#
+#   shell env 는 `source` 를 잊거나 다른 진입점으로 새면 **조용히 다른 설정으로 돈다.**
+#   결과만 보고는 설정이 빠진 건지 알고리즘이 나쁜 건지 구분할 수 없다 —
+#   이 프로젝트에서 두 번 당했다(RERANK_PREMISES 가 꺼진 채 학습,
+#   NORMALIZE_INFERENCE 가 학습 경로로 샘).
+#
+#   절제 실험은 **이 값을 대입**하거나 함수 인자로 넘긴다:
+#       import tactic_gen.v10_inject as v10;  v10.ENABLED = False      # v9 재현
+#       v10.inject(col, tok, ex, s, max_inject=1)                      # 한 개만
+#
+ENABLED = True          # v10 주입을 켠다 (끄면 cut/assert 경로가 살아난다)
+MAX_INJECT = 0          # 한 스텝에 끼울 gold 개수 상한. **0 = 무제한**
+                        #   ★ 상한을 두면 "여러 개 중 일부만" 들어가는데, 그러면
+                        #     정답이 프롬프트에 없는 이름을 쓰게 된다. 기본은 전부다.
+REQUIRE_ALL = True      # 하나라도 못 넣으면 그 예제를 **버린다**(_hallucinates 경로)
+DB_FALLBACK = True      # cut 계획이 없으면 sentence DB 로 선언문을 찾는다
+SENTENCE_DB = "/tmp/coq-dataset/sentences.db"
+MAX_EVICT = 24          # 자리를 만들려고 뺄 수 있는 premise 개수 상한(무한루프 방지)
+
 # 분기 통계 (모의학습·점검에서 읽는다)
 STATS: dict[str, int] = {
     "스텝": 0,
     "(1) 외부참조 없음": 0,
     "(2-a) gold 이미 보임": 0,
     "(2-b) gold 끼워 넣음": 0,
-    "(2-b) 끼웠으나 창 밖": 0,
+    "(2-b) 일부만 들어감": 0,
     "(2-b) 실패(포기)": 0,
     "빼낸 premise": 0,
     "계획 없음": 0,
@@ -64,13 +84,14 @@ STATS: dict[str, int] = {
     "폴백 조회 실패": 0,
     "명제 아님(제외)": 0,
     "(2-b) 못 넣어 예제 폐기": 0,
+    "끼운 gold 총": 0,
     "못 넣음(치명)": 0,
     "못 넣음(stdlib·면제)": 0,
 }
 
 # ★ 직전 `inject()` 가 **끼우지 못한** gold lemma 이름. 비어 있지 않으면 그 예제는
 #   정답이 프롬프트에 없는 이름을 쓴다 = v9 의 hopeless 와 같은 상태다.
-#   `LmDataset._hallucinates` 가 이걸 보고 예제를 **버린다**(V10_REQUIRE_ALL=1).
+#   `LmDataset._hallucinates` 가 이걸 보고 예제를 **버린다**(`REQUIRE_ALL`).
 #   안 버리면 "볼 수 없는 이름을 지어내라" 고 가르치게 된다 — v10 이 없애려던 바로 그 해악.
 LAST_UNPLACED: list = []
 
@@ -190,9 +211,7 @@ def _db_decl(name: str):
     if _DBCON is None:
         import sqlite3
         try:
-            _DBCON = sqlite3.connect(_D.get("V10_SENTENCE_DB",
-                                            "/tmp/coq-dataset/sentences.db"),
-                                     check_same_thread=False)
+            _DBCON = sqlite3.connect(SENTENCE_DB, check_same_thread=False)
             _DBCON.execute("PRAGMA query_only=1")
         except Exception:
             _DBCON = False
@@ -285,7 +304,7 @@ def plan_lemmas(example) -> Optional[list[tuple[str, str]]]:
                 STATS["명제 아님(제외)"] += 1
         return out
 
-    if not _D.flag("V10_DB_FALLBACK"):
+    if not DB_FALLBACK:
         return None
     steps = getattr(example, "next_steps", None) or []
     tgt = steps[0] if steps else ""
@@ -305,7 +324,7 @@ def plan_lemmas(example) -> Optional[list[tuple[str, str]]]:
 def _is_stdlib(name: str) -> bool:
     """stdlib 이름인가 — **모델의 상식**으로 보고 익명화도 안 하는 것들.
 
-    `NORMALIZE_SKIP_STDLIB=1` 이라 정규화에서 빠지고, `_hallucinates` 의 어휘 필터도
+    정규화가 stdlib 을 건너뛰고(`normalize_names`), `_hallucinates` 의 어휘 필터도
     같은 이유로 면제한다. 그러니 stdlib gold 를 못 끼웠다고 예제를 버리면 안 된다 —
     **판정 기준을 세 곳에서 같게** 맞춘다(안 맞추면 학습과 측정이 어긋난다).
     """
@@ -363,55 +382,70 @@ def inject(collator, tokenizer, example, input_str: str) -> tuple[Any, str]:
     _tnames = [m.group(1) for m in NAMED.finditer(_tgt)]
     _asused = {n.split(".")[-1]: n for n in _tnames if "." in n}
 
-    done = 0
-    for nm, ty in miss[: max(1, _D.num("V10_INJECT_MAX", 3))]:
-        nm = _asused.get(nm.split(".")[-1], nm)
-        decl = _decl(nm, ty)
-        placed = False
-        for attempt in range(6):
-            ranked, idxs = _window(collator, tokenizer, prem)
-            if not idxs:
-                prem = [decl] + prem
-                placed = True
-                break
-            if attempt == 0:
-                # ① 실리는 것 중 하나를 무작위로 빼고 그 자리에 끼운다
-                victim = ranked[rng.choice(idxs)]
-                try:
-                    j = prem.index(victim)
-                except ValueError:
-                    j = 0
-                prem[j] = decl
+    # ── ★ **전부 한꺼번에** 넣고 **함께** 검증한다 ─────────────────────────
+    #
+    #   하나씩 넣고 그때그때 검증하면 안 된다 — **나중에 넣은 것이 앞서 넣은 것을
+    #   창 밖으로 밀어낸다.** premise 창은 토큰 예산이라 총량이 정해져 있고,
+    #   decl 하나가 82토큰인 경우도 있다. 개별 검증은 그 상호작용을 못 본다.
+    #   (실측으로 걸린 것은 아니지만, 구조적으로 반드시 생긴다.)
+    #
+    #   그래서: 다 넣는다 → 전부 보이나 확인 → 안 보이면 자리를 더 만든다 → 반복.
+    want = miss if MAX_INJECT <= 0 else miss[:MAX_INJECT]
+    decls: dict[str, str] = {}
+    for nm, ty in want:
+        nm = _asused.get(nm.split(".")[-1], nm)        # 정답이 부르는 형태로
+        decls[nm] = _decl(nm, ty)
+
+    # ① 창 안의 것을 무작위로 골라 그 자리에 넣는다(뒤쪽에 넣으면 안 실린다).
+    ranked, idxs = _window(collator, tokenizer, prem)
+    victims = list(idxs)
+    rng.shuffle(victims)
+    for k, (nm, decl) in enumerate(decls.items()):
+        if k < len(victims):
+            try:
+                prem[prem.index(ranked[victims[k]])] = decl
                 STATS["빼낸 premise"] += 1
-            elif attempt == 1:
-                # ② 창 밖으로 밀렸다 → 맨 앞으로 옮긴다
-                prem = [decl] + [p for p in prem if p != decl]
-            else:
-                # ③ 그래도 안 되면 창 안의 **가장 긴 것**을 마저 빼서 자리를 만든다
-                longest = max((ranked[i] for i in idxs if ranked[i] != decl),
-                              key=len, default=None)
-                if longest is not None:
-                    prem = [p for p in prem if p != longest]
-                prem = [decl] + [p for p in prem if p != decl]
-            # 검증 — **프로덕션 경로**로 정말 프롬프트에 남는가 (절단까지)
-            _probe = _cp.copy(example)
-            _probe.premises = prem
-            if visible(collator, tokenizer, _probe, nm):
-                placed = True
-                break
-        if placed:
-            done += 1
-        else:
-            STATS["(2-b) 끼웠으나 창 밖"] += 1
-            _fail(nm)
+                continue
+            except ValueError:
+                pass
+        prem = [decl] + prem                            # 창이 좁으면 앞에 붙인다
 
-    # ★ 상한(V10_INJECT_MAX)에 걸려 **손도 못 댄** 것도 못 넣은 것이다.
-    for nm, _ in miss[max(1, _D.num("V10_INJECT_MAX", 3)):]:
+    def _unseen() -> list:
+        """아직 프롬프트에 안 남은 것 — **프로덕션 경로**로, 절단까지 본다."""
+        probe = _cp.copy(example)
+        probe.premises = prem
+        return [nm for nm in decls if not visible(collator, tokenizer, probe, nm)]
+
+    # ② 전부 보일 때까지 **창 안의 가장 긴 비-decl** 을 하나씩 빼서 자리를 만든다.
+    #   decl 을 전부 맨 앞으로 모아 두면 절단(왼쪽)에서 가장 늦게 잘린다.
+    dset = set(decls.values())
+    prem = [d for d in decls.values()] + [p for p in prem if p not in dset]
+    left = _unseen()
+    for _ in range(MAX_EVICT):
+        if not left:
+            break
+        ranked, idxs = _window(collator, tokenizer, prem)
+        longest = max((ranked[i] for i in idxs if ranked[i] not in dset),
+                      key=len, default=None)
+        if longest is None:
+            break                                       # 뺄 것이 없다
+        prem = [p for p in prem if p != longest]
+        STATS["빼낸 premise"] += 1
+        left = _unseen()
+
+    done = len(decls) - len(left)
+    for nm in left:
         _fail(nm)
+    # 상한(MAX_INJECT)에 걸려 **손도 못 댄** 것도 못 넣은 것이다.
+    for nm, _ in (miss[MAX_INJECT:] if MAX_INJECT > 0 else []):
+        _fail(_asused.get(nm.split(".")[-1], nm))
 
+    STATS["끼운 gold 총"] += done
     if done == 0:
         STATS["(2-b) 실패(포기)"] += 1
         return example, "(2-b)실패"
+    if left:
+        STATS["(2-b) 일부만 들어감"] += 1
 
     ex2 = _cp.copy(example)
     ex2.premises = prem
@@ -422,6 +456,10 @@ def inject(collator, tokenizer, example, input_str: str) -> tuple[Any, str]:
 def format_stats() -> str:
     n = max(STATS["스텝"], 1)
     ks = ["(1) 외부참조 없음", "(2-a) gold 이미 보임", "(2-b) gold 끼워 넣음",
-          "(2-b) 끼웠으나 창 밖", "(2-b) 실패(포기)", "계획 없음", "명제 아님(제외)"]
-    body = "  ".join(f"{k} {STATS[k]} ({STATS[k]/n*100:.1f}%)" for k in ks)
-    return f"[v10] 스텝 {STATS['스텝']} · {body} · 빼낸 premise {STATS['빼낸 premise']}"
+          "(2-b) 일부만 들어감", "(2-b) 실패(포기)", "계획 없음", "명제 아님(제외)"]
+    body = "  ".join(f"{k} {STATS.get(k, 0)} ({STATS.get(k, 0)/n*100:.1f}%)" for k in ks)
+    return (f"[v10] 스텝 {STATS['스텝']} · {body}"
+            f" · 끼운 gold {STATS.get('끼운 gold 총', 0)}"
+            f" · 빼낸 premise {STATS['빼낸 premise']}"
+            f" · 못넣음(치명 {STATS.get('못 넣음(치명)', 0)}"
+            f" / stdlib면제 {STATS.get('못 넣음(stdlib·면제)', 0)})")

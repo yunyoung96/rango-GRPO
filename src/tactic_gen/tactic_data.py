@@ -1203,9 +1203,9 @@ class ProofPremiseCollator:
         #
         #   ★ V10 이 켜지면 ①-b(cut/assert)는 **통째로 건너뛴다**. 둘을 같이 켜면
         #     같은 스텝에 주입과 assert 가 겹쳐 정답이 두 갈래가 된다.
-        _v10 = _D.flag("V10_PREMISE_INJECT")
+        from tactic_gen import v10_inject as _v10m
+        _v10 = _v10m.ENABLED          # ★ 파이썬 변수다 — env 아님(v10_inject 상단)
         if _v10:
-            from tactic_gen import v10_inject as _v10m
             example, _br = _v10m.inject(self, tokenizer, example, input_str)
             if _br == "(2-b)":
                 input_str = self.collate_input(tokenizer, example, normalize=False)
@@ -2130,11 +2130,12 @@ class LmDataset(Dataset):
 
         선택은 **결정적**이다(sid 해시) — 캐시·재개가 어긋나면 안 된다.
         """
-        if _D.flag("V10_PREMISE_INJECT"):
-            return None        # ★ v10 은 assert 를 안 쓴다 — gold 를 프롬프트에 끼운다
-        # ★ 기본값은 `src/rango_defaults.py` 가 단일 출처다(v10 에서 '0').
-        #   env 는 절제 실험용 덮어쓰기로만 쓴다.
-        if _D.get("CUT_SUBSTEP", "1") != "1":
+        # ★ v10 은 assert 를 안 쓴다 — gold 를 프롬프트에 끼운다.
+        #   v9 재현은 `v10_inject.ENABLED = False` 로 한다(env 아님).
+        from tactic_gen import v10_inject as _v10m
+        if _v10m.ENABLED:
+            return None
+        if os.environ.get("CUT_SUBSTEP", "1") != "1":
             return None
         if not _D.get("CUTS_PATH"):
             return None
@@ -2180,7 +2181,8 @@ class LmDataset(Dataset):
         # ★ v10 에서는 "가망 없음" 이 사라진다 — gold lemma 를 프롬프트에 **끼워 넣으므로**
         #   정답이 항상 보인다. v9 가 버리던 6.7% 가 v10 에서는 **가장 값진 예제**다
         #   (검색이 못 찾는 경우의 조립을 가르치는 유일한 표본).
-        if _D.flag("V10_PREMISE_INJECT"):
+        from tactic_gen import v10_inject as _v10m
+        if _v10m.ENABLED:
             return False
         from tactic_gen import cut_lookup
         return cut_lookup.is_hopeless(
@@ -2229,8 +2231,8 @@ class LmDataset(Dataset):
         #   그대로 학습하면 "볼 수 없는 이름을 지어내라" 고 가르치는 셈이다 —
         #   v10 이 없애려던 바로 그 해악이다. 아래 어휘 필터(stdlib 면제)로는
         #   못 잡는다(gold 가 stdlib 이면 "안다" 고 보고 통과시킨다).
-        if _D.flag("V10_PREMISE_INJECT") and _D.flag("V10_REQUIRE_ALL"):
-            from tactic_gen import v10_inject as _v10m
+        from tactic_gen import v10_inject as _v10m
+        if _v10m.ENABLED and _v10m.REQUIRE_ALL:
             if _v10m.LAST_UNPLACED:
                 _v10m.STATS["(2-b) 못 넣어 예제 폐기"] += 1
                 return True

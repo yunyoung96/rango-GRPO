@@ -11,7 +11,7 @@
     `collate()` 로 재면 안 된다(NORMALIZE_NAMES 가 이름을 `_L0` 로 바꾼다).
   · **stdlib 은 제외**한다. `NORMALIZE_SKIP_STDLIB=1` 이라 익명화도 안 하고
     `_hallucinates` 도 면제한다 — 모델의 상식으로 본다.
-  · 못 넣은 것이 남으면 `V10_REQUIRE_ALL` 이 예제를 **버린다**. 그것까지 세서
+  · 못 넣은 것이 남으면 `v10_inject.REQUIRE_ALL` 이 예제를 **버린다**. 그것까지 세서
     "학습에 들어가는 예제 기준" 가시성을 따로 낸다.
 
 사용: VC_N=900 VC_SHARD/VC_NSHARD VC_SPLIT=TRAIN|VAL python3 scripts/v10_coverage.py
@@ -36,7 +36,8 @@ td = TacticDataConf.from_yaml(CONF["tactic_data"])
 ds = LmDataset.from_conf(td, SPLIT)
 tok, col = ds.tokenizer, ds.example_collator
 print(f"■ {SPLIT.name} · 표본 {N} · 샤드 {SHARD}/{NSHARD} · "
-      f"V10={_D.get('V10_PREMISE_INJECT')} REQUIRE_ALL={_D.get('V10_REQUIRE_ALL')}", flush=True)
+      f"ENABLED={V10.ENABLED} MAX_INJECT={V10.MAX_INJECT or '무제한'} "
+      f"REQUIRE_ALL={V10.REQUIRE_ALL}", flush=True)
 
 S = collections.Counter()
 worst = []
@@ -63,8 +64,10 @@ for c, i in enumerate(idxs):
         S["② 보임(주입후)"] += len(post)
         if len(post) == len(lems):
             S["② 스텝 전부 보임"] += 1
+            S[f"② 전부보임 · gold {min(len(lems),3)}개"] += 1
         else:
             S["② 스텝 일부 안 보임"] += 1
+            S[f"② 일부만 · gold {min(len(lems),3)}개"] += 1
             if unpl:
                 S["  └ v10 이 못 넣음 → 예제 폐기"] += 1
             else:
@@ -93,8 +96,15 @@ print(f"\n■ 안 보이는 것의 내역")
 for k in ("② 스텝 일부 안 보임", "  └ v10 이 못 넣음 → 예제 폐기",
           "  └ v10 이 넣었다 했는데 안 보임 ★버그"):
     print(f"   {k:44s} {S[k]:5d}")
+print(f"\n■ ★ gold 개수별 — 여러 개여도 **전부** 들어가나")
+print(f"   {'gold 개수':10s}{'스텝':>6s}{'전부 보임':>10s}")
+for k in (1, 2, 3):
+    lab = f"{k}{'+' if k == 3 else ''}개"
+    okk, ng = S[f"② 전부보임 · gold {k}개"], S[f"② 일부만 · gold {k}개"]
+    if okk + ng:
+        print(f"   {lab:10s}{okk+ng:6d}{okk/(okk+ng)*100:9.1f}%")
 print(f"\n{V10.format_stats()}")
-print(f"   못 넣음: 치명 {V10.STATS['못 넣음(치명)']} · stdlib면제 {V10.STATS['못 넣음(stdlib·면제)']}")
+
 if worst:
     print("\n★버그 사례:")
     for i, nm, po, up in worst:

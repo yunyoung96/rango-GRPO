@@ -15,13 +15,14 @@ import collections, os, re, sys, yaml, logging
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 os.environ.setdefault("CUTS_ALLOW_PARTIAL", "1")
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
-os.environ["V10_PREMISE_INJECT"] = "0"      # ★ 주입 **전** 상태를 재는 것이 목적
 sys.path.insert(0, "src")
 logging.disable(logging.CRITICAL)
 import rango_defaults as _D
 from tactic_gen.tactic_data import LmDataset, TacticDataConf
 from tactic_gen import v10_inject as V10
 from data_management.splits import Split
+
+V10.ENABLED = False          # ★ 주입 **전** 상태를 재는 것이 목적 (파이썬 변수 대입)
 
 CONF = yaml.safe_load(open(sys.argv[1] if len(sys.argv) > 1 else "all_log/ft_qwen3b_v10_conf.yaml"))
 N = int(os.environ.get("VR_N", "600"))

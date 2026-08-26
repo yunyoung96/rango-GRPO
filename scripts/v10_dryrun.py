@@ -29,12 +29,9 @@ tok = get_tokenizer(td.model_name)
 from data_management.splits import Split
 ds = LmDataset.from_conf(td, Split.TRAIN)
 tok = ds.tokenizer
-# ★ 설정은 파이썬 기본값(src/rango_defaults.py)이 단일 출처다 — env 는 절제용 덮어쓰기.
-#   env 로 온 것인지 기본값인지 표시해서, `source` 를 잊은 실행을 눈으로 잡을 수 있게 한다.
-_src = lambda k: "env" if os.environ.get(k) else "기본"
-print(f"■ v10 사전점검 · V10_PREMISE_INJECT={_D.get('V10_PREMISE_INJECT')}({_src('V10_PREMISE_INJECT')}) "
-      f"CUT_SUBSTEP={_D.get('CUT_SUBSTEP')}({_src('CUT_SUBSTEP')}) "
-      f"V10_DB_FALLBACK={_D.get('V10_DB_FALLBACK')} · 예제 {N}개", flush=True)
+# 설정은 `tactic_gen.v10_inject` 상단의 **파이썬 변수**가 단일 출처다(env 아님).
+print(f"■ v10 사전점검 · ENABLED={V10.ENABLED} MAX_INJECT={V10.MAX_INJECT or '무제한'} "
+      f"REQUIRE_ALL={V10.REQUIRE_ALL} DB_FALLBACK={V10.DB_FALLBACK} · 예제 {N}개", flush=True)
 
 seen = collections.Counter()
 bad, good = [], []
