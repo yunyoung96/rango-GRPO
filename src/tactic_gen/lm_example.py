@@ -429,11 +429,34 @@ class GeneralFormatter:
             #   Module N := F(A). 로 생겨나는 N.member 는 **선언이 없어** 풀에 못 든다.
             #   풀에 있는 F 의 선언을 N 이름으로 복제해 이름을 Coq 이 보는 것과 맞춘다.
             #   랭킹 **전에** 넣어야 다른 후보와 공정하게 경쟁한다.
+            _csp_texts: set = set()
             from premise_selection.functor_expand import expand as _fx
             _avail = _fx(filtered_result.avail_premises,
                          getattr(dp_obj, "file_context", None)
                          and getattr(dp_obj.file_context, "file", None)
                          or getattr(dp_obj, "dp_name", None))
+            # ★★ Coq 내장 색인이 찾은 lemma 를 **합친다**(필터가 아니라 합집합).
+            #   실측(CompCert 120지점): 현행 풀 gold 51.7% · Coq Search 69.2% ·
+            #   교집합 35.8%(gold 를 31% 잃는다) · **합집합 85.0%**.
+            #   Coq Search 는 전역 환경에서 뽑아 프로젝트 풀보다 넓고, 그런데도 gold 를
+            #   더 많이 담는다 — 축소 도구가 아니라 **도달성 도구**다.
+            #   랭킹 **전에** 넣어야 다른 후보와 공정하게 경쟁한다(functor_expand 와 같은 이유).
+            #   탐색기가 `coq_search_pool.put()` 으로 채워 두지 않았으면 빈 목록이라
+            #   동작이 안 바뀐다(학습·오프라인 경로는 그대로).
+            try:
+                from premise_selection import coq_search_pool as _csp
+                if _csp.ENABLED:
+                    _key = (getattr(dp_obj, "dp_name", "") or
+                            getattr(getattr(dp_obj, "file_context", None), "file", ""),
+                            proof_idx, step_idx)
+                    _have = {_lemma_name(getattr(p_, "text", "") or "") for p_ in _avail}
+                    _add = _csp.extra(_key, have={x for x in _have if x})
+                    if _add:
+                        _avail = list(_avail) + _csp.as_sentences(_add)
+                        _csp_texts = set(_add)
+                        _rp(f"    [Coq Search] 합집합 +{len(_add)}개 → 풀 {len(_avail)}")
+            except Exception as _e:
+                _rp(f"    [Coq Search] 건너뜀 ({_e})")
             # ★ goal_override 를 **검색에도** 먹인다.
             #   get_ranked_premises 는 `step = proof.steps[step_idx]` 로 원본 step 을
             #   다시 꺼내므로(premise_client.py:437), 위에서 만든 복사본이 닿지 않는다.
@@ -450,6 +473,17 @@ class GeneralFormatter:
             all_relevant_premises = self.premise_client.get_ranked_premises(
                 step_idx, _rank_proof, dp_obj, _avail, _rank_training
             )
+            # ★ Coq 이 **적용 가능하다고 검증한** 것을 앞으로 당긴다.
+            #   풀에 넣기만 하면 tf-idf 가 다시 줄 세워 묻힌다(실측 +4.1pp 에 그침).
+            #   이것들은 "닮았다"가 아니라 "된다" 에 가까우므로 우대할 근거가 있다
+            #   (eqx 커널이 exact 성공을 사전식 분리자로 인코딩한 것과 같은 논리).
+            if _csp_texts:
+                try:
+                    from premise_selection import coq_search_pool as _csp2
+                    all_relevant_premises = _csp2.prioritize(
+                        all_relevant_premises, _csp_texts)
+                except Exception:
+                    pass
             _rp(f"    전체 후보: {len(all_relevant_premises)}개  →  top5:")
             for j, p in enumerate(all_relevant_premises[:5]):
                 print_retrieved(j + 1, p.text, prem_query_set)
