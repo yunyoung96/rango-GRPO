@@ -11,4 +11,4 @@
 |---|---|---|
 | [train-dataset-recovery.md](train-dataset-recovery.md) | TRAIN 원본 `.v` 를 복구할 방법이 있나 | **있다.** `splits/commits.json` 이 열쇠 — 실제로 96.1% 복구(13GB) |
 | [classical-lemma-retrieval.md](classical-lemma-retrieval.md) | `rewrite`/`apply` 할 lemma 를 찾는 고전(비-LLM) 연구가 있나 | **있다.** 두 갈래 — 관련성 랭킹(TF-IDF·MePo·MaSh) 과 **적용가능성 색인**(지문/판별트리). 우리 문제는 후자인데 전자 도구로 풀고 있다 |
-| [applicability-filter.md](applicability-filter.md) | 적용가능성으로 먼저 거르고 점수를 매기면 gold 가 더 실리나 | **음성 (8판본 · 색인 4종).** 양쪽 elaborate 후에도 판별트리 45.1% / 치환트리 44.7% / 지문 47.6% (축소 5.7배), 깊이 0 은 88.2% / 2.6배. 남은 벽은 **변환(delta/iota)**. → **Coq 내장 `SearchPattern`/`SearchRewrite`** 가 그걸 넘는다(질의 35ms·결과 6.9개). 구체→추상 사다리 필요 |
+| [applicability-filter.md](applicability-filter.md) | 적용가능성으로 먼저 거르고 점수를 매기면 gold 가 더 실리나 | **음성 (8판본 · 색인 4종).** 양쪽 elaborate 후에도 판별트리 45.1% / 치환트리 44.7% / 지문 47.6% (축소 5.7배), 깊이 0 은 88.2% / 2.6배. 남은 벽은 **변환(delta/iota)**. → **Coq 내장 `SearchPattern`/`SearchRewrite`** 가 그걸 넘는다. `?x`+사다리+기호결합으로 CompCert gold 복원 39.2%→**60.3%**(순수 apply 59.3% · 순수 rewrite 53.8% · `rewrite … in H` 25.0%) |
