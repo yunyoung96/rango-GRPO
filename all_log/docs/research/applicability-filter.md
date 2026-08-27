@@ -15,6 +15,11 @@
 > 텍스트 기준(94.6%)을 못 넘었다(§4.8). 남은 벽은 **Coq 의 tactic 의미론**과
 > **goal 이 여전히 출력 형태라는 점**이다.
 >
+> ★★ **§4.11 이 길을 연다** — Coq 자신의 `SearchPattern`/`SearchRewrite` 를 쓰면
+> 변환까지 포함해 커널이 판정한다. 질의 **35ms** · 결과 **6.9개**(현행 풀 2,100 대비 300배).
+> 다만 goal 보다 **일반적인** lemma(`Rle_trans` 류)는 구체 패턴으로 안 잡히므로
+> **구체→추상 사다리**로 질의해야 한다. 첫 실측 39.2%는 그 사다리 없이 1단만 쏜 결과다.
+>
 > 문헌 쪽 배경은 [classical-lemma-retrieval.md](classical-lemma-retrieval.md) §3 —
 > 거기서 지문색인을 **1순위**로 꼽았었다. 이 문서가 그 권고의 실측이다.
 > 재현: `scripts/applic_filter_eval.py` · `scripts/fingerprint_filter_eval.py`
@@ -584,6 +589,131 @@ Coq 의 `auto` 힌트 DB 를 두고 "최상위 기호 색인 1단계뿐, discrim
 
 각 수정이 수치를 크게 바꿨다. **필터 하나를 제대로 만드는 데 Coq 의 tactic 의미론을
 그만큼 다시 구현해야 한다**는 것이 이 실험의 실질적 교훈이다.
+
+---
+
+## 4.11. ★★★ **Coq 안에서 하는 방법** — `SearchPattern` / `SearchRewrite`
+
+바깥에서 만든 색인 8판본이 전부 gold 를 흘렸고, 남은 벽이 **변환(delta/iota/beta)**
+이었다(§4.10). 그건 Coq 커널이 있어야 넘는다. 그런데 **Coq 이 이미 그 색인을 갖고 있다.**
+
+```coq
+SearchPattern <패턴>   결론이 패턴과 매칭되는 lemma   → `apply` 후보
+SearchRewrite <항>     한 변이 그 항과 매칭되는 등식  → `rewrite` 후보
+```
+
+elaboration·변환·강제변환·타입클래스가 **전부 적용된 상태로** 판정한다.
+우리가 재구현하려던 것을 Coq 이 커널을 갖고 한다.
+
+### 비용 — 감당된다
+
+| | |
+|---|---|
+| 모듈 로드(`Require`) | 468ms (한 번) |
+| **질의 1회** | **35ms** |
+| 질의당 결과 | 6.9개 |
+| 노드 예산 300ms 대비 | **11.7%** |
+
+지금 풀이 스텝당 ~2,100개인 것과 비교하면 **300배 축소**다.
+
+### 규칙 ① — goal 의 **지역변수를 `_`/`?x` 로** 바꿔야 한다
+
+```coq
+✗ SearchPattern (Int.and (Int.shl x n) (Int.shl y n) = Int.shl (Int.and x y) n).
+    → 아무것도 안 나옴 (지역 x y n 이 경직이라)
+✓ SearchPattern (Int.and (Int.shl _ _) (Int.shl _ _) = Int.shl (Int.and _ _) _).
+    → Int.and_shl
+```
+
+지역 이름(가설 목록)이 곧 lemma 의 전칭 변수가 채울 자리다.
+
+### 규칙 ② — `_` 는 독립, `?x` 는 **일관성**을 건다
+
+바깥에서 치환트리로 구현했던 "변수 일관성"이 **Coq 검색 문법에 이미 있다**:
+
+```coq
+SearchPattern (Z.add _ _ = Z.add _ _).
+  → Z.add_comm · Z.add_assoc · Z.add_shuffle0/1/2/3 · OMEGA10~15 · … 20건 이상 (사실상 전부)
+
+SearchPattern (Z.add ?x ?y = Z.add ?y ?x).      ← 같은 이름 = 같은 항
+  → Z.add_comm                                  ★ 교환법칙 하나만
+
+SearchPattern (Z.add ?x ?x = _).
+  → Z.add_diag · Zred_factor1 · Zplus_diag_eq_mult_2   ★ 멱등형만
+```
+
+### 규칙 ③ — **화살표 접미사는 공짜다**
+
+`apply L` 은 `L : X -> Y -> Z` 를 goal `Z` 에도 `Y -> Z` 에도 쓸 수 있다.
+`SearchPattern` 이 **모든 접미사를 자동으로** 본다 — 패턴을 여러 개 만들 필요가 없다.
+
+`L3 : forall n, P n -> Q n -> R n` 로 실측:
+
+| 질의 패턴 | 결과 |
+|---|---|
+| `R _` (결론만) | **찾음** |
+| `Q _ -> R _` (가설 1 + 결론) | **찾음** |
+| `P _ -> Q _ -> R _` (전부) | **찾음** |
+| `Q _` (중간 가설만) | 못 찾음 |
+| `P _` (첫 가설만) | 못 찾음 |
+| `Search concl:(R _)` | 찾음 (결론만 — 접미사 안 봄) |
+
+`apply` 의 의미론과 정확히 일치한다.
+
+### 규칙 ④ — ★ **추상화 사다리는 필요하다** (`SearchPattern` 은 단일화가 아니라 매칭)
+
+`SearchPattern` 은 **lemma 결론이 패턴의 인스턴스**인 것을 찾는다.
+그래서 goal 보다 **더 일반적인** lemma 는 구체 패턴으로 **절대 안 나온다**:
+
+```coq
+goal : Pos.succ a <> Pos.succ b
+
+SearchPattern (Pos.succ ?a <> Pos.succ ?b).   →   0건
+SearchPattern (?x <> ?y).                     →  77건 · not_eq_sym ★ · Plt_ne ★
+```
+
+`not_eq_sym : x <> y -> y <> x` 의 결론 `y <> x` 는 `Pos.succ ?a <> Pos.succ ?b` 의
+인스턴스가 아니다. **구조적 lemma**(`not_eq_sym`·`Rle_trans`·`eq_sym`·`f_equal`·`proj1`)가
+통째로 이 부류다 — 그리고 오라클 실험에서 `모호` 칸의 상위를 차지하던 바로 그것들이다
+([checkpoint47000/experiment.md §4](../v9/checkpoint47000/experiment.md)).
+
+> 조사 문서 §3-3 이 적은 **"결론 색인의 구조적 한계"** 와 같은 뿌리다 —
+> 전제의 변수가 결론에 안 나오는 lemma 는 결론만 보는 색인이 못 잡는다.
+
+**→ goal 하나당 구체→추상 **사다리**로 몇 개를 질의하고 합집합을 쓴다:**
+
+```
+① goal 전체            (지역 → ?x)      구체 lemma
+② 잎 부분항을 ?x 로                      한 단계 일반
+③ 머리만 남기고                          더 일반
+④ 관계만 (?x <> ?y)                      구조적 lemma
+```
+
+질의당 35ms 이므로 4단이면 140ms — 노드 예산 300ms 안에 든다.
+
+### 첫 실측 — 아직 나쁘다. **배선이 틀렸다**
+
+97 질의지점(`scripts/coq_search_eval.py`, 지역변수를 전부 `_` 로만 바꾼 1단 질의):
+
+| | gold 적중 | 후보 수 |
+|---|---|---|
+| `apply` | 26/59 = 44.1% | 644.8개 |
+| `rewrite` | 12/38 = 31.6% | 402.1개 |
+| **전체** | **39.2%** | **549.7개** |
+
+**두 증상이 규칙 ②④ 로 정확히 설명된다:**
+
+- 후보 550개 → `_` 가 서로 독립이라 패턴이 헐겁다. `?x` 로 바꾸면 위 `Z.add` 예처럼 급감한다.
+- 후보 **0개**로 놓친 것이 다수(`not_eq_sym`·`Plt_ne`·`range_split_2`·`compare_refl`)
+  → 전부 **goal 보다 일반적인 lemma** 다. 사다리 없이 1단만 질의해서 못 잡았다.
+
+즉 이 수치는 **Coq 검색의 한계가 아니라 내 패턴 생성의 한계**다. 고칠 것:
+
+| | |
+|---|---|
+| `_` → `?x` | 같은 지역변수는 같은 이름으로 |
+| **추상화 사다리** | 구체→추상 4단 질의 후 합집합 |
+| `apply` 변종 | `eapply` · `apply … with` · `apply … in H` 별로 질의를 달리 |
 
 ---
 
