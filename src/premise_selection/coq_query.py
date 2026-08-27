@@ -94,6 +94,17 @@ def abstract_locals(term: str, locals_: set) -> str:
 _SCOPE = re.compile(r"%[A-Za-z_][\w']*\s*$")
 
 
+def scope_of(t: str) -> str:
+    """`(0 <= m)%R` → `R`. 없으면 빈 문자열.
+
+    ★ 스코프를 떼면 **뜻이 바뀐다.** `(0 <= ?x)%R` 의 `0` 은 `IZR Z0` 인데
+      `%R` 을 떼면 **nat 의 0** 으로 해석돼 Rle 계열을 하나도 못 찾는다
+      (실측: bpow_ge_0·Rmult_le_compat_r·le_F2R 등 Flocq/Reals 계열이 통째로 누락).
+    """
+    m = _SCOPE.search(t.strip())
+    return m.group(0).lstrip("%").strip() if m else ""
+
+
 def strip_outer(t: str) -> str:
     """바깥 괄호와 `%Z`·`%R` 스코프 표기를 벗긴다.
 
@@ -129,9 +140,14 @@ def ladder(goal: str, locals_: set, max_levels: int = 3) -> list:
 
     def add(p):
         p = " ".join(p.split())
-        if p and p not in seen and _SAFE.match(p) and len(p) < 600:
+        if not (p and _SAFE.match(p) and len(p) < 600):
+            return
+        if sc:                       # ★ 스코프를 되붙인다 — 안 붙이면 뜻이 바뀐다
+            p = f"({p})%{sc}"
+        if p not in seen:
             seen.add(p); out.append(p)
 
+    sc = scope_of(goal)
     goal = strip_outer(goal)
     l1 = abstract_locals(goal, locals_)
     add(l1)
@@ -274,31 +290,68 @@ def rigid_syms(term: str, locals_: set, maxn: int = 6) -> list:
     return out[:maxn]
 
 
-def symbol_queries(goal: str, locals_: set, kind: str = "eq", maxn: int = 6) -> list:
-    """`Search <기호…> (?a = ?b).` — **기호 결합**으로 좁힌다.
+_NOTA = re.compile(r"(?<=\s)([|&^~!<>=+*/\\@#$%-]{1,3})(?=\s)")
 
-    ★ `rewrite` 후보를 `SearchRewrite <부분항>` 로 찾으려면 **정확한 redex** 를
-      알아야 하는데, 출력형 goal 에서 redex 를 짚는 것은 추측이다(실측: 부분항
-      열거 방식은 27~37%). 대신 goal 이 **어떤 기호를 쓰는가**로 좁힌다:
 
-          Search Int.testbit Int.and (?a = ?b).   →  Int.bits_and 하나
+def symbol_queries(goal: str, locals_: set, maxn: int = 6, with_hyps=None) -> list:
+    """`Search <기호…>` — **기호 결합**으로 좁힌다.
 
-      기호가 많을수록 좁고, 적을수록 넓다 — 그대로 **사다리**가 된다.
+    ★ 관계를 `(?a = ?b)` 로 **못 박으면 안 된다.** 프로젝트가 자기 동치관계를 쓰면
+      결론이 등식이 아니다 — 실측:
+
+          sep_swap23 : massert_eqv (sepconj P (sepconj Q (sepconj R S))) (…)
+
+      `rewrite sep_swap23` 은 setoid 재작성이라 되는데, `Search … (?a = ?b)` 로는
+      **원리적으로** 못 찾는다(놓친 것의 41% 를 차지하던 ⑤ 의 정체).
+      → 관계 무제약 질의를 **먼저** 쓰고, 등식 제약은 좁히는 용도로만 덧붙인다.
+
+    ★ **notation 이 진짜 이름을 가린다.** 출력형 goal 은 `P ** Q` 라고 찍지만
+      실제 상수는 `sepconj` 다. `Search "**"` 로 notation 문자열을 직접 물으면 잡힌다.
     """
-    rel = {"eq": "(?a = ?b)", "iff": "(?a <-> ?b)"}.get(kind, "(?a = ?b)")
-    syms = rigid_syms(strip_outer(goal), locals_, maxn)
+    goal = strip_outer(goal)
+    syms = rigid_syms(goal, locals_, maxn)
+    notas = [m.group(1) for m in _NOTA.finditer(" " + goal + " ")]
+    notas = [n for n in dict.fromkeys(notas) if n not in ("=", "->", ":")][:2]
     out, seen = [], set()
 
-    def add(ss):
-        if not ss:
-            return
-        q = "Search " + " ".join(ss) + " " + rel + "."
-        if q not in seen:
+    def add(q):
+        if q not in seen and len(q) < 300:
             seen.add(q); out.append(q)
 
+    # ① 기호 결합 — 좁은 것부터 (관계 무제약)
+    for k in (3, 2, 1):
+        if len(syms) >= k:
+            add("Search " + " ".join(syms[:k]) + ".")
+    # ② 등식으로 좁힌 것 (rewrite 에 유용)
     for k in (3, 2):
         if len(syms) >= k:
-            add(syms[:k])
-    for s in syms[:2]:
-        add([s])
+            add("Search " + " ".join(syms[:k]) + " (?a = ?b).")
+    # ③ notation 문자열 — 진짜 상수 이름을 모를 때
+    for n in notas:
+        add(f'Search "{n}".')
     return out
+
+
+def hyp_rewrite_queries(goal, locals_: set, maxn: int = 3) -> list:
+    """`rewrite L in H` — **가설 안**을 재작성한다. 가설의 기호로 질의한다.
+
+    ★ 전방추론이라 lemma 결론이 goal 과 맞을 이유가 없다. 그리고 `rewrite … in H` 는
+      `apply … in H` 와도 다르다 — lemma 의 **좌변이 H 의 부분항**과 맞아야지
+      lemma 의 전제가 H 인 것이 아니다. 그래서 `<H타입> -> ?z` 형태도 틀렸다
+      (실측: `rewrite … in H` 복원율 25.0% 로 최악이었다).
+      → **가설 타입의 기호**로 `Search` 한다.
+    """
+    out, seen = [], set()
+    for h in (getattr(goal, "hyps", None) or []):
+        m = _DECL_LINE.match(h)
+        if not m:
+            continue
+        ty = h[m.end():].strip()
+        if not ty or len(ty) > 240:
+            continue
+        for q in symbol_queries(ty, locals_, maxn=4):
+            if q not in seen:
+                seen.add(q); out.append(q)
+        if len(out) >= maxn * 3:
+            break
+    return out[:maxn * 3]

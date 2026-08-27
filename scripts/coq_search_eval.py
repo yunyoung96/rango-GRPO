@@ -40,7 +40,7 @@ from pathlib import Path
 from coqstoq import Split as CSSplit, get_theorem
 from data_management.sentence_db import SentenceDB
 from evaluation.find_coqstoq_idx import get_thm_desc
-from premise_selection.coq_query import ladder, rewrite_targets, local_names, hyp_queries, symbol_queries
+from premise_selection.coq_query import ladder, rewrite_targets, local_names, hyp_queries, symbol_queries, hyp_rewrite_queries
 
 N = int(os.environ.get("CS_N", "120"))
 JOBS = int(os.environ.get("CS_JOBS", "4"))
@@ -63,6 +63,34 @@ HEADT = re.compile(r"^\s*(?:now\s+|try\s+|repeat\s+)?([A-Za-z_][\w']*)")
 NAMED = re.compile(r"\b(?:e?apply|e?rewrite)\s+(?:<-\s*)?\(?\s*"
                    r"([A-Za-z_][\w']*(?:\.[A-Za-z_][\w']*)*)")
 sdb = SentenceDB.load(Path("raw-data/coqstoq-test/coqstoq-test-sentences.db"))
+
+# ★ elaborate 된 goal — notation 이 펼쳐져 있어 **진짜 상수 이름**이 보인다.
+#   출력형은 `P ** Q` 라 `sepconj` 를 못 뽑는데, elaborate 형은 `sepconj P Q` 다.
+#   `rewrite` 질의는 기호로 좁히므로 이 차이가 그대로 복원율이 된다.
+ELABG = {}
+for _f in os.environ.get("CS_ELABG", "all_log/elab_goals_batch.jsonl").split(","):
+    _p = Path(_f.strip())
+    if _p.exists():
+        for _ln in _p.open():
+            _ln = _ln.strip()
+            if _ln:
+                _d = json.loads(_ln)
+                ELABG[(_d["idx"], _d["k"])] = _d["goal_elab"]
+print(f"■ elaborate goal {len(ELABG):,}", flush=True)
+
+def elab_concl(g):
+    """elaborate goal 의 **첫 goal 결론**."""
+    b = g.split("============================")
+    if len(b) < 2:
+        return g.strip()
+    out, blank = [], False
+    for ln in b[1].split("\n"):
+        if not ln.strip():
+            if out: blank = True
+            continue
+        if blank: break
+        out.append(ln)
+    return " ".join(" ".join(out).split())
 
 def head_of_file(orig, thm_text):
     j = orig.find(thm_text.strip()[:60])
@@ -166,9 +194,16 @@ if __name__ == "__main__":
                         qs.append(f"SearchPattern ({pat}).")
             else:
                 # ★ rewrite — 부분항 추측 대신 **기호 결합**으로 좁힌다
-                qs.extend(symbol_queries(g.goal, loc, "eq", maxn=6))
+                qs.extend(symbol_queries(g.goal, loc, maxn=6))
+                # ★ elaborate 형에서도 기호를 뽑는다 — notation 이 가린 상수(`**`→sepconj)
+                _eg = ELABG.get((i, k))
+                if _eg:
+                    qs.extend(symbol_queries(elab_concl(_eg), loc, maxn=5))
                 for pat in rewrite_targets(g.goal, loc, maxn=2):
                     qs.append(f"SearchRewrite ({pat}).")
+                # ★ `rewrite L in H` — 가설 **안**을 재작성하므로 가설 기호로도 쏜다
+                if FWD and re.search(r"\bin\s+[A-Za-z_]", st.step.text or ""):
+                    qs.extend(hyp_rewrite_queries(g, loc, maxn=3))
                 if FWD:
                     for pat in hyp_queries(g, loc, maxn=FWDN):
                         qs.append(f"SearchPattern ({pat}).")
