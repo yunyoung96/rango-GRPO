@@ -272,6 +272,72 @@ v10 은 이미 sentence DB 폴백으로 stdlib gold 를 찾아 끼우므로
 
 ---
 
+## 4.6. ★ stdlib gold 를 빼고 — 필터가 다룰 수 있는 스텝만 놓고 보면
+
+§4.5 에서 stdlib gold 는 지금 풀에 아예 없어 필터로 손댈 수 없다는 것이 드러났다.
+그 몫을 빼고 **필터가 실제로 다룰 수 있는 스텝만** 남기면 판정이 달라지는지 봤다.
+
+> stdlib 판정은 **선언의 `file_path`**(`lib/coq/theories`)로 한다 — `PremiseFilter` 가
+> 쓰는 것과 같은 기준이다. 이름 집합(`data/stdlib_names.json`)으로 하면 프로젝트가
+> 같은 이름을 재선언한 경우와 안 갈린다.
+
+스텝 구성: **TEST 비-stdlib 76% · stdlib 24%** / **TRAIN 비-stdlib 71% · stdlib 29%**
+
+### ① 남는 비율 — 절반쯤이다
+
+| | 풀 | 후보 | 필터 후 | **남음** |
+|---|---|---|---|---|
+| **TEST · 비-stdlib gold** | 지금 (proj-thm) | 2,081 | 1,014 | **48.7%** |
+| | stdlib 포함 | 14,559 | 7,629 | 52.4% |
+| **TRAIN · 비-stdlib gold** | 지금 | 1,385 | 513 | **37.1%** |
+| | stdlib 포함 | 7,603 | 4,130 | 54.3% |
+
+**2.0~2.7배 축소**다. 후보를 10배로 줄이는 그림이 아니다 —
+건전하게(확실할 때만) 쳐내면 이 정도가 한계다.
+
+### ② gold 생존 — **여전히 100% 가 아니다**
+
+| | 지금 풀 | stdlib 포함 풀 |
+|---|---|---|
+| **TEST · 비-stdlib gold** | **91.2%** (218/239) | 91.2% (219/240) |
+| TEST · stdlib gold | 87.5% (7/8)\* | **59.2%** (45/76) |
+| **TRAIN · 비-stdlib gold** | **70.3%** (90/128) | 70.8% (102/144) |
+| TRAIN · stdlib gold | — (0/0)\* | **50.0%** (29/58) |
+
+\* 지금 풀에는 stdlib 이 없으므로 판정 대상이 거의 없다.
+
+**stdlib gold 를 빼도 gold 을 9%(TEST) · 30%(TRAIN) 떨어뜨린다.**
+stdlib gold 쪽이 훨씬 나쁜 것(59.2% / 50.0%)은 예상대로다 —
+stdlib lemma 는 다형성이 강하고 암묵 인자가 많아 §2 의 elaboration 격차가 더 크다.
+
+### ③ 떨어뜨린 비-stdlib gold — 순위가 이미 최상위였다
+
+```
+TEST                                              TRAIN
+  lookup_helper_correct_1   apply    tf-idf 0위     fin_transpose_last_with_last  rewrite  0위
+  bitwise_binop_shl         apply           2위     diamond                       apply    1위
+  record_globdefs_sound     apply           4위     fin_transpose_last_with_last  apply    1위
+  Genv.find_funct_ptr_iff   rewrite        55위     exd_not_nil                   apply    5위
+  val_inject_list_lessdef   rewrite       110위     gpaco12_base                  apply    8위
+```
+
+§2 와 같은 그림이다 — **tf-idf 가 이미 0~5위에 올려놓은 것을 필터가 버린다.**
+`bitwise_binop_shl` 은 [assert_reality.md](../v9/checkpoint25000/assert_reality.md) 에서
+모델이 signature 를 100% 그대로 베껴 assert 했던 바로 그 lemma다.
+
+### 결론 — stdlib 을 빼도 쓸 수 없다
+
+| | 목표 | 실측 |
+|---|---|---|
+| gold 생존 | **100%** | 91.2% (TEST) · 70.3% (TRAIN) |
+| 축소 | 클수록 좋음 | 2.0~2.7배 |
+
+**"stdlib 때문에 필터가 안 되는 것"이 아니다.** stdlib gold 를 빼도 TEST 9% ·
+TRAIN 30% 를 떨어뜨리고, 축소는 절반에 그친다. §2 의 진단이 그대로 유효하다 —
+**출력된 텍스트로는 elaboration 격차를 못 넘는다.**
+
+---
+
 ## 5. 그래도 하려면 — 전제조건
 
 **elaborate 된 타입을 확보해야 한다.** 지금은 원본 `.v` 13GB 를 복구해 뒀으므로
@@ -300,7 +366,10 @@ gold 를 안 떨어뜨린다.
 
 ## 6. 결론
 
-0. **stdlib 을 풀에 넣는 것도 CompCert 에서는 안 된다** (§4.5).
+0. **stdlib gold 를 빼고 봐도 못 쓴다** (§4.6) — gold 생존 91.2%(TEST) · 70.3%(TRAIN),
+   축소는 2.0~2.7배. 떨어뜨리는 것이 tf-idf 0~5위였던 것들이다.
+   즉 "stdlib 때문에 안 되는 것"이 아니다.
+0'. **stdlib 을 풀에 넣는 것도 CompCert 에서는 안 된다** (§4.5).
    도달성은 +16.9pp 오르는데 top-100 은 +0.4pp 뿐이고(방해꾼 11,356개에 묻힌다),
    비용은 **11.1배**(노드 예산의 3.4% → 38.0%)다. 필터로 줄이려 하면 gold 을
    16~35% 잃는다. TRAIN 에서는 +12.6pp 로 되지만 평가 대상이 아니다.
@@ -336,6 +405,11 @@ for s in 0 1 2 3; do
   SP_SPLIT=TEST SP_N=200 SP_SHARD=$s SP_NSHARD=4 python3 scripts/stdlib_pool_eval.py &
 done; wait
 SP_SPLIT=TRAIN SP_N=150 python3 scripts/stdlib_pool_eval.py
+
+# D. stdlib gold 를 빼고 (§4.6)
+for s in 0 1 2 3; do
+  FN_SPLIT=TEST FN_N=200 FN_SHARD=$s FN_NSHARD=4 python3 scripts/filter_nonstdlib_eval.py &
+done; wait
 ```
 
 원자료: `all_log/applic_filter_s{0,1,2}.jsonl` · `all_log/sprank2_{test,train}_s*.jsonl`
