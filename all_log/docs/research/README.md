@@ -11,4 +11,4 @@
 |---|---|---|
 | [train-dataset-recovery.md](train-dataset-recovery.md) | TRAIN 원본 `.v` 를 복구할 방법이 있나 | **있다.** `splits/commits.json` 이 열쇠 — 실제로 96.1% 복구(13GB) |
 | [classical-lemma-retrieval.md](classical-lemma-retrieval.md) | `rewrite`/`apply` 할 lemma 를 찾는 고전(비-LLM) 연구가 있나 | **있다.** 두 갈래 — 관련성 랭킹(TF-IDF·MePo·MaSh) 과 **적용가능성 색인**(지문/판별트리). 우리 문제는 후자인데 전자 도구로 풀고 있다 |
-| [applicability-filter.md](applicability-filter.md) | 적용가능성으로 먼저 거르고 점수를 매기면 gold 가 더 실리나 | **음성.** top-100 −10.8pp / −1.4pp. 원인은 자료구조가 아니라 **elaboration**. stdlib 을 풀에 넣는 것도 CompCert 에선 +0.4pp 뿐이고 비용 11배 |
+| [applicability-filter.md](applicability-filter.md) | 적용가능성으로 먼저 거르고 점수를 매기면 gold 가 더 실리나 | **음성 (5판본).** 최선이 gold 생존 87.0% · 축소 2.0배. elaborate 색인을 만들어도(CompCert 18초) 못 넘는다 — 벽은 Coq tactic 의미론 + goal 이 출력 형태인 것 |

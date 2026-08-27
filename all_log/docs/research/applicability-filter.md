@@ -3,9 +3,14 @@
 > 제안: tf-idf 로 점수를 매기기 **전에** 판별트리(discrimination tree) 류 색인으로
 > "실제로 적용 가능한" premise 만 남기고, 그 안에서만 점수를 매긴다.
 >
-> 답: **발상은 맞다. 그런데 지금 우리 데이터로는 손해다.**
-> 두 가지로 구현해 CompCert 74 스텝에 걸었고 **둘 다 top-100 진입률이 떨어졌다.**
-> 이유는 자료구조가 아니라 **elaboration** 이다(§2).
+> 답: **발상은 맞다. 다섯 판본을 만들어 봤지만 전부 gold 을 흘리고 축소는 ~2배에 그친다.**
+>
+> ★ **§2 의 초기 진단은 정정됐다** — 앞선 실패의 90%는 elaboration 이 아니라
+> **내 필터의 버그**(전칭 변수를 경직 상수로 취급, notation 미전개)였다(§4.7).
+> `Set Printing All` 로 elaborate 색인을 실제로 만들어(CompCert 18초, §4.9)
+> 버그를 고쳐 가며 세 번 다시 쟀지만, **gold 생존 87.0% · 축소 2.0배**로
+> 텍스트 기준(94.6%)을 못 넘었다(§4.8). 남은 벽은 **Coq 의 tactic 의미론**과
+> **goal 이 여전히 출력 형태라는 점**이다.
 >
 > 문헌 쪽 배경은 [classical-lemma-retrieval.md](classical-lemma-retrieval.md) §3 —
 > 거기서 지문색인을 **1순위**로 꼽았었다. 이 문서가 그 권고의 실측이다.
@@ -338,6 +343,161 @@ TRAIN 30% 를 떨어뜨리고, 축소는 절반에 그친다. §2 의 진단이 
 
 ---
 
+## 4.7. ★★ **정정** — 앞선 실패의 90%는 elaboration 이 아니라 내 구현 버그였다
+
+§2 에서 "원인은 elaboration 이라 자료구조를 바꿔도 안 된다" 고 썼다. **과했다.**
+떨어뜨린 gold 를 하나씩 분류하니 대부분 **내가 만든 필터의 버그**였다.
+
+### 원인 분류 (TEST · 비-stdlib gold 중 떨어뜨린 21건)
+
+| 원인 | 건수 | |
+|---|---|---|
+| **① 결론 머리가 전칭 변수인데 경직 상수로 봤다** | 10 | **47.6%** |
+| **② 중위 notation — 진짜 머리를 못 뽑았다** | 9 | **42.9%** |
+| ④ 진짜 elaboration 불일치 | 2 | 9.5% |
+
+**90% 가 구현 버그다.**
+
+### ① 전칭 변수 vs 경직 상수 — 단일화의 기본
+
+단일화에서 이름은 두 종류로 갈린다.
+
+```coq
+Lemma bitwise_binop_shl:
+  forall f f' x y n,        ← 여기 묶인 f, f', x, y, n = 전칭 변수
+    (...) -> f' false false = false ->
+    f (shl x n) (shl y n) = shl (f x y) n
+    ^                              ^
+    │                              └ shl = 경직 상수 (전역 Definition)
+    └ f = 전칭 변수
+```
+
+| | 뜻 | 매칭 규칙 |
+|---|---|---|
+| **전칭 변수** (`forall` 로 묶인 것) | Coq 이 **자유롭게 골라 채울 자리**. 메타변수 | **무엇과도 매칭** |
+| **경직 상수** (전역 정의·생성자) | Coq 이 **바꿀 수 없는 것** | **똑같아야 매칭** |
+
+goal 이 `and (shl x n) (shl y n) = shl (and x y) n` 일 때 Coq 은 `f := and` 로 채운다.
+**`f` 가 전칭 변수라 `and` 든 `or` 든 된다.**
+
+판별트리가 하는 일이 정확히 이 구분이다 — **전칭 변수는 `*`(와일드카드)로 색인**하고
+`*` 는 무엇과도 매칭된다. 경직 상수만 정확히 맞춰 본다.
+**내 필터는 이 구분을 안 했다.** `f` 를 경직 상수로 보고 "goal 머리는 `and` 인데
+lemma 머리는 `f` 니 불가능" 이라며 버렸다. tf-idf 2위였던 것을.
+
+### ② notation — 진짜 머리는 `=` 다
+
+```coq
+Lemma record_globdefs_sound: forall dm id gd,
+  (record_globdefs dm)!id = Some gd -> dm!id = Some gd.
+                                       ^^^^^^^^^^^^^^^ 결론은 **등식**
+```
+
+진짜 머리는 `eq` 인데 내 코드는 첫 식별자 `dm`(전칭 변수!)을 머리로 잡았다.
+`!` 는 `PTree.get` 의 notation 이다. `Set Printing All` 을 걸면 펼쳐진다:
+
+```coq
+@eq (option globdef) (@Maps.PTree.get globdef id (record_globdefs dm)) (@Some globdef gd)
+^^^ 머리 = eq
+```
+
+### elaborate 색인은 실제로 만들었다
+
+`scripts/extract_elaborated.py` — 모듈마다 `Set Printing All. Require Import M.
+Search _ inside M.` 한 번. **CompCert 179/179 모듈 · 22,163 항목 · 18초.**
+
+```coq
+Int.and_shl
+  : forall x y n : Int.int,
+    @eq Int.int (Int.and (Int.shl x n) (Int.shl y n)) (Int.shl (Int.and x y) n)
+```
+
+앞서 떨어뜨린 것들의 머리가 전부 제대로 나온다:
+
+| lemma | 텍스트 기준 머리 | **elaborate 기준 머리** |
+|---|---|---|
+| `bitwise_binop_shl` | `f` (전칭 변수) | **`eq`** |
+| `record_globdefs_sound` | `dm` (전칭 변수) | **`eq`** |
+| `lookup_helper_correct_1` | `globs` (전칭 변수) | **`eq`** |
+| `reachable_right` | (인자 개수 불일치) | 섹션 변수가 **명시 바인더**로 방출됨 |
+
+---
+
+## 4.8. 고쳐서 다시 재 봤다 — **그래도 못 쓴다**
+
+elaborate 색인으로 필터를 다시 짜고 버그를 하나씩 잡아 가며 세 번 측정했다
+(TEST 247 스텝, 같은 조건).
+
+| | gold 생존 | 축소 | 고친 것 |
+|---|---|---|---|
+| A 정밀 매처 (텍스트) | 83.8% | 2.6배 | — |
+| B 건전 지문 (텍스트) | **94.6%** | 2.0배 | — |
+| C elaborate v1 | 78.9% | 1.8배 | 바인더 추적 + notation 펼침 |
+| D elaborate v2 | 77.7% | 2.4배 | `rewrite` 는 **좌·우변** 매칭 (`eq`/`iff` 자체가 아니라) |
+| E elaborate v3 | **87.0%** | 2.0배 | `apply L in H`(전방추론) 면제 + 스코프별 notation 표 |
+
+**세 번 고쳐도 텍스트 기준 B(94.6%)를 못 넘고, 축소는 어느 판본이든 ~2배다.**
+
+### 왜 계속 새나 — 남은 실패가 말해 준다
+
+```
+떨굼 forward_simulation_star_wf   apply    요구키={eq}
+떨굼 senv_preserved               apply    요구키={equiv}
+떨굼 val_inject_lessdef           apply    요구키={iff}
+떨굼 ZofB_range_Bconv             rewrite  요구키={sig}
+```
+
+`val_inject_lessdef` 의 결론은 `iff A B` 다. **`apply` 로 `iff` 를 쓰면 Coq 이 쪼개
+준다** — goal 은 `A` 나 `B` 지 `iff` 가 아니다. 즉 "결론 머리가 goal 에 있어야 한다"는
+규칙 자체가 이 경우 **틀렸다.** `equiv`(setoid), `sig`(의존합), 변환(`delta`/`iota`)도
+각각 다른 규칙을 요구한다.
+
+> **올바른 필터를 쓰는 것은 Coq 의 tactic 의미론을 다시 구현하는 일이다.**
+> `apply` · `apply … in` · `rewrite` · `rewrite … in` · `eapply` 가 전부 다른 매칭
+> 규칙을 쓰고, 그 위에 변환·coercion·타입클래스 해소가 얹힌다.
+> Coq 자신이 `Hint` DB 색인을 **Coq 안에서** 하는 이유가 이것이다 —
+> elaboration 과 conversion 에 접근할 수 있는 곳이 거기뿐이다.
+
+### 그리고 아직 **goal 은 출력 형태**다
+
+elaborate 한 것은 **lemma 타입뿐**이다. goal 은 증명 상태에서 오므로 여전히
+`dm!id = Some gd` 같은 출력 형태다. 색인은 `@eq (option globdef) (@Maps.PTree.get …)`
+인데 goal 은 `!` 표기라, 그 경계를 넘는 비교는 본질적으로 헐겁다.
+제대로 하려면 **탐색 중 goal 도 `Set Printing All` 로 받아야** 한다
+(라이브 Coq 세션이라 가능은 하다 — `ProofManager` 가 이미 Coq 과 말한다).
+그러면 프롬프트에 실을 goal 과 색인용 goal 을 **따로** 관리해야 한다.
+
+---
+
+## 4.9. `Set Printing All` 추출 견적 — 생각보다 싸다
+
+| 대상 | 규모 | 실측 |
+|---|---|---|
+| **CompCert** (평가 대상) | 179 모듈 | **18초** · 22,163 항목 |
+| 모듈당 | — | 중앙 0.56s · 최대 1.0s |
+| TEST+VAL+CUTOFF 20 프로젝트 | ~700 모듈 | ~1분 (6병렬) |
+
+### TRAIN 은 빌드가 관문인데 — **98% 가 뚫린다**
+
+2,182 저장소가 2023-11 커밋에 고정돼 제각기 다른 Coq 을 요구하는데 여기는 8.18 하나뿐이다.
+그래서 **"일부라도"** 전략을 썼다 — `make` 를 짧은 timeout 으로 걸고, 실패하면
+**의존이 적은 `.v` 부터 개별 `coqc`**. 프로젝트당 몇 파일이라도 `.vo` 가 생기면
+그 모듈의 elaborate 타입은 뽑힌다(색인은 lemma 단위라 부분 성공이 그대로 값이 된다).
+
+실측(`scripts/build_train_projects.py` · 프로젝트당 90초 상한 · 5병렬):
+
+| | |
+|---|---|
+| **`.vo` 가 하나라도 생긴 프로젝트** | **98.1%** (1,087/1,108, 진행 중) |
+| `make` 로 성공 | 437 |
+| 개별 `coqc` 로 일부만 | 650 |
+| **`.v` 커버리지** | **14.2%** (9,124 / 64,177) |
+
+프로젝트는 거의 다 뚫리는데 **파일은 14%** 다 — 의존이 깊은 파일이 안 된다.
+전량(2,182)은 **약 6시간**(5병렬, 프로젝트당 90초 상한) 규모다.
+
+---
+
 ## 5. 그래도 하려면 — 전제조건
 
 **elaborate 된 타입을 확보해야 한다.** 지금은 원본 `.v` 13GB 를 복구해 뒀으므로
@@ -375,12 +535,19 @@ gold 를 안 떨어뜨린다.
    16~35% 잃는다. TRAIN 에서는 +12.6pp 로 되지만 평가 대상이 아니다.
 1. **발상은 맞다.** 문헌이 이 방향을 지지하고([classical-lemma-retrieval.md](classical-lemma-retrieval.md) §3),
    실제로 순위가 오르는 스텝이 32% 있다.
-2. **그런데 지금 데이터로는 손해다.** 두 구현 모두 top-100 진입률이 떨어졌다
-   (−10.8pp / −1.4pp). gold 를 83.8% / 94.6% 밖에 못 지킨다.
-3. **원인은 자료구조가 아니라 elaboration** 이다. 출력된 텍스트끼리 맞추는 한
-   판별트리·치환트리·지문색인 어느 것을 써도 같은 벽이다.
-4. **전제조건은 elaborate 된 항**이고, 그건 Coq 을 프로젝트마다 돌려야 얻는다.
-5. **그보다 먼저 볼 표적**은 gold 이 풀에 아예 없는 **43%** 다.
+2. **다섯 판본 전부 못 쓴다.** 최선이 gold 생존 87.0% · 축소 2.0배다(§4.8).
+   축소가 ~2배에 묶이는 것은 판본과 무관하다 — 건전하게 쳐내면 그 정도가 한계다.
+3. **초기 진단(§2)은 틀렸다.** 실패의 90%는 elaboration 이 아니라 **내 구현 버그**였다
+   (전칭 변수를 경직 상수로 취급 47.6% · notation 미전개 42.9%, §4.7).
+4. **elaborate 색인은 싸게 만들어진다** — CompCert 179모듈 18초(§4.9).
+   TRAIN 도 "일부라도" 전략으로 **프로젝트 98.1%** 가 뚫린다(파일은 14.2%).
+5. **그런데 색인을 만들어도 안 됐다.** 남은 벽 둘:
+   · **Coq 의 tactic 의미론** — `apply`/`apply … in`/`rewrite`/`eapply` 가 매칭 규칙이
+     전부 다르고, `iff` 결론을 `apply` 하면 Coq 이 쪼갠다. 올바른 필터 = Coq 재구현.
+   · **goal 이 여전히 출력 형태** — lemma 만 elaborate 했다. 제대로 하려면 탐색 중
+     goal 도 `Set Printing All` 로 받아야 하고, 프롬프트용 goal 과 색인용 goal 을
+     따로 관리해야 한다.
+6. **그보다 먼저 볼 표적**은 gold 이 풀에 아예 없는 **43%** 다(§4).
 
 ---
 
