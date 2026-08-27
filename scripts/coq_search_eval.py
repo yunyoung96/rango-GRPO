@@ -40,7 +40,7 @@ from pathlib import Path
 from coqstoq import Split as CSSplit, get_theorem
 from data_management.sentence_db import SentenceDB
 from evaluation.find_coqstoq_idx import get_thm_desc
-from premise_selection.coq_query import ladder, rewrite_targets, local_names, hyp_queries, symbol_queries, hyp_rewrite_queries
+from premise_selection.coq_query import ladder, rewrite_targets, local_names, hyp_queries, symbol_queries, hyp_rewrite_queries, elab_subterms
 
 N = int(os.environ.get("CS_N", "120"))
 JOBS = int(os.environ.get("CS_JOBS", "4"))
@@ -198,7 +198,11 @@ if __name__ == "__main__":
                 # ★ elaborate 형에서도 기호를 뽑는다 — notation 이 가린 상수(`**`→sepconj)
                 _eg = ELABG.get((i, k))
                 if _eg:
-                    qs.extend(symbol_queries(elab_concl(_eg), loc, maxn=5))
+                    _ec = elab_concl(_eg)
+                    qs.extend(symbol_queries(_ec, loc, maxn=5))
+                    # ★ 부분항도 elaborate 형에서 뽑는다 — 괄호·notation·if 안쪽이 다 보인다
+                    for _t in elab_subterms(_ec, maxn=6):
+                        qs.append(f"SearchRewrite {_t}.")
                 for pat in rewrite_targets(g.goal, loc, maxn=2):
                     qs.append(f"SearchRewrite ({pat}).")
                 # ★ `rewrite L in H` — 가설 **안**을 재작성하므로 가설 기호로도 쏜다
@@ -239,7 +243,7 @@ if __name__ == "__main__":
                     S[f"누적L{a} 지점"] += 1; S[f"누적L{a} 적중"] += h; S[f"누적L{a} 후보"] += nc
                 T.append(r["sec"])
                 r.update(gold=m["gold"], tac=m["tac"], hit=hit, first=firsthit,
-                         nfound=len(allf))
+                         nfound=len(allf), found=sorted(allf))
                 r.pop("levels", None)
                 fo.write(json.dumps(r, ensure_ascii=False) + "\n")
             if err: S["실패"] += 1

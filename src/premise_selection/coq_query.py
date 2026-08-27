@@ -355,3 +355,52 @@ def hyp_rewrite_queries(goal, locals_: set, maxn: int = 3) -> list:
         if len(out) >= maxn * 3:
             break
     return out[:maxn * 3]
+
+
+def elab_subterms(elab_goal_concl: str, maxn: int = 8) -> list:
+    """**elaborate 된** goal 결론에서 부분항을 뽑는다 — `SearchRewrite` 대상용.
+
+    ★ 출력형 goal 에서 뽑으면 세 가지를 놓친다(실측):
+        · 괄호 안 친 최상위 적용 (`Int.and x y`)
+        · notation 이 가린 구조 (`P ** Q` 는 괄호가 없다 — 실은 `sepconj P Q`)
+        · `if … then … else` 안쪽 (rewrite ZMap.gi 가 후보 0 이던 원인)
+      elaborate 형은 **완전히 괄호가 쳐진 적용**이라 이 셋이 다 풀린다.
+
+    적용 노드마다 `(f a b …)` 를 만들고, 인자를 `?z` 로 바꾼 **1단 추상**도 같이 낸다
+    (redex 는 대개 인자가 구체적이지 않다).
+    """
+    from premise_selection.fingerprint import parse as _parse
+    n = _parse(elab_goal_concl)
+    if n is None:
+        return []
+    nodes: list = []
+
+    def walk(t, d=0):
+        if t is None or d > 8:
+            return
+        if t[0] == "app":
+            nodes.append(t)
+            walk(t[1], d + 1)
+            for a in t[2]:
+                walk(a, d + 1)
+    walk(n)
+
+    def emit(t):
+        if t[0] == "atom":
+            return t[1]
+        return "(" + emit(t[1]) + " " + " ".join(emit(a) for a in t[2]) + ")"
+
+    out, seen = [], set()
+    # 큰 것부터 — redex 는 보통 중간 크기라 양쪽을 고루 담는다
+    nodes.sort(key=lambda t: -len(emit(t)))
+    for t in nodes:
+        s1 = emit(t)
+        if not (6 < len(s1) < 240):
+            continue
+        for cand in (s1,
+                     "(" + emit(t[1]) + " " + " ".join(f"?z{i}" for i in range(len(t[2]))) + ")"):
+            if cand not in seen and _SAFE.match(cand):
+                seen.add(cand); out.append(cand)
+        if len(out) >= maxn:
+            break
+    return out[:maxn]
