@@ -327,6 +327,11 @@ Vampire 쪽은 code tree(Riazanov & Voronkov, JELIA 2002).
 
 ## 7. 우리한테 무엇을 쓸 수 있나 — 우선순위
 
+> **★ 실측 후기 (2026-08-27)** — 아래 1순위(지문색인을 `rewrite`/`apply` 후보 필터로)를
+> 실제로 걸어 봤다. **음성이다** — top-100 진입률이 −10.8pp / −1.4pp.
+> 원인은 자료구조가 아니라 **elaboration**(암묵인자·섹션변수·notation·evar)이다.
+> 전문: [applicability-filter.md](applicability-filter.md)
+
 1. **지문 색인(fingerprint index)을 `rewrite` 후보 필터로** (§3-2).
    6개 위치 벡터 + matching 표. goal 부분항 집합에 대해 좌변이 매칭 **불가능한** lemma 를
    먼저 쳐낸다. `rewrite` INVALID 의 87% 가 이 한 판정에 걸린다.
