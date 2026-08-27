@@ -40,7 +40,7 @@ from pathlib import Path
 from coqstoq import Split as CSSplit, get_theorem
 from data_management.sentence_db import SentenceDB
 from evaluation.find_coqstoq_idx import get_thm_desc
-from premise_selection.coq_query import ladder, rewrite_targets, local_names, hyp_queries, symbol_queries, hyp_rewrite_queries, elab_subterms
+from premise_selection.coq_query import ladder, rewrite_targets, local_names, hyp_queries, symbol_queries, hyp_rewrite_queries, elab_subterms, wide_queries, notation_queries
 
 N = int(os.environ.get("CS_N", "120"))
 JOBS = int(os.environ.get("CS_JOBS", "4"))
@@ -49,7 +49,9 @@ MAXPT = int(os.environ.get("CS_MAX_PER_THM", "3"))
 LEVELS = int(os.environ.get("CS_LEVELS", "3"))   # 사다리 단수
 RWN = int(os.environ.get("CS_RWN", "4"))
 FWD = os.environ.get("CS_FWD", "1") == "1"    # 전방추론 질의
-FWDN = int(os.environ.get("CS_FWDN", "3"))         # rewrite 부분항 개수
+FWDN = int(os.environ.get("CS_FWDN", "3"))
+WIDE = os.environ.get("CS_WIDE", "1") == "1"   # 최대 재현율 모드
+WIDEN = int(os.environ.get("CS_WIDEN", "8"))         # rewrite 부분항 개수
 OUT = os.environ.get("CS_OUT", "all_log/coq_search.jsonl")
 CC = "CoqStoq/test-repos/compcert"
 t = open(os.path.join(CC, "_CoqProject"), errors="ignore").read().split()
@@ -131,13 +133,29 @@ def run(job):
                            capture_output=True, text=True, timeout=TMO)
         dt = time.time() - t0
         out = p.stdout or ""
+        # ★ 질의가 **하나라도 오류**를 내면 Coq 이 그 시점에 파일 처리를 중단한다 —
+        #   뒤 질의가 전부 죽어 `후보 0` 이 된다. 몇 개가 실행됐는지와 오류를 남긴다.
+        _emitted = sum(len(v) for v in queries.values())
+        _ran = len(re.findall(r"@@@\d+#L\d+", out))
+        _err = " ".join((p.stderr or "").split())[:300]
         blocks = re.split(r"@@@(\d+)#L(\d+)\s*", out)
         per = {}
         for a in range(1, len(blocks) - 2, 3):
             k, lv = int(blocks[a]), int(blocks[a + 1])
-            names = re.findall(r"(?m)^(\w[\w'.]*):", blocks[a + 2])
-            per.setdefault(k, {})[lv] = sorted(set(names))
-        recs = [{"idx": i, "k": k, "levels": v, "sec": dt} for k, v in per.items()]
+            # ★ 이름만 뽑지 말고 **타입까지** 가져간다.
+            #   `Search` 출력이 `name: type` 이라 선언문이 이미 거기 있다.
+            #   이름만 두면 나중에 sentence DB 로 되찾아야 하는데, 검색은 전역 환경
+            #   (Coq stdlib 포함)에서 뽑으므로 **대부분 못 찾는다**
+            #   (실측: 5,000개 중 189개만 복원 = 병목이 검색이 아니라 조회였다).
+            blk = blocks[a + 2]
+            items = {}
+            for m2 in re.finditer(r"(?m)^(\w[\w'.]*):[ \t]*(.*(?:\n[ \t]+.*)*)", blk):
+                nm2, ty2 = m2.group(1), " ".join(m2.group(2).split())
+                if nm2 and nm2 not in items:
+                    items[nm2] = ty2
+            per.setdefault(k, {})[lv] = items
+        recs = [{"idx": i, "k": k, "levels": v, "sec": dt,
+                 "ran": _ran, "emitted": _emitted, "err": _err} for k, v in per.items()]
         return i, recs, None if recs else (p.stderr or "")[:150]
     except subprocess.TimeoutExpired:
         return i, [], "timeout"
@@ -214,6 +232,15 @@ if __name__ == "__main__":
                 if not qs:
                     for pat in ladder(g.goal, loc, max_levels=LEVELS):
                         qs.append(f"SearchPattern ({pat}).")
+            # ★ 최대 재현율 모드 — 기호 하나씩 넓게. 목표가 "포함률 100%" 일 때 쓴다.
+            if WIDE:
+                qs.extend(wide_queries(g.goal, loc, g.hyps, maxsym=WIDEN))
+                _eg2 = ELABG.get((i, k))
+                if _eg2:
+                    qs.extend(wide_queries(elab_concl(_eg2), loc, None, maxsym=WIDEN))
+            # ★ **위험 질의는 맨 뒤로.** 오류 나면 Coq 이 파일 처리를 중단하므로
+            #   앞에 두면 뒤 질의를 통째로 잃는다(실측: 사망 84건 중 29건이 notation).
+            qs.extend(notation_queries(g.goal, loc, maxn=2))
             queries[k] = qs
             meta[(i, k)] = dict(gold=NAMED.search(st.step.text).group(1),
                                 tac="rewrite" if tac.endswith("rewrite") else "apply",
@@ -230,8 +257,13 @@ if __name__ == "__main__":
                 gb = m["gold"].split(".")[-1]
                 lv = {int(a): b for a, b in r["levels"].items()}
                 allf, cum, firsthit = set(), [], None
+                types = {}
                 for a in sorted(lv):
-                    allf |= set(lv[a])
+                    _b = lv[a]
+                    if isinstance(_b, dict):
+                        allf |= set(_b); types.update(_b)
+                    else:
+                        allf |= set(_b)
                     h = any(x == m["gold"] or x.split(".")[-1] == gb for x in allf)
                     cum.append((a, len(allf), h))
                     if h and firsthit is None: firsthit = a
@@ -243,7 +275,8 @@ if __name__ == "__main__":
                     S[f"누적L{a} 지점"] += 1; S[f"누적L{a} 적중"] += h; S[f"누적L{a} 후보"] += nc
                 T.append(r["sec"])
                 r.update(gold=m["gold"], tac=m["tac"], hit=hit, first=firsthit,
-                         nfound=len(allf), found=sorted(allf))
+                         nfound=len(allf), found=sorted(allf),
+                         types={k2: v2 for k2, v2 in types.items() if v2})
                 r.pop("levels", None)
                 fo.write(json.dumps(r, ensure_ascii=False) + "\n")
             if err: S["실패"] += 1

@@ -149,11 +149,18 @@ def ladder(goal: str, locals_: set, max_levels: int = 3) -> list:
 
     sc = scope_of(goal)
     goal = strip_outer(goal)
+    # ★ 안전망 — goal 안쪽 바인더는 **절대** 추상화하지 않는다.
+    #   `forall ?x, …` / `fun ?x => …` 는 문법 오류이고, 한 번 나면 뒤 질의가 다 죽는다.
+    locals_ = set(locals_) - goal_binders(goal)
     l1 = abstract_locals(goal, locals_)
     add(l1)
     if max_levels < 2:
         return out
 
+    # ★ 앞에 `forall`/`exists` 가 붙어 있으면 그 전체가 한정 명제다 — 중위로 쪼개면
+    #   `(forall ?a0 …) = (…)` 같은 쓰레기가 나온다. 그 경우 2·3단은 만들지 않는다.
+    if re.match(r"^\s*(?:forall|exists|fun|let)\b", l1):
+        return out
     # 최상위 중위 연산을 찾아 좌·우변을 얻는다
     for op in INFIX:
         sp = _split_top(l1, op)
@@ -241,6 +248,13 @@ def local_names(goal) -> set:
         if not m:
             continue                      # 연속행 — 건너뛴다
         out |= set(re.findall(r"[A-Za-z_][\w']*", m.group(1)))
+    # ★★ goal **안쪽** 바인더(`exists (changed : bool) …` 의 changed)는 **빼야 한다.**
+    #   이것들은 goal 안에서 묶여 있으므로 lemma 가 채울 자리가 아니다 — **경직**이다.
+    #   `?x` 로 바꾸면 `forall ?x, …` · `fun ?x => …` 가 되어 **문법 오류**가 나고,
+    #   Coq 은 그 시점에 파일 처리를 중단해 **뒤 질의가 전부 죽는다**
+    #   (실측: 후보 0 인 23건 **전부**가 이것이었고, 첫 질의에서 죽어 19~51개를 잃었다).
+    #   대신 `Search` 인자에서는 빼야 하므로 그건 `goal_binders()` 를 따로 쓴다.
+    out -= goal_binders(getattr(goal, "goal", "") or "")
     return out
 
 
@@ -273,11 +287,18 @@ def hyp_queries(goal, locals_: set, maxn: int = 4) -> list:
 
 # ── 기호 결합 질의 ───────────────────────────────────────────────────────────
 _KW = {"forall", "exists", "fun", "let", "in", "match", "with", "end", "if", "then",
-       "else", "Prop", "Type", "Set", "True", "False", "return", "as", "of", "at", "by"}
+       "else", "Prop", "Type", "Set", "True", "False", "return", "as", "of", "at", "by",
+       "do", "ret", "check", "assertion"}
+_CHECK_GLOBALS = True   # Search 인자를 선언된 이름으로 제한 (오류 질의 차단)
 
 
 def rigid_syms(term: str, locals_: set, maxn: int = 6) -> list:
-    """goal 의 **경직 기호**(지역이 아닌 이름). 등장 순서를 유지한다."""
+    """`Search` 인자로 쓸 **전역 이름**. 등장 순서를 유지한다.
+
+    지역 이름과 **goal 안쪽 바인더**를 뺀다 — 바인더는 추상화 대상은 아니지만
+    전역도 아니라서 `Search <바인더>` 는 오류가 난다.
+    """
+    locals_ = set(locals_) | goal_binders(term)
     out = []
     for m in _QID.finditer(term):
         w = m.group(0)
@@ -285,6 +306,12 @@ def rigid_syms(term: str, locals_: set, maxn: int = 6) -> list:
             continue
         if w in locals_ or w in _KW or len(w) <= 1:
             continue
+        # ★ 실제로 선언된 이름만 쏜다 — 아니면 `Search` 가 오류를 내고
+        #   Coq 이 파일 처리를 중단해 **뒤 질의가 전부 죽는다**.
+        if _CHECK_GLOBALS:
+            kg = known_globals()
+            if kg and (w not in kg and w.split(".")[-1] not in kg):
+                continue
         if w not in out:
             out.append(w)
     return out[:maxn]
@@ -326,9 +353,29 @@ def symbol_queries(goal: str, locals_: set, maxn: int = 6, with_hyps=None) -> li
     for k in (3, 2):
         if len(syms) >= k:
             add("Search " + " ".join(syms[:k]) + " (?a = ?b).")
-    # ③ notation 문자열 — 진짜 상수 이름을 모를 때
-    for n in notas:
-        add(f'Search "{n}".')
+    return out
+
+
+def notation_queries(goal: str, locals_: set, maxn: int = 2) -> list:
+    """`Search "**"` — notation 문자열로 직접 묻는다. **위험 질의**다.
+
+    ★ 없는 notation 이면 `Unable to interpret "…" as a reference` 오류가 나고
+      Coq 이 파일 처리를 중단해 **뒤 질의가 전부 죽는다**
+      (실측: 질의 중간 사망 84건 중 **29건**이 이것).
+      그래서 다른 질의와 섞지 않고 **전체 목록의 맨 뒤**에 따로 붙인다 —
+      죽어도 잃는 것이 없게.
+    """
+    goal = strip_outer(goal)
+    notas = [m.group(1) for m in _NOTA.finditer(" " + goal + " ")]
+    out, seen = [], set()
+    for n in dict.fromkeys(notas):
+        if n in ("=", "->", ":", "-", "+", "*", "/") or len(n) < 2:
+            continue
+        q = f'Search "{n}".'
+        if q not in seen:
+            seen.add(q); out.append(q)
+        if len(out) >= maxn:
+            break
     return out
 
 
@@ -404,3 +451,107 @@ def elab_subterms(elab_goal_concl: str, maxn: int = 8) -> list:
         if len(out) >= maxn:
             break
     return out[:maxn]
+
+
+# ── 최대 재현율 모드 ─────────────────────────────────────────────────────────
+#
+#   목표가 "**전체 참조 가능 집합 → 필터 → gold 포함률 100%**" 로 좁혀지면
+#   후보 수는 부차적이다. 좁히는 질의만으로는 못 닿는 것들이 있고, 그때는
+#   **기호 하나씩** 넓게 쏴야 한다.
+#
+#   실측으로 남던 것들:
+#     · `rewrite sep_swap23`   결론이 `massert_eqv` — 기호 결합이 안 좁혀짐
+#     · `rewrite … in H`       가설 안을 재작성 — goal 기호로는 안 닿음
+#     · `rewrite <- (L …)`     역방향 + 항 적용
+#     · `apply L with (1:=H)`  전제 자리 지정
+
+def wide_queries(goal: str, locals_: set, hyps=None, maxsym: int = 10) -> list:
+    """**넓게** 쏘는 질의 — 기호 하나씩, 관계 무제약.
+
+    goal 기호 각각 + 가설 기호 각각. 후보는 많아지지만 **닿는다**.
+    """
+    out, seen = [], set()
+
+    def add(q):
+        if q not in seen:
+            seen.add(q); out.append(q)
+
+    for s in rigid_syms(strip_outer(goal), locals_, maxsym):
+        add(f"Search {s}.")
+    for h in (hyps or []):
+        m = _DECL_LINE.match(h)
+        ty = h[m.end():].strip() if m else ""
+        if not ty or len(ty) > 240:
+            continue
+        for s in rigid_syms(strip_outer(ty), locals_, 4):
+            add(f"Search {s}.")
+    return out
+
+
+# ── goal **안쪽** 바인더 · 전역 이름 검증 ─────────────────────────────────────
+_GBIND = [
+    re.compile(r"\bforall\s+([^,]{1,200}),"),
+    re.compile(r"\bexists\s*!?\s*([^,]{1,200}),"),
+    re.compile(r"\bfun\s+([^=]{1,200})=>"),
+    re.compile(r"\blet\s+([A-Za-z_][\w']*)"),
+    re.compile(r"\bdo\s+([A-Za-z_][\w']*)\s*<-"),
+    re.compile(r"\bmatch\s+.*?\bwith\b"),          # match 분기 변수는 아래 `|` 로
+]
+_MATCHARM = re.compile(r"\|\s*[A-Za-z_][\w'.]*\s+([^=>|]{1,80})=>")
+
+
+def goal_binders(term: str) -> set:
+    """goal **안쪽**에서 묶인 이름 — `exists (changed : bool) (e' : typenv), …` 의 changed·e'.
+
+    ★ 가설 목록(`hyps`)에만 있는 게 아니다. 이것들을 전역 상수로 착각하고
+      `Search changed.` 를 쏘면 **문법 오류**가 나고, Coq 은 그 시점에 파일 처리를
+      중단하므로 **뒤 질의가 전부 죽는다**(실측: `후보 0` 의 주범, 남은 실패의 56%).
+    """
+    out: set = set()
+    for rx in _GBIND[:5]:
+        for m in rx.finditer(term):
+            seg = m.group(1)
+            seg = re.sub(r":\s*[^)]*", "", seg)      # `(x : T)` 의 타입 제거
+            out |= set(re.findall(r"[A-Za-z_][\w']*", seg))
+    for m in _MATCHARM.finditer(term):
+        out |= set(re.findall(r"[A-Za-z_][\w']*", m.group(1)))
+    out.discard("")
+    return out
+
+
+_GLOBALS: Optional[set] = None
+GLOBALS_DB = "raw-data/coqstoq-test/coqstoq-test-sentences.db"
+GLOBALS_ELAB = "data/elab_compcert.jsonl"
+
+
+def known_globals() -> set:
+    """실제로 선언된 이름들. `Search` 인자를 여기에 대조해 **오류 질의를 막는다**."""
+    global _GLOBALS
+    if _GLOBALS is not None:
+        return _GLOBALS
+    g: set = set()
+    try:
+        import json as _json
+        if os.path.exists(GLOBALS_ELAB):
+            for ln in open(GLOBALS_ELAB):
+                ln = ln.strip()
+                if ln:
+                    n = _json.loads(ln)["name"]
+                    g.add(n); g.add(n.split(".")[-1])
+    except Exception:
+        pass
+    try:
+        import sqlite3 as _sq
+        c = _sq.connect(GLOBALS_DB); c.execute("PRAGMA query_only=1")
+        rx = re.compile(r"^\s*(?:Local\s+|Global\s+|Program\s+)?"
+                        r"(?:Lemma|Theorem|Definition|Corollary|Fixpoint|Inductive|Remark|"
+                        r"Proposition|Instance|Record|Axiom|Parameter|Fact|Property|Variable|"
+                        r"Class|CoFixpoint|Notation)\s+([A-Za-z_][\w']*)")
+        for (t,) in c.execute("SELECT text FROM sentence"):
+            m = rx.match(t or "")
+            if m:
+                g.add(m.group(1))
+    except Exception:
+        pass
+    _GLOBALS = g
+    return g
