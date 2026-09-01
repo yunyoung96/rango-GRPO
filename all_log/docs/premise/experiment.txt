@@ -2434,3 +2434,10 @@ premise 길이 편차가 극심하다 — 최소 16 · p25 43 · 중앙 147 · �
 - 3단(전체@10, TEST): ①쌩 14.0 → ②필터+tfidf 57.0 → ③r18 68.2
   = 필터·built-in 포함 +43.0pp · RRF 랭커 +11.2pp
 - 주의 명문화: §7 표의 "TFIDF(rango식)"은 필터 통과 풀 위의 tf-idf (②) — ①과 다름
+
+[2026-09-02 KST] 실적용 감사 (assert_succeeds · VAL 12지점 · 채널전원+비후보표본)
+- 정밀도: ap 96.6 · in 99.8 · rw 54.6 · rwh 88.4 (양방향·erewrite·Setoid 공정화 후)
+  감사 불공정 3연발 수리: 지점선택(intros전 배제)·erewrite·양방향 — rw 25.5→54.6
+- 위음성: ap 10.6 · in 26.1(관대한 eapply-in 탓 과대) · rw 9.4 · rwh 15.3
+- 판독: apply 계열 건전. rw 잔여 FP = binder아래/의존위치 (rewrite 불가 위치)
+- r19 후보: rw 커널 실검증 가지치기 (+33ms/노드로 정밀도 ~100%)
