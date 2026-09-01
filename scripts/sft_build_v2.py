@@ -127,9 +127,27 @@ def strip_qual(s):
     return _QUAL.sub(r"\1", s)
 
 # ── 지점 하나 ─────────────────────────────────────────────────────────────
+_REF = re.compile(r"\b(e?apply|e?rewrite|exact|eexact)\b([^;]*)")
+def ref_form(text, gold):
+    """복합 스텝 `t1; t2; apply L in H` 에서 **L 을 참조하는 하위 tactic** 의 형태 (apply/apply-in/rewrite/rewrite-in/exact).
+    수집기의 tac 은 머리(t1)만 보므로 뒷 세그먼트 참조는 채널을 못 잡는다 (실측 0.5%, 사용자 지적 2026-09-01)."""
+    gb = gold.split(".")[-1]
+    for m in _REF.finditer(text or ""):
+        seg = m.group(2)
+        if re.search(r"(?<![\w'.])" + re.escape(gb) + r"(?![\w'])", seg):
+            h = m.group(1); has_in = bool(re.search(r"\bin\b", seg.split(" by ")[0]))
+            if h.endswith("rewrite"): return "rewrite-in" if has_in else "rewrite"
+            if h in ("apply", "eapply"): return "apply-in" if has_in else "apply"
+            return "exact"
+    return None
+
+
 def build_point(r, stat):
     f = r.get("tac"); form_ch = FORM_CH.get(f)
     golds = SB.PR.golds_of(r); stmts = r.get("stmts") or {}
+    if golds and form_ch is None:              # 복합 스텝: 참조 하위 tactic 의 형태로 채널을 잡는다
+        rf = ref_form(r.get("gold_text") or "", golds[0])
+        if rf and FORM_CH.get(rf): f = rf; form_ch = FORM_CH[rf]; stat["복합스텝→참조형"] += 1
     dp = _dp_for(r["proj"], r["thm"])
     if dp is None: stat["dp없음"] += 1; return []
     thmi, k = r["thmi"], r["k"]

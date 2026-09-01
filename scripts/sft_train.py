@@ -77,6 +77,19 @@ class Guard(TrainerCallback):
 NAME_RE = re.compile(r"\b(?:e?apply|e?rewrite|exact|refine)\s+(?:<-\s*)?(?:\(\s*)?([A-Za-z_][\w'.]*)")
 
 
+class Milestone(TrainerCallback):
+    """★ DPO 라운드용 이정표 — milestone_steps(5000) 마다 체크포인트를 models/…/milestone-<step> 로 복사해 보존한다
+    (save_total_limit 순환에서 제외). DPO 는 이 이정표에서 lemma 참조 지점만으로 돌리고, 갱신 가중치를 체크포인트에
+    덮어쓴 뒤 스케줄을 이어서 재개한다 (design [4] DPO 절)."""
+    def __init__(self, every): self.every = every
+    def on_save(self, args, state, control, **kw):
+        if state.is_world_process_zero and self.every and state.global_step % self.every == 0:
+            import shutil
+            src = f"{args.output_dir}/checkpoint-{state.global_step}"; dst = f"{args.output_dir}/milestone-{state.global_step}"
+            if os.path.isdir(src) and not os.path.isdir(dst):
+                shutil.copytree(src, dst); print(f"  [milestone] {dst} 보존", flush=True)
+
+
 class Sampler(TrainerCallback):
     """★ 학습 중 **프롬프트→출력을 눈으로 보는** 감시 (사용자 요구): 고정 검증 프롬프트 K 개를 sample_steps 마다
     greedy 생성해 gold 와 나란히 jsonl 에 남긴다. 지표: 정확일치(EM) · 출력이 부른 프리미스 이름이 프롬프트 안에 있음(환각 아님)."""
@@ -153,7 +166,7 @@ def main():
     sampler = Sampler(tok, val, f"{odir}/samples.jsonl", every=(2 if SMOKE else int(CONF.get("sample_steps", 500))),
                       k=int(CONF.get("sample_k", 8)))
     trainer = Trainer(model=model, args=args, train_dataset=train, eval_dataset=val,
-                      data_collator=lambda b: collate(b, tok.pad_token_id), callbacks=[Guard(f"{odir}/trainlog.jsonl"), sampler])
+                      data_collator=lambda b: collate(b, tok.pad_token_id), callbacks=[Guard(f"{odir}/trainlog.jsonl"), sampler, Milestone(int(CONF.get("milestone_steps", 5000)))])
     # 재개: output_dir 에 checkpoint-* 가 있으면 거기서 이어간다 (감시자가 죽은 학습을 되살릴 때)
     resume = (not SMOKE) and "--resume" in sys.argv and any(d.startswith("checkpoint-") for d in os.listdir(odir))
     if resume and rank == 0: print("■ 체크포인트에서 재개", flush=True)

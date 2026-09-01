@@ -17,3 +17,6 @@ num_eval_examples: 200
 bf16: true
 gradient_checkpointing: true
 seed: 23
+milestone_steps: 5000
+sample_steps: 500
+sample_k: 8

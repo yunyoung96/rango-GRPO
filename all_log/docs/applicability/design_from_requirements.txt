@@ -322,6 +322,16 @@
 
 ■ 모델 선택 = **별도 문서** all_log/docs/applicability/model_selection.txt (이 문서는 실험 설계만 다룬다)
 
+■ DPO 운용 결정 (사용자 지시 2026-09-01 22:0x): **5,000 step 단위로 묶어, lemma 를 참조한 지점(case A/B)만** DPO.
+  · 이유: DPO 는 rollout + Coq 라벨링(3단: 실패 ≺ 적용성공·gold 미사용 ≺ gold 사용)이 무거워 전 지점은 불가.
+  · 기계: 학습기가 5,000 step 마다 milestone-<step> 체크포인트를 보존(Milestone 콜백) → DPO 라운드 = 그 이정표
+    가중치로 case A/B 프롬프트 표본에 rollout → Coq 라벨 → DPO 갱신 → 갱신 가중치를 체크포인트에 덮어쓰고
+    **스케줄(step·optimizer)을 이어서 재개**. 무참조 스텝은 SFT 만. 라운드 구현은 첫 이정표(≈5,000 step, DDP 20 s/step
+    기준 ≈28h) 전에 별도 스크립트로 준비.
+■ 복합 스텝 `t1; t2; apply L` (사용자 질문 2026-09-01 22:0x): 수집기 tac 은 머리(t1)만 보므로 뒷 세그먼트의 L 참조는
+  채널이 안 잡혔다. 실측(부분 풀 3,132행): 참조가 뒷 세그먼트인 행 17 (0.5%) — 나머지 '머리≠참조형' 806 은 unfold/case
+  머리(그외 계열)로 정상. → 물질화 v2 에 ref_form: L 을 참조하는 하위 tactic 의 형태로 채널을 잡아 case A/B 처리.
+
 ■ constructor 정보·변형 (사용자 질문 2026-09-01 21:5x):
   · [TYPES] 는 goal 의 가설 타입·결론 식별자에서 씨앗을 뽑아 inductive **정의문 전체(생성자 인자 포함)** 를 넣는다
     (augment v2, 예산 300토큰). 실측 40지점: [TYPES] 존재 33/40. 생성자 apply 표본은 1건뿐이라 커버리지는 전 지점
