@@ -283,6 +283,12 @@
            (남은 "논리경로 불일치"는 외부 라이브러리(paco·stdpp 등) 부재 — opam 변경 금지라 보류).
            TacTok(집합체)·HoTT·Priyanka·CompCert(held-out)·coq-art 사본은 배제.
        (b) 착수 2026-09-01 21:1x: scripts/collect_all.sh (워커 4 · 이어쓰기 · 로그 r19_v1_train_all.log).
+           **21:55 재시작 — 무참조 스텝 포함**: 첫 실행은 외부참조 스텝만 모았는데(2,968지점 표본에서 constructor·
+           split·intros 계열 0%), SFT 는 증명의 모든 수(intros·simpl·constructor·auto…)를 배워야 하고 v10 도 전 스텝을
+           학습했다. [B.0] 의 취지는 "프롬프트에 없는 lemma 를 쓰는 예제 배제"이지 "lemma 없는 스텝 배제"가 아니다.
+           → all 모드 = 외부참조 스텝 전부 + 무참조 스텝 정리당 ≤5(균등, gold=None, 필터는 동일하게 실행해 5블록 구성).
+           물질화에서 무참조 행은 case '-'(주입 없음). 외부참조만 모은 부분 결과 3,132행은
+           r11_pool_train_all_extonly_partial.jsonl 로 보관.
   ☑ ③물질화 v2 **구현·스모크 통과** (2026-09-01 20:2x, scripts/sft_build_v2.py):
      · 방식: rango GeneralFormatter+ProofPremiseCollator 를 그대로 태우고 **[PREMISES] 자리만
        5블록으로 치환** (allocate_and_fmt 를 프로세스 안에서 감쌈). [PROOFS](BM25 12)·[TYPES]/
@@ -315,6 +321,15 @@
      본학습 v11 (다른 서버) 착수
 
 ■ 모델 선택 = **별도 문서** all_log/docs/applicability/model_selection.txt (이 문서는 실험 설계만 다룬다)
+
+■ constructor 정보·변형 (사용자 질문 2026-09-01 21:5x):
+  · [TYPES] 는 goal 의 가설 타입·결론 식별자에서 씨앗을 뽑아 inductive **정의문 전체(생성자 인자 포함)** 를 넣는다
+    (augment v2, 예산 300토큰). 실측 40지점: [TYPES] 존재 33/40. 생성자 apply 표본은 1건뿐이라 커버리지는 전 지점
+    물질화 후 다시 잰다 (검사기 지표 추가 예정: gold 가 부르는 생성자가 [TYPES] 안에 있는 비율).
+  · 변형 규칙표 v2 (variant_gen.ctor_variants): constructor↔econstructor · split→constructor · left→constructor 1 ·
+    right→constructor 2 · `apply C`(C 가 생성자: 프로젝트 인덱스 27,012 + stdlib 곡선)→constructor/econstructor.
+    채택은 동일하게 **Qed 재실행**이 판정 (split→constructor 는 단일 생성자에서만 성립 등). 새 사이드카 .done2 로
+    전 정리 재방문, 중복 변형은 물질화 로더에서 제거. 21:58 재시작.
 
 ■ retrieval 채택 = **r19** (2026-09-01 결정 · versions/r19.md 결과표 근거):
   TEST 전체 @10 68.2→69.4 · rewrite-in 53.2→55.1 · 비용 +16ms(예산 내) ·
