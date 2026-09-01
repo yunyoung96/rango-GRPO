@@ -99,7 +99,9 @@ def eval_split(rows, W, idf, maxi, ranker):
             rk_eff = ranker
             if ranker == "piece":
                 rk_eff = "rrf" if c == "rwh" else "blend"
-            if rk_eff == "blend":
+            if ranker == "rrf0":
+                rk_eff = "rrf0"
+            if rk_eff in ("blend",):
                 sc = []
                 for n in names:
                     x = PR.pfeats(n, cs.get(n) or {}, gsz)
@@ -116,14 +118,17 @@ def eval_split(rows, W, idf, maxi, ranker):
                     na = math.sqrt(sum((v * idf.get(t, maxi)) ** 2 for t, v in gt.items()))
                     nb = math.sqrt(sum((v * idf.get(t, maxi)) ** 2 for t, v in stk.items()))
                     sc_tf.append(num / (na * nb) if na and nb else 0.0)
-                if rk_eff == "rrf":
+                if rk_eff in ("rrf", "rrf0"):
                     sc_bl = []
                     for n in names:
                         x = PR.pfeats(n, cs.get(n) or {}, gsz)
-                        stk2 = set(AR._TOK.findall(stmts.get(n) or ""))
-                        lx = sum(idf.get(t, maxi) for t in stk2 & gset) / gmass
-                        sc_bl.append(x[0] + W["beta"] * x[1] + W["lam"] * x[2]
-                                     + W["mu"] * x[3] + W["rho"] * lx)
+                        if rk_eff == "rrf0":
+                            sc_bl.append(x[0] + x[1] + x[2])   # 고정식(학습0)
+                        else:
+                            stk2 = set(AR._TOK.findall(stmts.get(n) or ""))
+                            lx = sum(idf.get(t, maxi) for t in stk2 & gset) / gmass
+                            sc_bl.append(x[0] + W["beta"] * x[1] + W["lam"] * x[2]
+                                         + W["mu"] * x[3] + W["rho"] * lx)
                     r1 = np.argsort(np.argsort(-np.array(sc_bl))) + 1
                     r2 = np.argsort(np.argsort(-np.array(sc_tf))) + 1
                     sc = list(1.0 / (60 + r1) + 1.0 / (60 + r2))
@@ -181,8 +186,11 @@ if __name__ == "__main__":
         #   ap/in/rw → BLEND (구조+어휘 혼합이 우세)
         #   rwh → RRF(BLEND⊕TFIDF 순위 상호역수융합, 1/(60+r)) — 학습 0,
         #        TRAIN CV 52.1 > tfidf 47.5. TEST rwh 42.6→55.3 실측
-        for ranker, lab in (("blend", "BLEND(공식)"), ("tfidf", "TFIDF(rango식)"),
-                            ("piece", "PIECE(채널별: rwh→RRF)")):
+        # ★ RRF0 = 최종 채택 단일식 (학습 0 · 전 채널 공통):
+        #   score = 1/(60+r_구조) + 1/(60+r_어휘), 구조 = share+overlap+rig
+        for ranker, lab in (("rrf0", "RRF-0(최종·단일식)"),
+                            ("blend", "BLEND(혼합식)"), ("tfidf", "TFIDF(rango식)"),
+                            ("piece", "PIECE(참고: 채널별)")):
             R = eval_split(rows, W, idf, maxi, ranker)
             out.append(f"\n## {sp} · {lab}\n\n" + md_table(R))
     open(OUT, "w").write("\n".join(out) + "\n")
