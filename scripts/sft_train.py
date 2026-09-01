@@ -139,12 +139,17 @@ def main():
     if not (va_path and os.path.exists(va_path)):
         # train 뒤 2% 를 검증으로 뗀다 (지점 셔플본이라 임의 표본과 같다). DDP: rank0 만 파일을 쓰고 나머지는 기다린다.
         va_path = tr_path.replace(".jsonl", "_valcut.jsonl"); tr_cut = tr_path.replace(".jsonl", "_traincut.jsonl")
-        if rank == 0 and not (os.path.exists(va_path) and os.path.exists(tr_cut)):
+        # ★ 원본이 컷 파일보다 새로우면 다시 뗀다 — 스모크가 남긴 옛 컷(24행)으로 본학습이 도는 사고 방지
+        stale = (os.path.exists(tr_cut) and os.path.getmtime(tr_cut) < os.path.getmtime(tr_path))
+        if rank == 0 and (stale or not (os.path.exists(va_path) and os.path.exists(tr_cut))):
             rows = open(tr_path).read().splitlines(); k = max(1, len(rows) // 50)
             open(va_path + ".tmp", "w").write("\n".join(rows[-k:]) + "\n"); open(tr_cut + ".tmp", "w").write("\n".join(rows[:-k]) + "\n")
             os.replace(va_path + ".tmp", va_path); os.replace(tr_cut + ".tmp", tr_cut)
-        while not (os.path.exists(va_path) and os.path.exists(tr_cut)): time.sleep(2)
+        while not (os.path.exists(va_path) and os.path.exists(tr_cut)) or os.path.getmtime(tr_cut) < os.path.getmtime(tr_path): time.sleep(2)
         tr_path = tr_cut
+        if rank == 0:
+            n_tr = sum(1 for _ in open(tr_cut)); n_src = sum(1 for _ in open(CONF["train_path"]))
+            assert n_tr >= n_src * 0.97, f"컷 파일 행 {n_tr} vs 원본 {n_src} — 옛 컷 의심"
     train = PairDataset(tr_path, tok, HARD, limit=(SMOKE * 8 if SMOKE else None))
     val = PairDataset(va_path, tok, HARD, limit=CONF.get("num_eval_examples"))
     if rank == 0: print(f"■ 데이터: train {len(train)} (초과 제외 {train.dropped}) · val {len(val)} (초과 제외 {val.dropped}) · hard {HARD} · world {os.environ.get('WORLD_SIZE', '1')}", flush=True)

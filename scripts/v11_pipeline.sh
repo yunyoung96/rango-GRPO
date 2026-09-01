@@ -51,6 +51,7 @@ yaml.safe_dump(c, open(p,"w"), allow_unicode=True, sort_keys=False)
 print(f"■ steps 산정: 행 {rows} (train {rows_tr}) · 유효배치 {eff} · 1 epoch {rows_tr/eff:.0f} step · 3 epoch = {steps} step · warmup {warm} · ≈{steps*20/3600:.1f}h(1GPU 환산 20s/step 기준 DDP 시 절반)")
 PY
 
+rm -f all_log/sft2_pairs_train_valcut.jsonl all_log/sft2_pairs_train_traincut.jsonl   # 옛 컷 제거 (신선도 검사와 이중 안전)
 say "⑤ DDP 스모크 (전량 데이터, 6 step)"
 rm -rf models/ft_qwen3_4b_v11_smoke
 CUDA_VISIBLE_DEVICES=0,1 torchrun --nproc_per_node 2 --master_port 29572 scripts/sft_train.py all_log/ft_qwen3_4b_v11_conf.yaml --smoke 6 > all_log/au_research/v11_full_smoke.log 2>&1 || fail "DDP 스모크"
