@@ -51,10 +51,17 @@ def scores(cp, c, mode):
     return 1.0/(K+rk(base)) + 1.0/(K+rk(TF))
 
 
+#: ★ 그외 = **외부참조를 필요로 하는 것만**. unfold 는 프롬프트의
+#   [TYPES]/[DEFINITIONS] 섹션이 정의 본문을 이미 주입하므로(augment.py)
+#   retrieval 과제가 아니다 — 보고에서 제외하고 제외 수를 명시한다.
+PROMPT_COVERED = {"unfold"}
+
+
 def eval_split(rows, mode):
     R = collections.defaultdict(lambda: {"n": 0, "rec": 0, "any": [], "all": []})
     for r in rows:
         f = r.get("tac")
+        if f in PROMPT_COVERED: continue
         form = ("apply" if f in ("exact", "eexact")
                 else f if f in PR.FORM_CH else "그외")
         chans = [FORM_CH[f]] if f in FORM_CH else list(CH4)
@@ -102,8 +109,12 @@ out = ["# r17 결과 (§7 형식)\n",
        "- All=다중 gold 전부 / Any=하나라도 · 별칭 46건 해석\n"]
 for sp in ("TRAIN", "VAL", "TEST"):
     rows, _ = PR.load_merge(SPLITS[sp])
-    print(f"{sp} {len(rows)}행…", flush=True)
+    nexcl = sum(1 for r in rows if r.get("tac") in PROMPT_COVERED)
+    print(f"{sp} {len(rows)}행 (unfold 제외 {nexcl})…", flush=True)
     for mode, lab in (("mix", "MIX17(최종)"), ("tfidf", "TFIDF(rango식)")):
-        out.append(f"\n## {sp} · {lab}\n\n" + md_table(eval_split(rows, mode)))
+        out.append(f"\n## {sp} · {lab}\n"
+                   f"\n(프롬프트-해결형 unfold {nexcl}지점 제외 — "
+                   f"그외 = 외부참조 필요분만)\n\n"
+                   + md_table(eval_split(rows, mode)))
 open(OUT, "w").write("\n".join(out) + "\n")
 print("보고서:", OUT); print("R17_REPORT_DONE")

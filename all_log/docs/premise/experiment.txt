@@ -2412,3 +2412,10 @@ premise 길이 편차가 극심하다 — 최소 16 · p25 43 · 중앙 147 · �
 - refine→apply 편입: 기각 — 0.16% 빈도 + 용례가 익명 항 골격(fix/fun/match)
 - lcp 전면 제거(S2 균일): 기각 — VAL −1.2/TEST −1.0. rw 만 중복이라는 채널별
   발견이 오히려 강화됨 (ap/in/rwh 에선 유효)
+
+[2026-09-02 KST] 그외(외부참조) 정면 측정 — 설계 공백 정량화
+- 정의 변경: 그외 = destruct·case·elim·induction (unfold 는 [DEFINITIONS] 커버로 제외)
+- repo/stdlib 분해: TRAIN 65=34+31(48%) · VAL 27=19+8 · TEST 5=5+0
+- repo분 tf-idf 블록: TRAIN @10 47.1/@20 58.8 · VAL 21.1/42.1 — 그외 행은 하한이었다
+- stdlib분 = 거의 전부 결정(dec) 정리(le_gt_dec·eq_nat_dec…) — built-in 미포함
+  문제의 실체. dec 채널 정당화 근거 확보 (rw 동형 설계·후보 수십 개)
