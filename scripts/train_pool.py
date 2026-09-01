@@ -49,6 +49,8 @@ JOBS = int(sys.argv[4]) if len(sys.argv) > 4 and sys.argv[4].isdigit() else 2   
 RESUME = "resume" in sys.argv[5:]   # 기존 출력의 (proj,thm,thmi) 는 건너뛰고 이어쓴다
 MAX_PT = 8 if ALL_PT else 3     # all 모드: 외부참조 지점 정리당 ≤8 (-in 우선·균등) — Kami 류 거대 증명(정리당 40+)이 수집을 잠식(실측 10정리/분)
 OTH_PER_THM = 4      # all 모드: 정리당 무참조 지점 상한 (균등 표본)
+#: 병리적 경로 스킵 — 자동생성 테스트 정리가 워커를 6분 상한으로 잠식 (실측: Core-Erlang Tests/ 30분에 38회 강제종료·수확 5행)
+PATH_SKIP = {"harp-project-Core-Erlang-Formalization": re.compile(r"/Tests/")}
 
 sdb = SentenceDB.load(Path("raw-data/coq-dataset/sentences.db"))
 
@@ -97,6 +99,8 @@ if __name__ == "__main__":
             except Exception:
                 skip["dp로드실패"] += 1; continue
             rel = rel_of(dp, proj)
+            _ps = PATH_SKIP.get(proj)
+            if rel and _ps and _ps.search('/' + rel): skip['병리경로'] += 1; continue
             if not rel: skip["원경로실종"] += 1; continue
             path = os.path.join(pdir, rel)
             if not os.path.exists(path): skip["파일없음"] += 1; continue

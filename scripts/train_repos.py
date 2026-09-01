@@ -10,7 +10,12 @@ for d in ("raw-data/coqstoq-val/repos", "raw-data/coqstoq-test/repos", "raw-data
 assert {"math-classes", "fourcolor", "coqeal", "ext-lib"} <= leak, f"누출 목록 로드 실패: {sorted(leak)[:5]}"
 
 
+#: 병리적 저장소 — 성능 테스트용(의도적으로 느린) Coq 파일 모음: 학습 가치 대비 수집 비용이 병적
+PATHO = {"JasonGross-slow-coq-examples", "JasonGross-category-coq-experience-tests"}
+
+
 def leaky(proj):
+    if proj in PATHO: return True
     p = proj.lower()
     return any(p == n or p.endswith("-" + n) or p.endswith("-coq-" + n) for n in (x.lower() for x in leak))
 
