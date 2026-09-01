@@ -43,10 +43,15 @@ class PairDataset(Dataset):
     def __len__(self): return len(self.items)
     def __getitem__(self, i):
         p, t = self.items[i]
-        return {"input_ids": p + t, "labels": [-100] * len(p) + t}
+        return {"input_ids": p + t, "labels": [-100] * len(p) + t, "idx": i}
 
 
+_CONSUMED = {"f": None, "n": 0}
 def collate(batch, pad_id):
+    # ★ DPO 창 구성용: 이 rank 가 소비한 예제 id 를 마이크로배치 순서대로 기록 (step = n // grad_accum 은 DPO 쪽에서 환산)
+    if _CONSUMED["f"] is not None:
+        _CONSUMED["f"].write(json.dumps({"mb": _CONSUMED["n"], "idx": [b["idx"] for b in batch]}) + "\n"); _CONSUMED["f"].flush()
+        _CONSUMED["n"] += 1
     m = max(len(b["input_ids"]) for b in batch)
     ids = torch.full((len(batch), m), pad_id, dtype=torch.long)
     lab = torch.full((len(batch), m), -100, dtype=torch.long)
@@ -163,6 +168,10 @@ def main():
         ddp_find_unused_parameters=False, logging_first_step=True,
     )
     odir = args.output_dir; os.makedirs(odir, exist_ok=True)
+    if not SMOKE: _CONSUMED["f"] = open(f"{odir}/consumed_rank{rank}.jsonl", "a")   # 재개 시 append (mb 카운터는 파일 길이로 복원)
+    if _CONSUMED["f"] is not None:
+        try: _CONSUMED["n"] = sum(1 for _ in open(f"{odir}/consumed_rank{rank}.jsonl"))
+        except Exception: _CONSUMED["n"] = 0
     sampler = Sampler(tok, val, f"{odir}/samples.jsonl", every=(2 if SMOKE else int(CONF.get("sample_steps", 500))),
                       k=int(CONF.get("sample_k", 8)))
     trainer = Trainer(model=model, args=args, train_dataset=train, eval_dataset=val,
