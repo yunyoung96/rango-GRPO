@@ -2441,3 +2441,15 @@ premise 길이 편차가 극심하다 — 최소 16 · p25 43 · 중앙 147 · �
 - 위음성: ap 10.6 · in 26.1(관대한 eapply-in 탓 과대) · rw 9.4 · rwh 15.3
 - 판독: apply 계열 건전. rw 잔여 FP = binder아래/의존위치 (rewrite 불가 위치)
 - r19 후보: rw 커널 실검증 가지치기 (+33ms/노드로 정밀도 ~100%)
+
+[2026-09-02 KST] 학습-전 준비 ②③ 구현·스모크 통과
+- ② variant_gen: 정리당 1세션·Abort All 격리·__v_i 개명·Check 성공판정.
+  스모크 6정리: 채택 9 / 정당기각 4 (eapply→ap 는 evar 필요처서, rw<- 는
+  방향 유의처서 실패 — Qed 판정이 진짜 변별). 전체 배치는 r19 체인 후 자동
+- ③ sft_build: 5블록(rwh=20)·단일 익명화맵(왕복 assert)·case A/B(하위권
+  제거·균등 주입·채널정확 assert)·[ErrorFeedback] none·변형 조인.
+  VAL 60지점 스모크: A 37/B 14/그외 9 · 표본 프롬프트 정합(apply _L1)
+- 피드백④ 실증: 5블록+STATE ≈ 1.5k 공백토큰(BPE ~2.2k) → 3072 경계 위험.
+  결정 항목: 진술문 절단 180→120 vs hard_seq_len 4096
+- v1 미포함(다음): [PROOFS]/[TYPES]/[DEFINITIONS] 통합(기존 rango 포매터와
+  병합), Others 의 진짜 tf-idf 랭킹(현재 잔여 나열)
