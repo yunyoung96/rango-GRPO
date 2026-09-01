@@ -11,7 +11,7 @@ assert: 마스크가 프롬프트 전부를 가리고 target 을 안 가림 · �
 
 사용: python3 scripts/sft_train.py <conf.yaml> [--smoke N]     (--smoke: N 스텝만, 저장 없음)
 """
-import json, math, os, random, sys, time
+import json, math, os, random, re, sys, time
 import torch, yaml
 from torch.utils.data import Dataset
 from transformers import (AutoModelForCausalLM, AutoTokenizer, Trainer, TrainingArguments,
@@ -59,26 +59,77 @@ def collate(batch, pad_id):
 
 
 class Guard(TrainerCallback):
-    """loss 비유한·정체 감시 (주기 모니터링 요구)."""
+    """loss 비유한·정체 감시 (주기 모니터링 요구) + 로그 jsonl 누적."""
+    def __init__(self, log_path): self.log_path = log_path; self.hist = []
     def on_log(self, args, state, control, logs=None, **kw):
         if logs and "loss" in logs:
             assert math.isfinite(logs["loss"]), f"loss 비유한 @ {state.global_step}"
-            print(f"  [guard] step {state.global_step} loss {logs['loss']:.4f} lr {logs.get('learning_rate', 0):.2e}", flush=True)
+            self.hist.append(logs["loss"])
+            # 정체·발산 감시: 최근 200 step 평균이 첫 200 step 평균의 1.5배면 발산
+            if len(self.hist) >= 40 and sum(self.hist[-20:]) / 20 > 1.5 * sum(self.hist[:20]) / 20 and state.global_step > 500:
+                print(f"  [guard] ★ 발산 의심 @ {state.global_step}: 최근 {sum(self.hist[-20:])/20:.3f} vs 초기 {sum(self.hist[:20])/20:.3f}", flush=True)
+            print(f"  [guard] step {state.global_step} loss {logs['loss']:.4f} lr {logs.get('learning_rate', 0):.2e}"
+                  f" mem {torch.cuda.max_memory_allocated()/1e9:.0f}GB", flush=True)
+        if logs and state.is_world_process_zero:
+            with open(self.log_path, "a") as f: f.write(json.dumps({"step": state.global_step, **logs}) + "\n")
+
+
+NAME_RE = re.compile(r"\b(?:e?apply|e?rewrite|exact|refine)\s+(?:<-\s*)?(?:\(\s*)?([A-Za-z_][\w'.]*)")
+
+
+class Sampler(TrainerCallback):
+    """★ 학습 중 **프롬프트→출력을 눈으로 보는** 감시 (사용자 요구): 고정 검증 프롬프트 K 개를 sample_steps 마다
+    greedy 생성해 gold 와 나란히 jsonl 에 남긴다. 지표: 정확일치(EM) · 출력이 부른 프리미스 이름이 프롬프트 안에 있음(환각 아님)."""
+    def __init__(self, tok, val, path, every, k=8, max_new=64):
+        self.tok, self.path, self.every, self.max_new = tok, path, every, max_new
+        self.items = val.items[:k]
+    def _run(self, model, step):
+        model.eval(); em = inp = 0; recs = []
+        with torch.no_grad():
+            for p, t in self.items:
+                ids = torch.tensor([p], device=model.device)
+                out = model.generate(ids, max_new_tokens=self.max_new, do_sample=False,
+                                     eos_token_id=self.tok.eos_token_id, pad_token_id=self.tok.pad_token_id)
+                gen = self.tok.decode(out[0, len(p):], skip_special_tokens=True).split("\n")[0].strip()
+                gold = self.tok.decode(t, skip_special_tokens=True).strip()
+                prompt = self.tok.decode(p, skip_special_tokens=True)
+                ok_em = " ".join(gen.split()) == " ".join(gold.split()); em += ok_em
+                names = NAME_RE.findall(gen); in_p = all(re.search(r"(?<![\w'])" + re.escape(n.rstrip(".").split(".")[-1]) + r"(?![\w'])", prompt) for n in names) if names else None
+                inp += bool(in_p) if names else 0
+                st = prompt[prompt.rfind("[STATE]"):prompt.rfind("[SCRIPT]")][:400]
+                recs.append({"step": step, "em": ok_em, "names_in_prompt": in_p, "gen": gen, "gold": gold, "state": st})
+        model.train()
+        with open(self.path, "a") as f:
+            for r in recs: f.write(json.dumps(r, ensure_ascii=False) + "\n")
+        n_named = sum(1 for r in recs if r["names_in_prompt"] is not None)
+        print(f"  [sample] step {step}: EM {em}/{len(recs)} · 프리미스 이름 프롬프트 안 {inp}/{n_named} · 예) gold={recs[0]['gold'][:50]!r} gen={recs[0]['gen'][:50]!r}", flush=True)
+    def on_step_end(self, args, state, control, model=None, **kw):
+        if state.is_world_process_zero and self.every and state.global_step % self.every == 0:
+            try: self._run(model, state.global_step)
+            except Exception as e: print(f"  [sample] 실패 @ {state.global_step}: {type(e).__name__}: {str(e)[:120]}", flush=True)
+    def on_train_end(self, args, state, control, model=None, **kw):
+        if state.is_world_process_zero:
+            try: self._run(model, state.global_step)
+            except Exception as e: print(f"  [sample] 실패(종료) {e}", flush=True)
 
 
 def main():
     tok = AutoTokenizer.from_pretrained(CONF["model_name"])
     if tok.pad_token_id is None: tok.pad_token = tok.eos_token
     tr_path = CONF["train_path"]; va_path = CONF.get("val_path")
+    rank = int(os.environ.get("RANK", os.environ.get("LOCAL_RANK", "0")))
     if not (va_path and os.path.exists(va_path)):
-        # train 뒤 2% 를 검증으로 뗀다 (지점 셔플본이라 임의 표본과 같다)
-        rows = open(tr_path).read().splitlines(); k = max(1, len(rows) // 50)
+        # train 뒤 2% 를 검증으로 뗀다 (지점 셔플본이라 임의 표본과 같다). DDP: rank0 만 파일을 쓰고 나머지는 기다린다.
         va_path = tr_path.replace(".jsonl", "_valcut.jsonl"); tr_cut = tr_path.replace(".jsonl", "_traincut.jsonl")
-        open(va_path, "w").write("\n".join(rows[-k:]) + "\n"); open(tr_cut, "w").write("\n".join(rows[:-k]) + "\n")
+        if rank == 0 and not (os.path.exists(va_path) and os.path.exists(tr_cut)):
+            rows = open(tr_path).read().splitlines(); k = max(1, len(rows) // 50)
+            open(va_path + ".tmp", "w").write("\n".join(rows[-k:]) + "\n"); open(tr_cut + ".tmp", "w").write("\n".join(rows[:-k]) + "\n")
+            os.replace(va_path + ".tmp", va_path); os.replace(tr_cut + ".tmp", tr_cut)
+        while not (os.path.exists(va_path) and os.path.exists(tr_cut)): time.sleep(2)
         tr_path = tr_cut
     train = PairDataset(tr_path, tok, HARD, limit=(SMOKE * 8 if SMOKE else None))
     val = PairDataset(va_path, tok, HARD, limit=CONF.get("num_eval_examples"))
-    print(f"■ 데이터: train {len(train)} (초과 제외 {train.dropped}) · val {len(val)} (초과 제외 {val.dropped}) · hard {HARD}", flush=True)
+    if rank == 0: print(f"■ 데이터: train {len(train)} (초과 제외 {train.dropped}) · val {len(val)} (초과 제외 {val.dropped}) · hard {HARD} · world {os.environ.get('WORLD_SIZE', '1')}", flush=True)
     model = AutoModelForCausalLM.from_pretrained(CONF["model_name"], dtype=torch.bfloat16)
     if CONF.get("gradient_checkpointing", True): model.gradient_checkpointing_enable()
     model.config.use_cache = False
@@ -96,10 +147,17 @@ def main():
         eval_strategy="no" if SMOKE else "steps", eval_steps=int(CONF.get("eval_steps", 1000)),
         bf16=bool(CONF.get("bf16", True)), report_to=[], seed=int(CONF.get("seed", 23)),
         dataloader_num_workers=2, remove_unused_columns=False, save_total_limit=3,
+        ddp_find_unused_parameters=False, logging_first_step=True,
     )
+    odir = args.output_dir; os.makedirs(odir, exist_ok=True)
+    sampler = Sampler(tok, val, f"{odir}/samples.jsonl", every=(2 if SMOKE else int(CONF.get("sample_steps", 500))),
+                      k=int(CONF.get("sample_k", 8)))
     trainer = Trainer(model=model, args=args, train_dataset=train, eval_dataset=val,
-                      data_collator=lambda b: collate(b, tok.pad_token_id), callbacks=[Guard()])
-    t0 = time.time(); out = trainer.train()
+                      data_collator=lambda b: collate(b, tok.pad_token_id), callbacks=[Guard(f"{odir}/trainlog.jsonl"), sampler])
+    # 재개: output_dir 에 checkpoint-* 가 있으면 거기서 이어간다 (감시자가 죽은 학습을 되살릴 때)
+    resume = (not SMOKE) and "--resume" in sys.argv and any(d.startswith("checkpoint-") for d in os.listdir(odir))
+    if resume and rank == 0: print("■ 체크포인트에서 재개", flush=True)
+    t0 = time.time(); out = trainer.train(resume_from_checkpoint=resume or None)
     print(f"■ 학습 종료: {out.global_step} step · {int(time.time()-t0)}s · 최종 loss {out.training_loss:.4f}"
           f" · 피크 메모리 {torch.cuda.max_memory_allocated()/1e9:.1f}GB", flush=True)
     assert math.isfinite(out.training_loss)

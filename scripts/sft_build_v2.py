@@ -229,8 +229,13 @@ def build_point(r, stat):
         assert any(re.search(r"(?<![\w'])" + re.escape(nm) + r"(?![\w'])", blk_txt) for nm in names_in if nm), \
             f"gold 가 {form_ch} 블록에 없음 (case {case})"
         stat["익명" if any(v in target for v in mapping.values()) else "실명(stdlib/동명)"] += 1
+    gold_decl = None
+    if form_ch and case in ("A", "B"):
+        gold_decl = next((d for n, d in zip(blocks[form_ch], [decl_of(n, stmts, rango_texts, None) for n in blocks[form_ch]])
+                          if d and n.split(".")[-1] in {g.split(".")[-1] for g in golds} | {(SB.PR.ALIAS.get(g.split(".")[-1]) or "").split(".")[-1] for g in golds}), None)
     rows = [{"prompt": prompt, "target": target, "case": case, "form": f,
-             "proj": r["proj"], "thm": r["thm"], "thmi": thmi, "k": k}]
+             "proj": PROJ_ALIAS.get(r["proj"], r["proj"]), "thm": r["thm"], "thmi": thmi, "k": k,
+             "gold": golds, "gold_decl": gold_decl, "gold_text": r.get("gold_text")}]
     for v in SB.VARIANTS.get((PROJ_ALIAS.get(r["proj"], r["proj"]), r["thm"], thmi, k), [])[:2]:
         vt = strip_qual(apply_mapping(v["variant"], mapping) if mapping else v["variant"])
         rows.append({**rows[0], "target": vt, "case": case + "+var", "rule": v["rule"]})
@@ -238,7 +243,9 @@ def build_point(r, stat):
 
 
 if __name__ == "__main__":
-    rows, _ = SB.PR.load_merge(SB.SPLITS[SPLIT.upper()])
+    POOL = [a for a in sys.argv[3:] if a.endswith(".jsonl")]
+    rows, _ = SB.PR.load_merge(POOL or SB.SPLITS[SPLIT.upper()])
+    print(f"■ 풀: {POOL or SB.SPLITS[SPLIT.upper()]} · 행 {len(rows)}", flush=True)
     random.shuffle(rows)
     stat = collections.Counter(); n = 0; t0 = time.time(); plen = []
     with open(OUT, "w") as fo:
