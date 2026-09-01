@@ -299,7 +299,19 @@
   ☑ 소량 물질화 → 모의 학습 테스트 **통과** (2026-09-01):
      길이 중앙 2686·p90 3271·target잘림 22.5% (→ seq_len 4096 확정 방향) ·
      마스크 검증 ✓ · 6-step loss 4.09→3.70 하강 ✓ (scripts/sft_train_smoke.py)
-  □ 대량 물질화 → 지점 셔플 → 본학습 (다른 서버) 착수
+  ☑ **④ 학습기·conf 준비 + Qwen3-4B-Base 스모크 통과** (2026-09-01 20:4x):
+     scripts/sft_train.py (물질화 jsonl 직접 학습: prompt 마스크·EOS·초과행 제외·cosine·bf16·grad-ckpt·
+     loss 감시 콜백) + all_log/ft_qwen3_4b_v11_conf.yaml. 스모크(GPU1, B 4×4, seq 5120, 8 step):
+     loss 1.93→0.61 ✓ · **피크 71.0GB** · **≈20 s/step**(유효배치 16) → 30k step ≈ 7일/1GPU,
+     2GPU DDP(유효 32)면 15k step ≈ 3.5일. steps 는 ①+ 수집 후 행 수로 확정.
+  □ ①+ 캠페인 완료 → train_pool all 전 지점 수집 → 대량 물질화(v2) → 행 수 → steps 확정 →
+     본학습 v11 (다른 서버) 착수
+
+■ **모델 결정 = Qwen3-4B-Base** (2026-09-01 20:3x, 사용자 결정 — 1차 본학습부터 적용):
+  · Qwen3 에 3B 는 없음 → 4B-Base. 프로브 통과(4096 토큰 1.07 s/step · 피크 41.7GB · 8.0GB bf16).
+  · 대가: v10(2.5-Coder-3B-Instruct) 대비 개선의 원인(데이터 vs 모델)을 한 번에 못 가름 — 필요하면
+    2.5-Coder-3B 팔을 같은 데이터로 추가해 분리 (2순위).
+  · 학습 conf: all_log/ft_qwen3_4b_v11_conf.yaml (v10 레시피 유지, model_name·hard_seq_len 5120 만 변경).
 
 ■ 모델 후보 검토 (2026-09-01, HF 실측):
   · Qwen3-Coder 는 소형 dense 없음 (30B-A3B · 480B-A35B · Coder-Next 80B-A3B, 전부 MoE).

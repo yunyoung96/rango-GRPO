@@ -2494,3 +2494,7 @@ premise 길이 편차가 극심하다 — 최소 16 · p25 43 · 중앙 147 · �
 - 섹션 예산(40지점 평균): 5블록 2,517 · PROOFS 246 · DEFS 237 · SCRIPT 129 · STATE 102 · TYPES 50 →
   프롬프트 중앙 3,290 · p90 4,195 · 최대 4,741. seq_len 4096→7.5% 초과 → **5120 결정** (초과 1/41 제외).
 - 모의 학습(GPU1, 6 step, B=2) loss 3.46→3.39 ✓. VAL/TEST 좌표는 CoqStoq 기준이라 v2 는 TRAIN 전용.
+[2026-09-01 20:45 KST] v11 학습기 스모크 (Qwen3-4B-Base, 사용자 결정)
+- scripts/sft_train.py + ft_qwen3_4b_v11_conf.yaml. GPU1, B 4×누적 4, seq 5120, 8 step: loss 1.93→0.61 ✓,
+  피크 71.0GB, ≈20 s/step → 30k step ≈ 7일/1GPU (2GPU DDP ≈ 3.5일). steps 는 행 수 실측 후 확정.
+- (시각 정정: 앞 항목의 "20:55" 는 실제 20:25 경. 이후 시각은 date 실측값으로 적는다.)
