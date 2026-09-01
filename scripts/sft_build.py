@@ -159,6 +159,28 @@ def build_point(r):
     return rows
 
 
+def point_shuffle(path):
+    """★ 지점 단위 전역 셔플 — 같은 지점의 원본·변형 행이 이웃하지 않게.
+    그룹(지점) 순서 셔플 후, 행을 라운드로빈 산개(그룹 내부 인접 제거)."""
+    rows = [json.loads(l) for l in open(path)]
+    groups = collections.defaultdict(list)
+    for r in rows: groups[(r["proj"], r["thm"], r["thmi"], r["k"])].append(r)
+    keys = list(groups); random.shuffle(keys)
+    for k in keys: random.shuffle(groups[k])
+    out = []
+    while any(groups[k] for k in keys):
+        random.shuffle(keys)
+        for k in keys:
+            if groups[k]: out.append(groups[k].pop())
+    # assert: 같은 지점 행이 인접하지 않는다 (그룹 수 > 1 일 때)
+    if len(keys) > 1:
+        for a, b in zip(out, out[1:]):
+            assert (a["proj"], a["thm"], a["thmi"], a["k"]) !=                    (b["proj"], b["thm"], b["thmi"], b["k"]), "지점 인접!"
+    with open(path, "w") as f:
+        for r in out: f.write(json.dumps(r, ensure_ascii=False) + "\n")
+    return len(out)
+
+
 if __name__ == "__main__":
     rows, _ = PR.load_merge(SPLITS[SPLIT.upper()])
     random.shuffle(rows)
@@ -181,4 +203,6 @@ if __name__ == "__main__":
     print("   케이스:", dict(stat))
     print("   섹션별 평균 토큰(공백):",
           {k: v // max(n, 1) for k, v in tok.items()})
+    ns = point_shuffle(OUT)
+    print(f"   지점 셔플 완료 ({ns}행 · 인접 assert 통과)")
     print("SFTBUILD_DONE")
