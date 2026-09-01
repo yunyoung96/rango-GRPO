@@ -11,7 +11,8 @@ assert {"math-classes", "fourcolor", "coqeal", "ext-lib"} <= leak, f"누출 목�
 
 
 #: 병리적 저장소 — 성능 테스트용(의도적으로 느린) Coq 파일 모음: 학습 가치 대비 수집 비용이 병적
-PATHO = {"JasonGross-slow-coq-examples", "JasonGross-category-coq-experience-tests"}
+PATHO = {"JasonGross-slow-coq-examples", "JasonGross-category-coq-experience-tests",
+         "Kevin-TD-coq_learning"}   # 생존 3.2% (수집 결함 의심 — train_pool assert 발동, 2026-09-02)
 
 
 def leaky(proj):
