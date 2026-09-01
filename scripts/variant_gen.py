@@ -28,11 +28,12 @@ from data_management.sentence_db import SentenceDB
 from data_management.dataset_file import DatasetFile
 
 N_THM = int(sys.argv[1]) if len(sys.argv) > 1 else 6
-_SCR = "/tmp/claude-0/-app-coq-modeling/e02d0688-7cb1-43a8-aa0e-ee8afd60ce19/scratchpad"
+_SCR = "/app/coq-modeling/tmp/tr"   # 영속 위치
 REPOS = dict(kv.split("=", 1) for kv in
              (sys.argv[2] if len(sys.argv) > 2 else
-              f"coq-community-coq-art={_SCR}/tr").split(","))
+              f"coq-community-coq-art={_SCR}/coq-community-coq-art").split(","))
 OUT = "all_log/sft_variants.jsonl"
+DONE = OUT + ".done"   # 처리 완료 정리 (proj\tthm\tthmi) — 이어쓰기(resume)용, 전부기각 정리도 기록
 sdb = SentenceDB.load(Path("raw-data/coq-dataset/sentences.db"))
 
 DECL = re.compile(r"^(\s*(?:Local\s+|Global\s+)?(?:Theorem|Lemma|Fact|Remark|"
@@ -103,8 +104,20 @@ def run_theorem(pdir, path, head, stmt, steps, points):
 if __name__ == "__main__":
     import train_pool as TP     # dp 열거·rel 매핑 재사용
     nw = 0; stat = collections.Counter()
-    fo = open(OUT, "w")
-    done_thm = 0
+    # ── 이어쓰기: 이미 처리한 정리는 건너뛴다 (출력은 append). 채택 행 + done 사이드카 합집합.
+    done_keys = set()
+    for f_ in (OUT, DONE):
+        if os.path.exists(f_):
+            for l in open(f_):
+                if f_ == OUT:
+                    try: r_ = json.loads(l); done_keys.add((r_["proj"], r_["thm"], r_["thmi"]))
+                    except Exception: pass
+                else:
+                    a_ = l.rstrip("\n").split("\t")
+                    if len(a_) == 3: done_keys.add((a_[0], a_[1], int(a_[2])))
+    fo = open(OUT, "a"); fd = open(DONE, "a")
+    done_thm = 0; skipped = 0
+    print(f"■ 이어쓰기: 기처리 정리 {len(done_keys)}", flush=True)
     for proj, pdir in REPOS.items():
         for dpf in TP.dp_files(proj):
             if done_thm >= N_THM: break
@@ -123,6 +136,8 @@ if __name__ == "__main__":
                 hit = TP.find_thm(orig, tt, pos)
                 if hit is None: continue
                 off, head = hit; pos = off + 1
+                if (proj, rel, pi) in done_keys:
+                    done_thm += 1; skipped += 1; continue
                 steps = [s.step.text for s in proof.steps]
                 pts = []
                 for k, st in enumerate(steps):
@@ -135,6 +150,7 @@ if __name__ == "__main__":
                 except Exception as e:
                     stat["세션실패"] += 1; continue
                 done_thm += 1
+                fd.write(f"{proj}\t{rel}\t{pi}\n"); fd.flush()
                 for k, rule, var, ok in res:
                     stat["qed" if ok else "fail"] += 1
                     if ok:
@@ -147,7 +163,7 @@ if __name__ == "__main__":
                 print(f"  {rel.split('/')[-1]}[{pi}]: "
                       + " ".join(f"{r}={'✓' if ok else '✗'}" for _, r, _, ok in res),
                       flush=True)
-    fo.close()
-    print(f"\n■ 변형 생성: 정리 {done_thm} · 채택 {nw} · {dict(stat)}")
-    assert done_thm == 0 or stat.get("qed", 0) + stat.get("fail", 0) > 0
+    fo.close(); fd.close()
+    print(f"\n■ 변형 생성: 정리 {done_thm} (건너뜀 {skipped}) · 채택 {nw} · {dict(stat)}")
+    assert done_thm == skipped or stat.get("qed", 0) + stat.get("fail", 0) > 0
     print("VARGEN_DONE")

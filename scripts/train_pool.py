@@ -35,8 +35,8 @@ from data_management.dataset_file import DatasetFile
 PER_PROJ = int(sys.argv[1]) if len(sys.argv) > 1 else 120
 #: ★ only_in — `-in` 스텝 있는 정리만, 그 스텝 전부(≤6). 표본 보강용.
 ONLY_IN = (sys.argv[3] if len(sys.argv) > 3 else "") == "only_in"
-_SCR = "/tmp/claude-0/-app-coq-modeling/e02d0688-7cb1-43a8-aa0e-ee8afd60ce19/scratchpad"
-_DEF = f"coq-community-coq-art={_SCR}/tr"
+_SCR = "/app/coq-modeling/tmp/tr"   # 영속 위치 (scratchpad=tmpfs 는 세션 재시작 때 소실됨)
+_DEF = f"coq-community-coq-art={_SCR}/coq-community-coq-art"
 REPOS = dict(kv.split("=", 1) for kv in
              (sys.argv[2] if len(sys.argv) > 2 else _DEF).split(","))
 DPD = "raw-data/coq-dataset/data_points"

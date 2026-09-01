@@ -14,7 +14,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 SRC = sys.argv[1] if len(sys.argv) > 1 else "all_log/sft_pairs_val.jsonl"
 N = int(sys.argv[2]) if len(sys.argv) > 2 else 24
-HARD = 3072
+HARD = 4096   # 실측: 3072→target잘림 23%, 4096→2%, 5120→0% (VAL 60지점, 2026-09-01)
 cc = yaml.safe_load(open("all_log/ft_qwen3b_v10_conf.yaml"))
 name = cc["model_name"]
 tok = AutoTokenizer.from_pretrained(name)
@@ -41,7 +41,7 @@ import statistics as st
 over = sum(1 for L in lens if L > HARD)
 print(f"■ ① 길이: 중앙 {st.median(lens):.0f} · p90 {sorted(lens)[int(len(lens)*.9)]}"
       f" · 최대 {max(lens)} · {HARD} 초과 {over}/{len(lens)} · 학습불가(잘림) {skipped}")
-assert feats, "전 표본이 3072 초과 — seq_len 재설계 필요"
+assert feats, "전 표본이 HARD 초과 — seq_len 재설계 필요"
 
 # ② 마스크 검증 표본
 ids0, lab0 = feats[0]
