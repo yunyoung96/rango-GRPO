@@ -8,9 +8,13 @@ say(){ echo "[$(date '+%m-%d %H:%M') KST] $*"; }
 fail(){ say "★ 실패: $* — 파이프라인 중단"; echo "V11_PIPELINE_FAIL: $*"; exit 1; }
 
 until grep -q 'COLLECT_ALL_DONE' all_log/au_research/r19_v1_train_all.log 2>/dev/null; do sleep 300; done
-say "수집 종료 — 변형 생성(전 저장소) 종료 대기"
-until grep -q 'VARGEN_DONE\|Traceback' all_log/au_research/vargen_full3.log 2>/dev/null; do sleep 300; done
-grep -q 'VARGEN_DONE' all_log/au_research/vargen_full3.log || say "변형 생성이 오류로 끝남 — 채택분(sft_variants.jsonl)만으로 계속"
+say "수집 종료 — 변형 생성(전 저장소) 종료 대기 (최대 90분; 실측 19정리/분이라 전량은 ~9h → 기한 후 중단하고 채택분으로 진행)"
+DEADLINE=$(( $(date +%s) + 5400 ))
+until grep -q 'VARGEN_DONE\|Traceback' all_log/au_research/vargen_full3.log 2>/dev/null || [ $(date +%s) -ge $DEADLINE ]; do sleep 120; done
+if ! grep -q 'VARGEN_DONE' all_log/au_research/vargen_full3.log; then
+  say "변형 생성 기한 도달 → 중단 (정리 단위 flush 라 채택분·.done 사이드카는 일관; 학습 후 재개 가능)"
+  for p in $(pgrep -f 'variant_gen.py 100000[0]'); do kill $p; done; sleep 5
+fi
 say "변형 행 $(wc -l < all_log/sft_variants.jsonl)"
 grep -q 'COLLECT_ALL_DONE rc=0' all_log/au_research/r19_v1_train_all.log || say "수집 종료코드 ≠ 0 (생존률 assert 가능) — 산출은 보존되므로 계속"
 NPOOL=$(wc -l < all_log/r11_pool_train_all.jsonl); say "수집 종료 · 풀 행 $NPOOL"
