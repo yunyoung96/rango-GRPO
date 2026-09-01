@@ -2479,3 +2479,7 @@ premise 길이 편차가 극심하다 — 최소 16 · p25 43 · 중앙 147 · �
   저장소 수 → train_build_campaign.py (상위 60 프로젝트) 19:28 착수. train_pool `all` 모드 추가.
 - 모델: Qwen3-Coder 소형 dense 없음(전부 MoE). Qwen3-4B-Base drop-in(토크나이저 길이 동일);
   Qwen3.5-4B-Base 는 transformers 5.1.0 미지원(5.16.1 필요) + 커널 부재 → 2순위. GPU 프로브 진행중.
+[2026-09-01 19:52 KST] 모델 프로브 결과 (scripts/model_probe.py, GPU1, 우리 VAL 프롬프트 4096 토큰)
+- Qwen3.5-4B-Base: transformers 5.1.0 이 qwen3_5 미인식 → 적재 실패 (예상대로). 5.16.1 + 커널 필요.
+- Qwen3-4B-Base: 적재 4.02B · 8.0GB · 다운로드 720s(7MB/s) · seq 4096 B=1 AdamW+grad-ckpt 1.07 s/step ·
+  피크 41.7GB · loss 0.815/0.813/0.811. → 모델 팔 1순위. 1차 본학습은 2.5-Coder-3B 유지(데이터 효과 분리).

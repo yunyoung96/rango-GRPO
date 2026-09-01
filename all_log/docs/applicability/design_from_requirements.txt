@@ -264,6 +264,9 @@
   · 1차 본학습은 Qwen2.5-Coder-3B(현 v10 과 동일) 로 데이터 효과 분리. 모델 팔 후보:
     - Qwen3-4B-Base: drop-in (config OK · 토크나이저 길이 동일 중앙 2667/최대 4130 · 8GB).
       Base 선택 이유 = chat template 없이 원문 프롬프트 풀 FT → <think>/정렬 편향 불필요.
+      **GPU 프로브 통과** (scripts/model_probe.py, GPU1): 적재 4.02B/8.0GB · seq 4096 B=1
+      AdamW+grad-ckpt 1.07 s/step · 피크 41.7GB · loss 0.815→0.811 (유한·하강).
+      → 96GB 에서 per_device 4 도 여유. 모델 팔 1순위 확정.
     - Qwen3.5-4B-Base: 현 transformers 5.1.0(2026-02-05) 이 qwen3_5 미인식 → 5.16.1 업그레이드
       (별도 venv 격리) + linear-attention 커널(fla·causal-conv1d 없음, sm_120 빌드) + VL 래핑
       코드 수정 필요. 토크나이저 vocab 248k, 길이 +2.5%. → 2순위.
