@@ -2407,3 +2407,8 @@ premise 길이 편차가 극심하다 — 최소 16 · p25 43 · 중앙 147 · �
 - 최종: score_c = 1/(20+r_구조c)+1/(20+r_어휘) · TRAIN 57.6 / VAL 50.9 / TEST 61.8
   (r15 대비 3스플릿 전부 ≥) · 학습 파라미터 0 유지
 - 문서: versions/r16.md·r17.md · results/r17.md(§7·TFIDF 비교) · r15 에 계승 표지
+
+[2026-09-02 KST] r17 추가 검증 2건
+- refine→apply 편입: 기각 — 0.16% 빈도 + 용례가 익명 항 골격(fix/fun/match)
+- lcp 전면 제거(S2 균일): 기각 — VAL −1.2/TEST −1.0. rw 만 중복이라는 채널별
+  발견이 오히려 강화됨 (ap/in/rwh 에선 유효)
