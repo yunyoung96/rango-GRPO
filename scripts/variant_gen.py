@@ -166,6 +166,8 @@ if __name__ == "__main__":
             except Exception: continue
             rel = TP.rel_of(dp, proj)
             if not rel: continue
+            _ps = TP.PATH_SKIP.get(proj)
+            if _ps and _ps.search("/" + rel): continue   # 병리 경로 (Core-Erlang Tests/ 등)
             path = os.path.join(pdir, rel)
             if not (os.path.exists(path)
                     and os.path.exists(os.path.splitext(path)[0] + ".vo")): continue
