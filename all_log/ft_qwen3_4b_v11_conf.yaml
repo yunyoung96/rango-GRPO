@@ -1,21 +1,14 @@
-# ★ v11 — 5블록 SFT (design_from_requirements [B]) · 모델 Qwen3-4B-Base (2026-09-01 사용자 결정)
-#   v10(all_log/ft_qwen3b_v10_conf.yaml) 레시피를 유지하고 바꾼 것만 표시한다:
-#     model_name  Qwen2.5-Coder-3B-Instruct → Qwen/Qwen3-4B-Base   (Base: chat template 없이 원문 프롬프트→tactic)
-#     hard_seq_len 3072 → 5120                                     (③ v2 실측: 4096 이면 7.5% 초과)
-#     데이터     dp+포매터 즉석 생성 → 사전 물질화 jsonl (sft2_pairs_train.jsonl, 지점 셔플 완료본)
-#     max_steps  행 수 실측 후 3 epoch 기준으로 확정 (design [7] steps 절) — 아래 값은 자리표시자
-#   학습기: scripts/sft_train.py (prompt 마스크 · EOS 부착 · 초과 길이 행 제외 · cosine+warmup · bf16 · grad-ckpt)
 model_name: Qwen/Qwen3-4B-Base
 train_path: all_log/sft2_pairs_train.jsonl
-val_path: all_log/sft2_pairs_val_small.jsonl     # TRAIN 에서 떼어 둔 소량 검증분 (sft_train.py 가 없으면 train 뒤 2% 를 뗀다)
+val_path: all_log/sft2_pairs_val_small.jsonl
 output_dir: models/ft_qwen3_4b_v11
 hard_seq_len: 5120
-per_device_train_batch_size: 4
-gradient_accumulation_steps: 4                    # 유효 배치 16/GPU (v10 동일)
-learning_rate: 0.0001                             # v10 동일 (4B Base 에 공격적일 수 있음 — 스모크 loss 로 확인)
+per_device_train_batch_size: 2
+gradient_accumulation_steps: 8
+learning_rate: 0.0001
 lr_scheduler_type: cosine
 warmup_steps: 300
-max_steps: 30000                                  # 자리표시자 — 행 수 ÷ 16 × 3 epoch 로 재산정
+max_steps: 30000
 num_train_epochs: 1
 logging_steps: 20
 save_steps: 1000
