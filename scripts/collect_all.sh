@@ -13,6 +13,6 @@ print(",".join(out))
 PY
 )
 N=$(echo "$REPOS" | tr ',' '\n' | grep -c .)
-echo "[$(date '+%H:%M') KST] 전 지점 수집 시작 · 저장소 $N · 워커 6"
-python3 scripts/train_pool.py 1000000 "$REPOS" all 6 resume
+echo "[$(date '+%H:%M') KST] 전 지점 수집 시작 · 저장소 $N · 워커 8"
+python3 scripts/train_pool.py 1000000 "$REPOS" all 8 resume
 echo "COLLECT_ALL_DONE rc=$?"
