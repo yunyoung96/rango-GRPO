@@ -2483,3 +2483,7 @@ premise 길이 편차가 극심하다 — 최소 16 · p25 43 · 중앙 147 · �
 - Qwen3.5-4B-Base: transformers 5.1.0 이 qwen3_5 미인식 → 적재 실패 (예상대로). 5.16.1 + 커널 필요.
 - Qwen3-4B-Base: 적재 4.02B · 8.0GB · 다운로드 720s(7MB/s) · seq 4096 B=1 AdamW+grad-ckpt 1.07 s/step ·
   피크 41.7GB · loss 0.815/0.813/0.811. → 모델 팔 1순위. 1차 본학습은 2.5-Coder-3B 유지(데이터 효과 분리).
+[2026-09-01 20:15 KST] ② variant 전체 배치 완료 (art+undec 전 정리 소진)
+- sft_variants.jsonl 2,152행 = 지점 2,011 · 정리 1,120 (art 401 / undec 1,751) · 지점당 1.07.
+- 채택률 시도 3,794 중 56.7%: ap→eapply 73.4 · rw→erw 75.6 · eapply→ap 69.1 · rw→rw<- 14.9 · rw<-→rw 9.4.
+- 검수 assert(qed 전부 true·중복 0·orig≠variant·로그✓=행수) 통과, 무작위 12행 독립 재실행 12/12 Qed.
