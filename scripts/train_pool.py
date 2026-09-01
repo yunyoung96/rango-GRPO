@@ -47,8 +47,8 @@ OUT = ("all_log/r11_pool_train_onlyin.jsonl" if ONLY_IN
        else "all_log/r11_pool_train.jsonl")
 JOBS = int(sys.argv[4]) if len(sys.argv) > 4 and sys.argv[4].isdigit() else 2   # coqtop 워커 수 (12코어 공유 서버: 4 권장)
 RESUME = "resume" in sys.argv[5:]   # 기존 출력의 (proj,thm,thmi) 는 건너뛰고 이어쓴다
-MAX_PT = 10**9 if ALL_PT else 3
-OTH_PER_THM = 5      # all 모드: 정리당 무참조 지점 상한 (균등 표본)
+MAX_PT = 8 if ALL_PT else 3     # all 모드: 외부참조 지점 정리당 ≤8 (-in 우선·균등) — Kami 류 거대 증명(정리당 40+)이 수집을 잠식(실측 10정리/분)
+OTH_PER_THM = 4      # all 모드: 정리당 무참조 지점 상한 (균등 표본)
 
 sdb = SentenceDB.load(Path("raw-data/coq-dataset/sentences.db"))
 

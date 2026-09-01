@@ -1,8 +1,8 @@
 #!/bin/bash
-# 정체 coqtop 컷 (학습용 저장소 tmp/tr 밑 coqtop 12분 상한). 정지: touch tmp/mckill.stop
+# 정체 coqtop 컷 (학습용 저장소 tmp/tr 밑 coqtop 6분 상한). 정지: touch tmp/mckill.stop
 while true; do
   [ -f /app/coq-modeling/tmp/mckill.stop ] && exit 0
-  for p in $(ps -eo pid,etimes,args | awk '/coqto[p]/ && /tmp\/tr/ && $2>720 {print $1}'); do
+  for p in $(ps -eo pid,etimes,args | awk '/coqto[p]/ && /tmp\/tr/ && $2>360 {print $1}'); do
     kill -9 $p 2>/dev/null && echo "[$(date -u -d '+9 hours' '+%H:%M')] killed $p"
   done
   sleep 60
