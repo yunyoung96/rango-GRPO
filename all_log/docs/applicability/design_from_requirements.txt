@@ -276,7 +276,7 @@
            표본 성공률(v2, 20개): ≥50% vo 11 · 부분 4 · 0vo 5. 19:28 KST 착수.
        (b) train_pool.py `all` 모드(정리당 상한 없음 → r11_pool_train_all.jsonl) 준비 완료.
            캠페인 결과 저장소 전부에 대해 r19 필터로 수집 → 물질화 입력.
-  ☑ ③물질화 v2 **구현·스모크 통과** (2026-09-01 20:5x, scripts/sft_build_v2.py):
+  ☑ ③물질화 v2 **구현·스모크 통과** (2026-09-01 20:2x, scripts/sft_build_v2.py):
      · 방식: rango GeneralFormatter+ProofPremiseCollator 를 그대로 태우고 **[PREMISES] 자리만
        5블록으로 치환** (allocate_and_fmt 를 프로세스 안에서 감쌈). [PROOFS](BM25 12)·[TYPES]/
        [DEFINITIONS](augment v2)·[STATE]·[SCRIPT] 는 rango 코드가 생성 → 추론 빌더와 같은 경로.

@@ -25,7 +25,8 @@ V.PER = PER
 WORK = "/app/coq-modeling/tmp/tr"
 OUT = "all_log/train_build_campaign.jsonl"
 JOBS = 3
-EXCL = {"HoTT-Coq-HoTT", "Priyanka-Mondal-Coq", "AbsInt-CompCert"}
+EXCL = {"HoTT-Coq-HoTT", "Priyanka-Mondal-Coq", "AbsInt-CompCert",
+        "LASER-UMASS-TacTok"}   # CoqGym 프로젝트 100여 개를 한 트리에 모은 집합체 — 라이브러리 이름 충돌로 단일 빌드 불가(+다른 TRAIN 저장소와 중복)
 EXCL_RE = re.compile(r"coq-?art", re.I)          # coq-art 사본류 (coq-community 본판만 허용)
 KEEP = {"coq-community-coq-art"}
 
@@ -49,21 +50,22 @@ def qflags_of(d, proj):
 _BAD = re.compile(r'(?:File "([^"]+)"|in file ([^,\s]+),)')
 
 
-def prescreen(d, proj, cap=80):
+def prescreen(d, proj, cap=80, time_cap=600):
     """★ coqdep 전수 사전검사 — 파일 하나의 구문 오류로 coqdep 전체가 죽으면 .Makefile.d 가
     안 생겨 프로젝트 전부가 0vo 가 된다 (possientis-Prog 실측). 죽게 만드는 파일을 찾아
     `.v.badv` 로 치워 둔다 (기록 보존·vfiles 에서 제외). 제거한 파일 수를 돌려준다."""
     qf = qflags_of(d, proj)
-    removed = []
+    removed = []; t_start = time.time()
     for rnd in range(cap):
+        if time.time() - t_start > time_cap: print(f"      사전검사 시간상한 {time_cap}s 초과 — 중단", flush=True); break
         files = [f for f in V.vfiles(d) if V.legal_path(f)]
         if not files: break
         # ★ 500개씩 나눠 부른다 — TacTok(6,678 파일)은 한 명령줄이면 "Argument list too long"
-        rc = 0; errs = []
+        rc = 0; errs = []; bad_chunks = []
         for i in range(0, len(files), 500):
             p = subprocess.run(f"coqdep {qf} " + " ".join(files[i:i + 500]), shell=True, cwd=d,
                                capture_output=True, text=True, timeout=600)
-            if p.returncode != 0: rc = 1; errs.append(p.stderr)
+            if p.returncode != 0: rc = 1; errs.append(p.stderr); bad_chunks.append(files[i:i + 500])
         if rc == 0: break
         # Error 줄만 본다 — "Warning: in file X, library … not found" 는 경고라 제외하면 과잉 제거
         bad = set(); p_err = "\n".join(errs)
@@ -72,8 +74,9 @@ def prescreen(d, proj, cap=80):
                 for a, b in _BAD.findall(ln): bad.add(a or b)
         bad &= set(files)
         if not bad:
-            # 파일을 못 짚으면 개별 검사로 전환 (느리지만 확실)
-            for f in files:
+            # 파일을 못 짚으면 **실패한 청크 안에서만** 개별 검사 (전체 개별검사는 TacTok 6,675파일 × 1s 로 정체됐다)
+            for f in [f for ch in bad_chunks for f in ch]:
+                if time.time() - t_start > time_cap: break
                 q = subprocess.run(f"coqdep {qf} {f}", shell=True, cwd=d, capture_output=True, text=True, timeout=60)
                 if q.returncode != 0: bad.add(f)
             if not bad: break
