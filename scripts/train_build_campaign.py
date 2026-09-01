@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""★ ④ TRAIN 저장소 빌드 캠페인 — SFT 데이터 규모의 진짜 병목은 '빌드된 저장소 수'다.
+"""★ ①+ TRAIN 저장소 빌드 캠페인 — SFT 데이터 규모의 진짜 병목은 '빌드된 저장소 수'다.
 
 현재 빌드된 TRAIN(coq-art·undecidability)은 TRAIN 파일 18,911 의 2.6% 뿐. 파일 수 상위
 프로젝트부터 splits/commits.json 커밋으로 클론·빌드해 tmp/tr/<owner-repo> 에 영속 보관한다.
@@ -88,12 +88,23 @@ if __name__ == "__main__":
             row = {"proj": proj, "repo": repo, "cause": "클론 실패", "v": 0, "vo": 0, "route": [], "sec": int(time.time() - t0)}
             open(OUT, "a").write(json.dumps(row, ensure_ascii=False) + "\n")
             print(f"   {k:3d}/{len(cands)} {proj[:36]:36s} 클론✗", flush=True); continue
-        try:
-            cause, msg, nv, nvo, route = V.build(d, proj)
-        except subprocess.TimeoutExpired:
-            cause, msg, nv, nvo, route = "빌드 timeout", "", len(V.vfiles(d)), len(V.vofiles(d)), ["timeout"]
-        except Exception as e:
-            cause, msg, nv, nvo, route = f"예외 {type(e).__name__}", str(e)[:200], 0, 0, ["exc"]
+        def _build():
+            try: return V.build(d, proj)
+            except subprocess.TimeoutExpired:
+                return "빌드 timeout", "", len(V.vfiles(d)), len(V.vofiles(d)), ["timeout"]
+            except Exception as e:
+                return f"예외 {type(e).__name__}", str(e)[:200], 0, 0, ["exc"]
+        cause, msg, nv, nvo, route = _build()
+        # ★ 자기 빌드계가 0vo (예: possientis-Prog 의 .Makefile.d 의존 생성 실패) →
+        #   빌드계를 치우고 우리 -Q 생성 경로로 한 번 더. 더 나은 쪽을 채택.
+        if nvo == 0 and nv > 0 and any(r.startswith("자기") or r.startswith("configure") for r in route):
+            for f in ("Makefile", "makefile", "GNUmakefile", "Makefile.coq", "_CoqProject", "configure", "dune-project"):
+                fp = os.path.join(d, f)
+                if os.path.exists(fp): os.rename(fp, fp + ".orig")
+            sh("find . -name 'Makefile.coq*' -delete", cwd=d, timeout=60)
+            cause2, msg2, nv2, nvo2, route2 = _build()
+            route = route + ["→생성재시도"] + route2
+            if nvo2 > nvo: cause, msg, nv, nvo = cause2, msg2, nv2, nvo2
         # 절단 방지 교차검증 (v2 교훈): find 로 다시 센다
         _vo = int(subprocess.run("find . -name '*.vo' | wc -l", shell=True, cwd=d, capture_output=True, text=True).stdout.strip() or 0)
         assert abs(_vo - nvo) <= 2, f"vo 수 불일치 {nvo} vs find {_vo}"
