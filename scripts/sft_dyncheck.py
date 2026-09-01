@@ -16,6 +16,8 @@ import logging; logging.disable(logging.CRITICAL)
 _A = sys.argv[:]; sys.argv = ["train_pool.py", "1"]
 import train_pool as TP
 import r11_eval as R
+sys.argv = ["variant_gen.py", "0"]
+import variant_gen as VG          # run_theorem: 정리 재시작 → k-1 스텝 재생 → tactic → 나머지 proof → Check(Qed 판정)
 sys.argv = _A
 from pathlib import Path
 from data_management.dataset_file import DatasetFile
@@ -82,13 +84,13 @@ for r in samp:
                 if (v["proj"], v["thm"], v["thmi"], v["k"], v["rule"]) == (r["proj"], r["thm"], r["thmi"], k, r.get("rule")):
                     tac = v["variant"]; break
         assert tac, "실행할 tactic 없음"
-        body = "\n".join(["Require Import Applic.", head, "".join(steps[:k]), tac,
-                          'idtac "__DYN_OK__".', "Abort All."])
-        out = coq(pdir, path, body)
-        ok = "__DYN_OK__" in out and not re.search(r"^Error:", out[out.rfind(tac[:20]) if tac[:20] in out else 0:], re.M)
+        # ★ 판정은 variant_gen 과 같은 방식 — 그 스텝을 tac 으로 갈아끼우고 **나머지 proof 를 끝까지** 재생해 Qed 가 서는가.
+        #   (tac 직후에 다른 명령을 넣어 판정하면 불릿/포커스 종료 때문에 거짓 실패가 난다 — 1차 구현의 실측 32/32 오판)
+        res = VG.run_theorem(pdir, path, head, stmt, steps, [(k, [("self", tac)])])
+        ok = bool(res) and res[0][3]
         code = "D3" if is_var else "D1"
         C[f"{code} {'통과' if ok else '실패'}"] += 1
-        if not ok: fails.append((code, r["proj"], r["thm"], r["thmi"], k, tac[:50], out[-200:].replace("\n", " ")))
+        if not ok: fails.append((code, r["proj"], r["thm"], r["thmi"], k, tac[:60]))
         # D2: gold 선언문 vs Check
         if not is_var and r.get("gold_decl"):
             g = r["gold"][0]
@@ -97,8 +99,15 @@ for r in samp:
             if not m: C["D2 Check실패"] += 1; fails.append(("D2", r["proj"], r["thm"], g, "Check 출력 없음", out2[-160:].replace("\n", " "))); continue
             a = set(TOK.findall(m.group(1))); b = set(TOK.findall(r["gold_decl"].split(" : ", 1)[-1]))
             jac = len(a & b) / max(1, len(a | b))
-            C["D2 일치" if jac >= 0.6 else "D2 불일치"] += 1
-            if jac < 0.6: fails.append(("D2", r["proj"], r["thm"], g, f"jaccard {jac:.2f}", r["gold_decl"][:80], m.group(1)[:80]))
+            # Section 안에서 Check 하면 section 변수가 빠진 **국소 타입**이 찍힌다("Equivalence equiv") —
+            # 풀 진술은 section 을 닫은 전역 타입. 국소 타입 토큰이 전역 진술의 부분집합이면 같은 lemma 로 본다.
+            ok2 = jac >= 0.6 or (a and a <= b)
+            C["D2 일치" if ok2 else "D2 불일치"] += 1
+            if not ok2: fails.append(("D2", r["proj"], r["thm"], g, f"jaccard {jac:.2f}", r["gold_decl"][:80], m.group(1)[:80]))
+    except AssertionError as e:
+        if "정리문 파싱 실패" in str(e):      # Definition/Instance 로 선언된 정리 — variant_gen 과 같은 이유로 재생 대상 아님
+            C["스킵(Definition류)"] += 1; continue
+        C["예외"] += 1; fails.append(("EXC", r.get("proj"), r.get("thm"), str(e)[:120]))
     except Exception as e:
         C["예외"] += 1; fails.append(("EXC", r.get("proj"), r.get("thm"), str(e)[:120]))
 

@@ -361,3 +361,15 @@
       **서로 다른 전체 이름** 기준으로 고쳐 24/31 복구. 같은 lemma 는 채널이 달라도 같은 선언문(출처 캐시).
     · C11 — 별칭(plus_comm→Nat.add_comm) 미반영은 검사기 쪽 오류 → 별칭 반영.
   검사기 실행: python3 scripts/sft_check.py all_log/sft2_pairs_train.jsonl 5120 → 로그 all_log/au_research/sft2_check.log
+(d) 동적 검증기 scripts/sft_dyncheck.py (D1~D3, 실제 coqtop) — 학습 착수 전 표본 30
+  D1 정답 재현: 그 스텝을 gold 원문으로 갈아끼우고 **나머지 proof 를 끝까지 재생해 Qed** (좌표·gold·빌드 정합)
+  D2 선언문 진위: gold 프리미스의 블록 선언줄 vs Coq `Check <gold>` (토큰 자카드 ≥0.6 또는 국소타입⊆전역진술)
+  D3 변형 재현: +var 행의 변형 원문을 같은 방식으로 Qed 재현
+  실측(62행 표본 32): D1 23/23 · D2 23/23 · D3 8/8 · Definition 류 정리 1 스킵 → SFT_DYNCHECK_OK.
+  함정 2개(검증기 쪽): ① tactic 직후 다른 명령으로 판정하면 불릿/포커스 종료 때문에 32/32 거짓 실패 → 전체 proof
+  재생(variant_gen 과 동일)으로 교체. ② Section 안 `Check` 는 국소 타입("Equivalence equiv")을 찍어 전역 진술과 달라
+  보임 → 부분집합 허용.
+(e) 학습 중 감시 (사용자 요구 "프롬프트·출력을 보면서"): sft_train.py Sampler — 고정 검증 프롬프트 8개를 sample_steps
+  마다 greedy 생성해 gold 와 나란히 models/…/samples.jsonl 누적(EM · 출력 프리미스 이름이 프롬프트 안에 있는가),
+  Guard — loss 유한·발산 감시·trainlog.jsonl, train_watch.sh — 10분 주기 생존/loss/GPU, 사망 시 체크포인트 재개 ≤2회.
+  DDP 스모크(2GPU, 62행): loss 1.87→0.73, 피크 79GB(B4) → per_device 2×누적 8 로 조정(유효 32 유지).
