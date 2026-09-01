@@ -43,7 +43,7 @@ def qflags_of(d, proj):
     files = [f for f in V.vfiles(d) if V.legal_path(f)]
     tops = sorted({f.split("/")[0] if "/" in f else "." for f in files})
     base = V.sanitize(proj.split("-")[-1] or proj)
-    return " ".join(f"-Q {t} {base if t == '.' else base + '_' + V.sanitize(t)}" for t in tops)
+    return " ".join(f"-R {t} {base if t == '.' else base + '_' + V.sanitize(t)}" for t in tops)
 
 
 _BAD = re.compile(r'(?:File "([^"]+)"|in file ([^,\s]+),)')
@@ -58,12 +58,16 @@ def prescreen(d, proj, cap=80):
     for rnd in range(cap):
         files = [f for f in V.vfiles(d) if V.legal_path(f)]
         if not files: break
-        p = subprocess.run(f"coqdep {qf} " + " ".join(files), shell=True, cwd=d,
-                           capture_output=True, text=True, timeout=600)
-        if p.returncode == 0: break
+        # ★ 500개씩 나눠 부른다 — TacTok(6,678 파일)은 한 명령줄이면 "Argument list too long"
+        rc = 0; errs = []
+        for i in range(0, len(files), 500):
+            p = subprocess.run(f"coqdep {qf} " + " ".join(files[i:i + 500]), shell=True, cwd=d,
+                               capture_output=True, text=True, timeout=600)
+            if p.returncode != 0: rc = 1; errs.append(p.stderr)
+        if rc == 0: break
         # Error 줄만 본다 — "Warning: in file X, library … not found" 는 경고라 제외하면 과잉 제거
-        bad = set()
-        for ln in p.stderr.splitlines():
+        bad = set(); p_err = "\n".join(errs)
+        for ln in p_err.splitlines():
             if "Error" in ln:
                 for a, b in _BAD.findall(ln): bad.add(a or b)
         bad &= set(files)
@@ -75,7 +79,7 @@ def prescreen(d, proj, cap=80):
             if not bad: break
         for f in bad:
             os.rename(os.path.join(d, f), os.path.join(d, f + ".badv")); removed.append(f)
-        if len(bad) > 0 and not _BAD.findall(p.stderr): break   # 개별검사 1회면 충분
+        if len(bad) > 0 and not _BAD.findall(p_err): break   # 개별검사 1회면 충분
     return removed
 
 

@@ -145,7 +145,7 @@ def build(d, proj):
         base = sanitize(proj.split("-")[-1] or proj)
         for t in tops:
             nm = base if t == "." else f"{base}_{sanitize(t)}"
-            lines.append(f"-Q {t} {nm}")
+            lines.append(f"-R {t} {nm}")   # ★ -R: 짧은 Require 이름(접미사) 해석 허용 (possientis 실측 -Q 360건 실패)
         lines += files
         open(os.path.join(d, "_CoqProject"), "w").write("\n".join(lines) + "\n")
         ok, msg = sh("coq_makefile -f _CoqProject -o Makefile", cwd=d, timeout=180)
