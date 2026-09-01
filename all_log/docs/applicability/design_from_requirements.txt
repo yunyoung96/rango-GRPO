@@ -373,7 +373,7 @@
 (b) 스모크 (전부 통과, 2026-09-01)
   variant 12행 독립 재실행 12/12 · v2 40지점 62행 · 미니 학습 6-step · v11 학습기 8-step(Qwen3-4B-Base, 71GB, 20 s/step)
   · train_pool all 모드 2정리 · 모델 적재 프로브
-(c) 사후 검사기 sft_check.py (C1~C15)
+(c) 사후 검사기 sft_check.py (C1~C16 — C16: TRAIN 행에 CoqStoq VAL/TEST/CUTOFF 저장소 금지, train_repos.py 단일 출처)
   C1  정답의 익명 이름(_L/_T/_f/_G#) 전부 프롬프트에 존재      C2  익명화된 실명이 프롬프트·정답에 잔존하지 않음(풀 진술 대조)
   C3  변형 정답도 C1 + 같은 지점 행들의 익명 lemma 집합 동일   C4  블록 줄 수 ≤ 상한 · 빈 진술 줄 없음
   C5  섹션 순서·유일성·[TACTIC] 종료                         C6  프롬프트+정답 ≤ hard_seq_len · 정답 비어있지 않음

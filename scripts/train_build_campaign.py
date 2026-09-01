@@ -25,7 +25,10 @@ V.PER = PER
 WORK = "/app/coq-modeling/tmp/tr"
 OUT = "all_log/train_build_campaign.jsonl"
 JOBS = 3
+# ★ CoqStoq VAL/TEST/CUTOFF 저장소는 TRAIN 에서 배제 (scripts/train_repos.py 가 단일 출처 — 2026-09-02 누출 적발:
+#   math-classes·fourcolor·ext-lib(TEST)·coqeal(VAL) 이 빌드·수집까지 진행됐었다)
 EXCL = {"HoTT-Coq-HoTT", "Priyanka-Mondal-Coq", "AbsInt-CompCert",
+        "coq-community-math-classes", "coq-community-fourcolor", "coq-community-coqeal", "coq-community-coq-ext-lib",
         "LASER-UMASS-TacTok"}   # CoqGym 프로젝트 100여 개를 한 트리에 모은 집합체 — 라이브러리 이름 충돌로 단일 빌드 불가(+다른 TRAIN 저장소와 중복)
 EXCL_RE = re.compile(r"coq-?art", re.I)          # coq-art 사본류 (coq-community 본판만 허용)
 KEEP = {"coq-community-coq-art"}

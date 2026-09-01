@@ -164,6 +164,12 @@ if len(inj_pos) >= 20:
 else:
     C["C10 표본부족"] = len(inj_pos)
 
+# C16 TRAIN 데이터에 VAL/TEST/CUTOFF 저장소가 없어야 한다 (누출 방지 — 2026-09-02 적발 후 상설 검사)
+import sys as _sys; _sys.path.insert(0, "scripts")
+from train_repos import leaky as _leaky
+for i, r in enumerate(rows):
+    if _leaky(r.get("proj") or ""): fail("C16", i, r["proj"])
+
 print("■ 결과:", {k: v for k, v in sorted(C.items())})
 for code, lst in fails.items():
     print(f"  {code}: {len(lst)}건  예) {lst[:3]}")
