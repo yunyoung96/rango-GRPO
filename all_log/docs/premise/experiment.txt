@@ -2453,3 +2453,10 @@ premise 길이 편차가 극심하다 — 최소 16 · p25 43 · 중앙 147 · �
   결정 항목: 진술문 절단 180→120 vs hard_seq_len 4096
 - v1 미포함(다음): [PROOFS]/[TYPES]/[DEFINITIONS] 통합(기존 rango 포매터와
   병합), Others 의 진짜 tf-idf 랭킹(현재 잔여 나열)
+
+[2026-09-02 KST] r19 체인 완료 · retrieval r19 채택 · 학습 스모크 실측
+- r19 풀 §7: TEST 69.4/77.0 @10/@20 (r18 대비 +1.2/+1.0, rewrite-in +1.9)
+  VAL 동일 · TRAIN −0.4 (rw 검증 위음성 소수 — AllOccurrences 엄격성) → r19 채택
+- 학습 스모크: 길이 중앙 2686·p90 3271·target잘림 22.5% → hard_seq_len 4096 확정 방향
+  OOM 원인 = AdamW fp32 상태(자체 42GB) → 스모크는 SGD·batch2·2048컷으로 재시도 중
+- after_chain: variant 전체 배치 자동 시작됨
