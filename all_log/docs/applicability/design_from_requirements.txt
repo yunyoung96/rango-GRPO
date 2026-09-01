@@ -276,12 +276,26 @@
            표본 성공률(v2, 20개): ≥50% vo 11 · 부분 4 · 0vo 5. 19:28 KST 착수.
        (b) train_pool.py `all` 모드(정리당 상한 없음 → r11_pool_train_all.jsonl) 준비 완료.
            캠페인 결과 저장소 전부에 대해 r19 필터로 수집 → 물질화 입력.
-  □ ③물질화 v2: [PROOFS]/[TYPES]/[DEFINITIONS] 병합 · Others 진짜 tf-idf
-     · seq_len **4096 결정** (VAL 60지점 실측: hard_seq_len 3072→target잘림 23%
-       · 4096→2% · 5120→0%; 모델 컨텍스트는 32k 라 제약은 학습 메모리/시간뿐)
-     · 프롬프트 채움 실측(v1 물질화): 블록 꽉참 ap 60/60 · in 56 · rw 60 · rwh 58
-       · oth 60, 골드 프리미스가 프롬프트에 있음 42/42, 골드 줄 위치 1행 19 ·
-       ≤5행 43/67 · 11행 이상 4(rwh 만) → 용량 부족 아님, 상한 그대로
+  ☑ ③물질화 v2 **구현·스모크 통과** (2026-09-01 20:5x, scripts/sft_build_v2.py):
+     · 방식: rango GeneralFormatter+ProofPremiseCollator 를 그대로 태우고 **[PREMISES] 자리만
+       5블록으로 치환** (allocate_and_fmt 를 프로세스 안에서 감쌈). [PROOFS](BM25 12)·[TYPES]/
+       [DEFINITIONS](augment v2)·[STATE]·[SCRIPT] 는 rango 코드가 생성 → 추론 빌더와 같은 경로.
+     · [Others] = 기존 rango tf-idf(RETRIEVAL_MODE=tfidf) 상위 중 채널 밖 10개 (요구 [4]).
+     · 익명화 = rango build_mapping 한 매핑(프롬프트·정답·변형). 블록 줄 = "Lemma 이름 : 진술."
+       — 같은 lemma 가 여러 채널에 실리면 rango 가 동명중복으로 보고 실명을 남기므로 매핑 목록은
+       중복 제거(실명 17/34 → 7/31: 남은 7 = stdlib·진짜 동명). 동명이인은 한정자 유지.
+     · case B 주입 선언문 = 풀 진술 → rango 후보 원문 → sentence DB (없으면 지점 제외: 1/41).
+     · v10 gold 주입 OFF(우리 case A/B 가 대신) · CUTS hopeless 판정 OFF · 변형 조인 ≤2 · 지점 셔플.
+     · **섹션별 토큰 예산 실측** (TRAIN 40지점, 평균/p90/최대):
+         ap 495/717/816 · in 416/668/801 · rw 438/602/696 · rwh 829/1129/1246 · Others 339/458/584
+         PROOFS 246/270/280 · STATE 102/180/279 · SCRIPT 129/314/513 · TYPES 50/134/186(31/40)
+         · DEFINITIONS 237/324/337(33/40) · ErrorFeedback 5 → 프롬프트 중앙 3,290 · p90 4,195 · 최대 4,741
+     · **seq_len 결정 = 5120** (4096 이면 7.5% 초과 — PROOFS/DEFS 가 붙어 v1 실측보다 커짐;
+       사용자 지시 "부족하면 용량 늘려라" 반영, 블록 상한 10/10/10/20/10 유지). 초과 지점은 제외
+       (rango 절단은 앞=우리 블록부터 잘라 gold 를 잃기 때문).
+     · 스모크: 40지점 → 62행 (A 17 · B 13 · 그외 10 · 변형 +22) 69s · 모의 학습 6-step loss 3.46→3.39 ✓.
+     · 제약: VAL/TEST 풀 좌표(thmi/k)는 CoqStoq 기준이라 v2 는 TRAIN 전용 (학습 데이터 목적엔 충분).
+     · 추론 빌더 TODO: 같은 5블록 + [ErrorFeedback] 슬롯을 내도록 수정 (학습-추론 형식 일치).
   ☑ 소량 물질화 → 모의 학습 테스트 **통과** (2026-09-01):
      길이 중앙 2686·p90 3271·target잘림 22.5% (→ seq_len 4096 확정 방향) ·
      마스크 검증 ✓ · 6-step loss 4.09→3.70 하강 ✓ (scripts/sft_train_smoke.py)

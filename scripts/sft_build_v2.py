@@ -22,7 +22,8 @@ sys.path.insert(0, "src"); sys.path.insert(0, "scripts")
 import logging; logging.disable(logging.CRITICAL)
 
 import rango_defaults as _D
-_D.PROD_DEFAULTS["HARD_SEQ_LEN"] = "4096"        # 실측 결정 (design [7])
+HARD = 5120                                      # v2 실측(40지점): 4096 이면 7.5% 초과(최대 4,364) → 5120 (0% 초과)
+_D.PROD_DEFAULTS["HARD_SEQ_LEN"] = str(HARD)
 _D.PROD_DEFAULTS["RETRIEVAL_MODE"] = "tfidf"     # [Others] = 기존 rango tf-idf
 _D.PROD_DEFAULTS["CUTS_PATH"] = ""               # cut 계획(hopeless 판정) 경로 차단 — 우리 지점엔 무관
 _D.PROD_DEFAULTS["RERANK_PREMISES"] = "0"        # 재랭킹은 새 리스트를 만들어 우리 블록 치환(객체 동일성)을 비껴간다
@@ -78,7 +79,9 @@ TD.allocate_and_fmt = _aaf
 
 # ── dp 파일 찾기: (proj, rel) → DatasetFile (프로젝트당 1회 스캔) ─────────────
 _DP_IDX = {}; _DP_CACHE = {}
+PROJ_ALIAS = {"tr": "coq-community-coq-art"}    # 옛 풀 행의 저장소 별칭 (scratchpad/tr 시절)
 def _dp_for(proj, rel):
+    proj = PROJ_ALIAS.get(proj, proj)
     if proj not in _DP_IDX:
         idx = {}
         for f in sorted(os.listdir(DPD)):
@@ -185,6 +188,9 @@ def build_point(r, stat):
     sec = "\n\n".join(f"[{BLOCK_NAME[c]}]\n" + ("\n".join(lines[c]) if lines[c] else "none")
                       for c in ("ap", "in", "rw", "rwh", "oth"))
     # rango 콜레이터: premises 만 우리 것으로 갈아끼운다 (정규화 대상 = flat 의 이름들)
+    # ★ 같은 lemma 가 여러 채널 블록에 실리면(적용 가능성이 겹침) rango 의 premise_names 가
+    #   "동명 중복"으로 보고 익명화에서 뺀다 → 실명 누출. 매핑용 목록은 중복 제거한다.
+    flat = list(dict.fromkeys(flat))
     ex.premises = flat; _OVR["list"] = flat; _OVR["str"] = sec; _OVR["hit"] = 0
     TD._LAST_TRAIN_MAPPING = {}
     s = COL.collate(TOK, ex)
@@ -213,7 +219,7 @@ def build_point(r, stat):
         stat["익명" if any(v in target for v in mapping.values()) else "실명(stdlib/동명)"] += 1
     rows = [{"prompt": prompt, "target": target, "case": case, "form": f,
              "proj": r["proj"], "thm": r["thm"], "thmi": thmi, "k": k}]
-    for v in SB.VARIANTS.get((r["proj"], r["thm"], thmi, k), [])[:2]:
+    for v in SB.VARIANTS.get((PROJ_ALIAS.get(r["proj"], r["proj"]), r["thm"], thmi, k), [])[:2]:
         vt = strip_qual(apply_mapping(v["variant"], mapping) if mapping else v["variant"])
         rows.append({**rows[0], "target": vt, "case": case + "+var", "rule": v["rule"]})
     return rows
@@ -230,6 +236,9 @@ if __name__ == "__main__":
             try: prs = build_point(r, stat)
             except AssertionError as e: stat[f"assert:{str(e)[:40]}"] += 1; continue
             if not prs: continue
+            # 하드 길이 초과 지점은 버린다 — rango 학습 절단은 앞(=우리 블록)부터 잘라 gold 를 잃을 수 있다
+            _n = len(TOK(prs[0]["prompt"], add_special_tokens=False).input_ids)
+            if _n > HARD - 64: stat["길이초과제외"] += 1; continue
             for pr in prs:
                 fo.write(json.dumps(pr, ensure_ascii=False) + "\n"); stat[pr["case"]] += 1
             plen.append(len(TOK(prs[0]["prompt"], add_special_tokens=False).input_ids))
@@ -240,7 +249,7 @@ if __name__ == "__main__":
     print(f"■ SFT 물질화 v2 {SPLIT}: 지점 {n} · 행 {sum(v for k, v in stat.items() if k[0] in 'AB-')} · {int(time.time()-t0)}s")
     print("   통계:", dict(stat))
     if plen:
-        print(f"   프롬프트 토큰: 중앙 {plen[len(plen)//2]} · p90 {plen[int(len(plen)*.9)]} · 최대 {plen[-1]} · >4072 {sum(1 for x in plen if x > 4072)}/{len(plen)}")
+        print(f"   프롬프트 토큰: 중앙 {plen[len(plen)//2]} · p90 {plen[int(len(plen)*.9)]} · 최대 {plen[-1]} · >{HARD-64} {sum(1 for x in plen if x > HARD-64)}/{len(plen)}")
     ns = SB.point_shuffle(OUT)
     print(f"   지점 셔플 완료 ({ns}행 · 인접 assert 통과)")
     print("SFTBUILD2_DONE")

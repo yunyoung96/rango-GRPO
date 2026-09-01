@@ -14,7 +14,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 SRC = sys.argv[1] if len(sys.argv) > 1 else "all_log/sft_pairs_val.jsonl"
 N = int(sys.argv[2]) if len(sys.argv) > 2 else 24
-HARD = 4096   # 실측: 3072→target잘림 23%, 4096→2%, 5120→0% (VAL 60지점, 2026-09-01)
+HARD = 5120   # v1 실측 3072→23%·4096→2%·5120→0%; v2(PROOFS/DEFS 포함) 40지점 4096→7.5% 초과 → 5120
 cc = yaml.safe_load(open("all_log/ft_qwen3b_v10_conf.yaml"))
 name = cc["model_name"]
 tok = AutoTokenizer.from_pretrained(name)

@@ -2487,3 +2487,10 @@ premise 길이 편차가 극심하다 — 최소 16 · p25 43 · 중앙 147 · �
 - sft_variants.jsonl 2,152행 = 지점 2,011 · 정리 1,120 (art 401 / undec 1,751) · 지점당 1.07.
 - 채택률 시도 3,794 중 56.7%: ap→eapply 73.4 · rw→erw 75.6 · eapply→ap 69.1 · rw→rw<- 14.9 · rw<-→rw 9.4.
 - 검수 assert(qed 전부 true·중복 0·orig≠variant·로그✓=행수) 통과, 무작위 12행 독립 재실행 12/12 Qed.
+[2026-09-01 20:55 KST] ③ 물질화 v2 (sft_build_v2.py) 구현·스모크
+- rango 포매터·콜레이터 재사용, [PREMISES]→5블록 치환. Others=rango tf-idf. 익명화=rango build_mapping 단일 매핑.
+- 교훈: 같은 lemma 가 여러 채널 블록에 실리면 rango premise_names 가 동명중복으로 판정해 실명이 남는다 →
+  매핑 목록 중복제거로 실명 17/34→7/31 (잔여 = stdlib·진짜 동명). 동명이인은 한정자 유지.
+- 섹션 예산(40지점 평균): 5블록 2,517 · PROOFS 246 · DEFS 237 · SCRIPT 129 · STATE 102 · TYPES 50 →
+  프롬프트 중앙 3,290 · p90 4,195 · 최대 4,741. seq_len 4096→7.5% 초과 → **5120 결정** (초과 1/41 제외).
+- 모의 학습(GPU1, 6 step, B=2) loss 3.46→3.39 ✓. VAL/TEST 좌표는 CoqStoq 기준이라 v2 는 TRAIN 전용.
