@@ -53,6 +53,8 @@ FWDN = int(os.environ.get("CS_FWDN", "3"))
 WIDE = os.environ.get("CS_WIDE", "1") == "1"   # 최대 재현율 모드
 WIDEN = int(os.environ.get("CS_WIDEN", "8"))         # rewrite 부분항 개수
 OUT = os.environ.get("CS_OUT", "all_log/coq_search.jsonl")
+#: 질의 드라이버. "coqtop" 은 오류가 나도 다음 질의를 계속 실행한다.
+DRIVER = "coqtop"
 CC = "CoqStoq/test-repos/compcert"
 t = open(os.path.join(CC, "_CoqProject"), errors="ignore").read().split()
 ARGS, i = [], 0
@@ -94,6 +96,22 @@ def elab_concl(g):
         out.append(ln)
     return " ".join(" ".join(out).split())
 
+def head_by_pos(orig, thm):
+    """★ CoqStoq 가 **정확한 줄번호**를 준다 — 텍스트 검색보다 이걸 먼저 쓴다.
+
+    `Maps.v` 에는 `Theorem gso` 가 **셋**(PTree·PMap·…) 있어서 텍스트로 찾으면
+    첫 번째(Module PTree 안)에 걸린다. 거기서는 `PTree.gso` 가 아직 존재하지
+    않으므로 질의도 검증도 통째로 어긋난다. 실측 199 중 1건(0.5%).
+    """
+    ln = getattr(getattr(thm, "theorem_start_pos", None), "line", None)
+    if not ln:
+        return None
+    parts = orig.splitlines(keepends=True)
+    if ln - 1 > len(parts):
+        return None
+    return "".join(parts[:ln - 1])
+
+
 def head_of_file(orig, thm_text):
     j = orig.find(thm_text.strip()[:60])
     if j >= 0: return orig[:j]
@@ -129,8 +147,17 @@ def run(job):
         f.write(src); tmp = f.name
     try:
         t0 = time.time()
-        p = subprocess.run(["coqc", "-q"] + ARGS + [tmp],
-                           capture_output=True, text=True, timeout=TMO)
+        if DRIVER == "coqtop":
+            # ★★ **드라이버를 coqtop 으로.** `coqc` 는 vernacular 오류에서 파일
+            #   처리를 **중단**한다 — 실측으로 지점당 21.7 질의(전체 4,080개)를
+            #   그렇게 잃었다. `coqtop` 은 오류를 찍고 **다음 명령을 계속 실행**한다.
+            #   질의 생성기의 문법 오류·미해결 이름을 하나하나 막는 대신 구조로 푼다.
+            p = subprocess.run(["coqtop", "-q"] + ARGS,
+                               stdin=open(tmp), capture_output=True,
+                               text=True, timeout=TMO)
+        else:
+            p = subprocess.run(["coqc", "-q"] + ARGS + [tmp],
+                               capture_output=True, text=True, timeout=TMO)
         dt = time.time() - t0
         out = p.stdout or ""
         # ★ 질의가 **하나라도 오류**를 내면 Coq 이 그 시점에 파일 처리를 중단한다 —
@@ -221,7 +248,8 @@ if __name__ == "__main__":
                     # ★ 부분항도 elaborate 형에서 뽑는다 — 괄호·notation·if 안쪽이 다 보인다
                     for _t in elab_subterms(_ec, maxn=6):
                         qs.append(f"SearchRewrite {_t}.")
-                for pat in rewrite_targets(g.goal, loc, maxn=2):
+                # ★ 괄호 없는 적용 부분항이 들어오면서 대상이 늘었다 — 2→RWN
+                for pat in rewrite_targets(g.goal, loc, maxn=RWN):
                     qs.append(f"SearchRewrite ({pat}).")
                 # ★ `rewrite L in H` — 가설 **안**을 재작성하므로 가설 기호로도 쏜다
                 if FWD and re.search(r"\bin\s+[A-Za-z_]", st.step.text or ""):

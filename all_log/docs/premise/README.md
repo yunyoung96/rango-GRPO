@@ -12,6 +12,7 @@
 | **환각을 어떻게 없앴나** | [repair.md](repair.md) — 가망없는 예제 제외 + 판정 수정 |
 | **이름 정규화 / rango 와의 차별점** | [normalize.md](normalize.md) — 타입·함수·lemma 정규화, 정의 주입, 역매핑 |
 | **검색 랭커 이론** | [retrieval-theory.md](retrieval-theory.md) — 격자 유도 · 국면 게이트 모형 · EQ_W 를 특수해로 |
+| **★ 적용가능성 기반 검색 (OCaml 플러그인)** | [../applicability/](../applicability/README.md) — 커널 단일화 필터 · 판별트리 · 적용가능 IDF · tactic 별 채널 |
 | **학습이 왜 느렸나 / rango 와 뭐가 다른가** | [speed.md](speed.md) — 의존 로드 132배 최적화, 원본 대비 차이표 |
 | 왜 이렇게 됐나 (처음부터) | [diagnose.md](diagnose.md) — 진단·시도·실패 |
 | 학습에 어떻게 반영되나 | [details.md](details.md) — 정규화·collate 구현 디테일 |

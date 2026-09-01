@@ -70,6 +70,15 @@ NAMED = re.compile(r"\b(?:e?apply|e?rewrite)\s+(?:<-\s*)?\(?\s*"
                    r"([A-Za-z_][\w']*(?:\.[A-Za-z_][\w']*)*)")
 HEADT = re.compile(r"^\s*(?:now\s+|try\s+|repeat\s+)?([A-Za-z_][\w']*)")
 
+def qname(pp):
+    """★ 모듈 정규화 이름. `Module PTree` 안의 `Lemma gso` 는 선언문엔 `gso` 지만
+    쓸 때는 `PTree.gso` 여야 한다. 풀의 34.7% 가 모듈 안에 있어서, 맨이름을 쏘면
+    그만큼이 **항상 실패**로 잡힌다(밤 체인이 정확히 이 함정에 빠졌다)."""
+    m = DECL.match(getattr(pp, "text", "") or "")
+    if not m: return None
+    mod = list(getattr(pp, "module", None) or [])
+    return ".".join(mod + [m.group(1)])
+
 def head_of_file(orig, thm_text):
     j = orig.find(thm_text.strip()[:60])
     if j >= 0: return orig[:j]
@@ -160,10 +169,7 @@ if __name__ == "__main__":
                 ranked = pc.get_ranked_premises(k, proof, dp, pool, False)
             except Exception:
                 continue
-            nm = []
-            for pp in ranked[:TOPK]:
-                m = DECL.match(getattr(pp, "text", "") or "")
-                if m: nm.append(m.group(1))
+            nm = [x for x in (qname(pp) for pp in ranked[:TOPK]) if x]
             tac = HEADT.match(st.step.text).group(1)
             cands[k] = ("rewrite" if tac.endswith("rewrite") else "apply", list(dict.fromkeys(nm)))
             meta[(i, k)] = dict(gold=NAMED.search(st.step.text).group(1),

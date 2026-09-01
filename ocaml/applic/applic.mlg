@@ -1,0 +1,82 @@
+DECLARE PLUGIN "coq-applic.plugin"
+
+{
+open Ltac_plugin
+open Stdarg
+}
+
+TACTIC EXTEND applic_filter
+| [ "applic_filter" ] -> { Applic_main.filter_tac () }
+END
+
+VERNAC COMMAND EXTEND ApplicPropOnly CLASSIFIED AS SIDEFF
+| [ "ApplicPropOnly" int(n) ] -> { Applic_main.set_prop_only (n <> 0) }
+END
+
+VERNAC COMMAND EXTEND ApplicDelta CLASSIFIED AS SIDEFF
+| [ "ApplicDelta" int(n) ] -> { Applic_main.set_delta (n <> 0) }
+END
+
+VERNAC COMMAND EXTEND ApplicWideChannels CLASSIFIED AS SIDEFF
+| [ "ApplicWideChannels" int(n) ] -> { Applic_main.set_wide (n <> 0) }
+END
+
+VERNAC COMMAND EXTEND ApplicDepth CLASSIFIED AS SIDEFF
+| [ "ApplicDepth" int(n) ] -> { Applic_main.set_depth n }
+END
+
+VERNAC COMMAND EXTEND ApplicSetoid CLASSIFIED AS SIDEFF
+| [ "ApplicSetoid" int(n) ] -> { Applic_main.set_setoid (n <> 0) }
+END
+
+VERNAC COMMAND EXTEND ApplicCanon CLASSIFIED AS QUERY
+| [ "ApplicCanon" reference(r) ] -> { Applic_main.canon r }
+END
+
+VERNAC COMMAND EXTEND ApplicRigid CLASSIFIED AS SIDEFF
+| [ "ApplicRigid" int(n) ] -> { Applic_main.set_rigid (n <> 0) }
+END
+
+VERNAC COMMAND EXTEND ApplicExact CLASSIFIED AS SIDEFF
+| [ "ApplicExact" int(n) ] -> { Applic_main.set_exact (n <> 0) }
+END
+
+VERNAC COMMAND EXTEND ApplicApplyDN CLASSIFIED AS SIDEFF
+| [ "ApplicApplyDN" int(n) ] -> { Applic_main.set_apply_dn (n <> 0) }
+END
+
+TACTIC EXTEND applic_why
+| [ "applic_why" reference(r) ] -> { Applic_main.why_tac r }
+END
+
+VERNAC COMMAND EXTEND ApplicTransparent CLASSIFIED AS SIDEFF
+| [ "ApplicTransparent" reference(r) ] -> { Applic_main.transparent_of r }
+END
+
+VERNAC COMMAND EXTEND ApplicClearTransparent CLASSIFIED AS SIDEFF
+| [ "ApplicClearTransparent" ] -> { Applic_main.clear_transparent () }
+END
+
+TACTIC EXTEND applic_sort
+| [ "applic_sort" reference(r) ] -> { Applic_main.sort_tac r }
+END
+
+TACTIC EXTEND applic_sample
+| [ "applic_sample" int_or_var(n) ] -> { Applic_main.sample_tac n }
+END
+
+VERNAC COMMAND EXTEND ApplicPrintTypes CLASSIFIED AS SIDEFF
+| [ "ApplicPrintTypes" int(n) ] -> { Applic_main.set_print_types (n <> 0) }
+END
+
+TACTIC EXTEND applic_check
+| [ "applic_check" reference(r) ] -> { Applic_main.check_tac r }
+END
+
+VERNAC COMMAND EXTEND ApplicArrows CLASSIFIED AS SIDEFF
+| [ "ApplicArrows" int(n) ] -> { Applic_main.set_arrows n }
+END
+
+VERNAC COMMAND EXTEND ApplicTypeCheckRW CLASSIFIED AS SIDEFF
+| [ "ApplicTypeCheckRW" int(n) ] -> { Applic_main.set_type_check_rw (n <> 0) }
+END

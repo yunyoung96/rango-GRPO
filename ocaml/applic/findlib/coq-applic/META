@@ -1,0 +1,14 @@
+description = "applicability filter plugin"
+version = "0.1"
+requires = "coq-core.plugins.ltac"
+
+package "plugin" (
+  directory = "../.."
+  description = "applic plugin"
+  version = "0.1"
+  requires = "coq-core.plugins.ltac"
+  archive(byte) = "applic_plugin.cma"
+  archive(native) = "applic_plugin.cmxs"
+  plugin(byte) = "applic_plugin.cma"
+  plugin(native) = "applic_plugin.cmxs"
+)

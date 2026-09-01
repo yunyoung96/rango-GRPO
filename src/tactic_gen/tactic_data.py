@@ -1,4 +1,5 @@
 from __future__ import annotations
+from tactic_gen import normalize_config as _NC  # 파이썬 상수 설정
 import rango_defaults as _D   # ★ 프로덕션 기본값 단일 출처
 
 import hashlib
@@ -212,7 +213,7 @@ def last_inference_mapping() -> dict:
 
 def _maybe_normalize_input(text: str, example, tokenizer=None,
                            out_tokens: int = 0, enabled: bool = True) -> str:
-    """추론 프롬프트 정규화. `NORMALIZE_INFERENCE=1` 일 때만 동작한다.
+    """추론 프롬프트 정규화. `normalize_config.INFERENCE` 가 True 일 때만 동작한다.
 
     ★ 학습(`collate`)은 프롬프트와 **정답에 같은 매핑**을 적용한다. 추론에는 정답이
       없으므로 프롬프트만 바꾸고, **매핑을 남겨** 생성 결과를 되돌린다.
@@ -222,7 +223,7 @@ def _maybe_normalize_input(text: str, example, tokenizer=None,
     _LAST_INFER_MAPPING = {}
     # ★★ **정규화는 두 종류이고 플래그가 다르다.** 섞으면 사고가 난다.
     #
-    #     학습용   `NORMALIZE_NAMES`(+PREMISES/THEOREM/LTAC/RATE)
+    #     학습용   normalize_config.NAMES (+PREMISES/THEOREM/LTAC/RATE)
     #              → `collate` 안의 자체 블록. 프롬프트와 **정답에 같은 매핑**을 건다.
     #     추론용   이 함수. 정답이 없으므로 **프롬프트만** 바꾸고 매핑을 남긴다
     #              (`last_inference_mapping` → 생성 후 `apply_inverse` 로 되돌린다).
@@ -1281,7 +1282,7 @@ class ProofPremiseCollator:
         #    조회 가능성은 유지되면서 **이름 암기만 무력화**된다.
         #    (ablation: clean vs wrong 차이 ±0 → 모델이 안 읽는 이유는 '읽을 필요가 없어서'다)
         globals()["_LAST_TRAIN_MAPPING"] = {}
-        if _D.flag("NORMALIZE_NAMES"):
+        if _NC.NAMES:
             from tactic_gen.normalize_names import build_mapping, apply_mapping, should_normalize
             key = (f"{getattr(example, 'file_name', '')}:"
                    f"{getattr(example, 'proof_idx', '')}:{getattr(example, 'step_idx', '')}")
@@ -1298,7 +1299,7 @@ class ProofPremiseCollator:
                 pass
             elif should_normalize(key):
                 # v7: premises 를 넘겨 [PREMISES] lemma 이름도 정규화 대상에 포함
-                #     (NORMALIZE_PREMISES=1 일 때만 실제로 대상이 된다)
+                #     (normalize_config.PREMISES 가 True 일 때만 실제로 대상이 된다)
                 # ★★ **프롬프트에 실제로 들어간 premise 만** 넘긴다.
                 #   `example.premises` 는 검색 결과 100개인데 예산(896토큰)상 ~25개만
                 #   프롬프트에 들어간다. 전부 넘기면 26~100번째 lemma 도 `L#` 로 이름이

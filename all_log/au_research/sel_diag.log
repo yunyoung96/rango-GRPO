@@ -1,0 +1,16 @@
+정리 총수 4971 {'coqeal': 1108, 'graph-theory': 1982, 'bertrand': 230, 'stalmarck': 551, 'qarith-stern-brocot': 861, 'sudoku': 239}
+   bertrand|OK                                  150
+   bertrand|ks 없음                               80
+   coqeal|OK                                    339
+   coqeal|head None                             19
+   coqeal|ks 없음                                 750
+   graph-theory|OK                              601
+   graph-theory|head None                       109
+   graph-theory|ks 없음                           1272
+   qarith-stern-brocot|OK                       367
+   qarith-stern-brocot|head None                25
+   qarith-stern-brocot|ks 없음                    469
+   stalmarck|OK                                 372
+   stalmarck|ks 없음                              179
+   sudoku|OK                                    175
+   sudoku|ks 없음                                 64

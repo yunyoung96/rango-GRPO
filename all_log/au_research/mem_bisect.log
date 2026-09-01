@@ -1,0 +1,16 @@
+■ CompCert · 정리 60 · 메모리 상한 8GB
+   … 10/60  {'정상': 7}
+   … 20/60  {'정상': 15}
+   … 30/60  {'정상': 24}
+    31/60 idx= 321 ★OOM     backend/Kildall.v                          Lemma reachable_predecessors: forall p q, reac
+   … 40/60  {'정상': 30, '★OOM': 1}
+   … 50/60  {'정상': 36, '★OOM': 1}
+   … 60/60  {'정상': 44, '★OOM': 1}
+
+■ 결과 (45정리)
+   정상          44
+   ★OOM         1
+
+■ 터진 정리 1개
+   idx= 321 backend/Kildall.v                            Lemma reachable_predecessors: forall p q, reachable code successors p 
+MEM_BISECT_DONE

@@ -1,0 +1,7 @@
+■ all_log/r11_poolin_coqealgraphtheoryfourcolorreglang_val.jsonl · 최종 14파라 (['lcp', 'lgg', 'rig', 'std']) · 프로젝트 LOO
+   형태              지점      @5     @10     @20     중앙
+   전체             110    51.8%    69.1%    76.4%      4
+   apply           70    58.6%    71.4%    81.4%      2
+   rewrite         33    48.5%    69.7%    72.7%      5
+   rewrite-in       7     0.0%    42.9%    42.9%     36
+FINAL_EVAL_DONE

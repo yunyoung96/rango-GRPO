@@ -1,3 +1,4 @@
+from tactic_gen import normalize_config as _NC  # 파이썬 상수 설정
 import os
 import rango_defaults as _D   # ★ 프로덕션 기본값 단일 출처
 """rango-augmented 구조컨텍스트 생성 — 학습·추론·스크립트가 공유하는 canonical 로직.
@@ -34,13 +35,14 @@ def _bad_head(h):
             import os as _os
             # ★ 이 판정은 정규화 설정과 **독립**이어야 한다 — 잠시 강제로 켠다.
             #   (읽기는 rango_defaults 를 쓰지만, 여기는 **쓰기**라 env 를 직접 만진다)
-            _prev = _os.environ.get("NORMALIZE_SKIP_STDLIB")
-            _os.environ["NORMALIZE_SKIP_STDLIB"] = "1"
+            # ★ env 조작을 없앴다. 값은 파이썬 상수다.
+            _prev = _NC.SKIP_STDLIB
+            _NC.SKIP_STDLIB = True
             r = is_stdlib_name(s)
             if _prev is None:
-                _os.environ.pop("NORMALIZE_SKIP_STDLIB", None)
+                _NC.SKIP_STDLIB = True
             else:
-                _os.environ["NORMALIZE_SKIP_STDLIB"] = _prev
+                _NC.SKIP_STDLIB = _prev
             if r:
                 return True
         except Exception:

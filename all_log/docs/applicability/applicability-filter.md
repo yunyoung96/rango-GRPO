@@ -1131,7 +1131,7 @@ first [ assert_succeeds (first [
 ## 5. 그래도 하려면 — 전제조건
 
 **elaborate 된 타입을 확보해야 한다.** 지금은 원본 `.v` 13GB 를 복구해 뒀으므로
-([train-dataset-recovery.md](train-dataset-recovery.md)) 오프라인으로 Coq 을 한 번 돌려
+([train-dataset-recovery.md](../research/train-dataset-recovery.md)) 오프라인으로 Coq 을 한 번 돌려
 
 ```coq
 Set Printing All.      (* notation·암묵인자·coercion 전부 펼침 *)

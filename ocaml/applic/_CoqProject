@@ -1,0 +1,7 @@
+-R . Applic
+-I .
+
+applic_main.ml
+applic.mlg
+applic_plugin.mlpack
+Applic.v

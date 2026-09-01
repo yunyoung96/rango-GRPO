@@ -1,0 +1,129 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# 적용가능성 기반 프리미스 선택 — 필요한 것
+#
+#   이 파일은 pip 전용이 아니다. 이 방법을 재현하려면 Coq·OCaml·컴파일된
+#   저장소가 함께 필요하고, 그중 하나만 빠져도 조용히 0 이 나온다.
+#   pip 로 설치할 것은 [PYTHON] 절만 쓰면 된다:
+#       pip install -r <(sed -n '/^\[PYTHON\]/,/^\[/p' requirements.txt | grep -v '^[#\[]')
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+[COQ / OCAML]  ── 필터 본체. 이게 없으면 아무것도 안 된다 ──────────────────
+
+coq                     == 8.18.0        # 플러그인 API 가 버전에 민감하다
+ocaml                   == 4.14.0        # coq 8.18 이 컴파일된 버전과 같아야 한다
+ocamlfind                                # META 로 Declare ML Module 을 푼다
+
+# ★ opam switch 를 바꾸지 말 것. 기존 환경이 깨진다.
+#   확인:  coqc -v   ·   ocamlfind ocamlopt -version
+#   플러그인 개발 패키지가 findlib 에 보여야 한다:
+#       ocamlfind list | grep coq-core
+#   필요한 것: coq-core.kernel · .engine · .pretyping · .tactics
+#              .interp · .library · .plugins.ltac
+
+# 플러그인이 쓰는 Coq 모듈 (전부 coq-core 안에 있다)
+#   Environ · EConstr · Evd · Evarutil · Retyping · Typing · Termops
+#   Unification · Conversion · Btermdn · TransparentState · Rewrite
+#   Nametab · Libnames · Smartlocate · Proofview · Feedback
+
+
+[BUILD]  ── 플러그인 빌드 ────────────────────────────────────────────────
+
+# cd ocaml/applic
+# export OCAMLPATH=$PWD/findlib:$OCAMLPATH      ← 반드시. 없으면 META 를 못 찾는다
+# coq_makefile -f _CoqProject -o Makefile
+# make                                          → applic_plugin.cmxs
+#
+# 파일:
+#   ocaml/applic/applic_main.ml       본체
+#   ocaml/applic/applic.mlg           tactic/vernac 선언
+#   ocaml/applic/applic_plugin.mlpack 링크 목록
+#   ocaml/applic/_CoqProject
+#   ocaml/applic/findlib/coq-applic/META    directory = "../.."  로 상대경로
+
+
+[PYTHON]  ── 측정 스크립트 ──────────────────────────────────────────────
+
+pyyaml                                   # conf 로드
+numpy                                    # 통계
+# 표준 라이브러리만 쓰는 스크립트도 많다:
+#   json · re · collections · math · statistics · subprocess · signal
+#   concurrent.futures · sqlite3 · tempfile · pathlib
+
+# 모델 평가(next_step_eval)를 돌릴 때만 추가로 필요
+torch
+transformers
+peft
+accelerate
+sentencepiece
+protobuf
+
+
+[REPO 내부 모듈]  ── PYTHONPATH 에 있어야 한다 ──────────────────────────
+
+# sys.path.insert(0, "src")  ·  sys.path.insert(0, "CoqStoq")
+#
+#   src/premise_selection/     premise_filter · coq_search_pool
+#   src/tactic_gen/            lm_example · tactic_data · normalize_config
+#   src/data_management/       sentence_db · dataset_file
+#   src/evaluation/            find_coqstoq_idx
+#   src/model_deployment/      model_wrapper (GPU 평가용)
+#   CoqStoq/                   Split · get_theorem · get_theorem_list
+
+
+[데이터]  ── 없으면 측정이 안 된다 ──────────────────────────────────────
+
+CoqStoq/test-repos/     12 프로젝트   compcert · fourcolor · math-classes …
+CoqStoq/val-repos/       6 프로젝트   graph-theory · coqeal · sudoku …
+CoqStoq/cutoff-repos/    2 프로젝트   pnvrocqlib · bb5
+
+# ★ 각 저장소는 **컴파일돼 있어야** 한다 (.vo 파일).
+#   확인:  find CoqStoq/test-repos/compcert -name '*.vo' | head
+#   플러그인은 살아있는 Coq 환경을 훑으므로 .v 만으로는 안 된다.
+
+raw-data/coqstoq-test/coqstoq-test-sentences.db      53,387 문장
+raw-data/coqstoq-val/coqstoq-val-sentences.db
+raw-data/coqstoq-cutoff/coqstoq-cutoff-sentences.db
+raw-data/coq-dataset/                                TRAIN — 13,896 파일
+data/compcert_bs2_rand200_idx.txt                    평가 대상 정리 200개
+
+# TRAIN 은 저장소가 컴파일돼 있지 않다. 복구는 splits/commits.json (2,955개)
+# 으로 가능하지만 빌드는 별개다.  → concepts/limits.md
+
+
+[모델]  ── GPU 평가용 ───────────────────────────────────────────────────
+
+models/rango-qwen3b-v10-ft/checkpoint-32000/
+models/rango-qwen3b-v10-ft/training_conf.yaml     # ★ 받아올 때 자주 빠진다.
+                                                  #   없으면 래퍼가 죽는다
+all_log/ft_qwen3b_v10_conf.yaml                   # 그 원본
+
+
+[하드웨어]  ─────────────────────────────────────────────────────────────
+
+CPU     병렬 2~4 권장. 코어 수를 넘기면 서로 느려진다 (실측 부하 23/16 에서 정체)
+메모리  coqtop 하나당 ~1GB. setoid 캐시가 없으면 RSS 100GB+ 로 폭발한 적 있다
+GPU     next_step_eval 만 필요. A6000 49GB 에서 3B 모델이 ~9GB
+
+
+[환경변수]  ── 새로 만들지 않는다 ───────────────────────────────────────
+
+OCAMLPATH        플러그인 빌드·실행에 필수
+CUDA_VISIBLE_DEVICES   GPU 선택
+
+# ★ 설정은 파이썬 상수로 둔다. env 는 source 를 잊으면 조용히 다른 설정으로 돈다.
+#   익명화 설정:  src/tactic_gen/normalize_config.py
+#   필터 설정:    ocaml/applic/applic_main.ml 의 ref 들 + Applic* vernac
+
+
+[검증]  ── 설치가 됐는지 확인 ───────────────────────────────────────────
+
+# 1) 플러그인이 뜨나
+#    echo 'Require Import Applic.' | coqtop -q -R ocaml/applic Applic -I ocaml/applic
+#
+# 2) 한 지점이 도나 (버전 표시가 찍혀야 한다)
+#    → APPLIC_STAT ver=r9 cand=12652 … decide=91 sec=0.54
+#
+# 3) 파이썬 자가검사
+#    python3 -c "exec(open('scripts/dn_why.py').read().split('if __name__')[0])"
+#    → 정규식 자가검사 assert 가 통과해야 한다

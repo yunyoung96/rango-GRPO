@@ -1,4 +1,5 @@
 from __future__ import annotations
+from tactic_gen import normalize_config as _NC  # 파이썬 상수 설정
 import rango_defaults as _D   # ★ 프로덕션 기본값 단일 출처
 from typing import Any, Callable, Optional
 from pathlib import Path
@@ -221,10 +222,10 @@ class DecoderLocalWrapper:
         #   그래서 **파이썬 인자**로 받고, 이 값만 collator 에 명시적으로 넘긴다.
         #   env 는 인자를 안 준 경우의 기본값으로만 쓴다(추론 프로세스 안에서만 읽힌다).
         #   기본값은 **켬**이다(모델이 익명 이름으로 학습되므로). 끄려면 명시로
-        #   normalize_inference=False 를 주거나 NORMALIZE_INFERENCE=0 을 준다.
+        #   normalize_inference=False 를 주거나 normalize_config.INFERENCE 를 끈다.
         self.normalize_inference = (
             bool(normalize_inference) if normalize_inference is not None
-            else _D.flag("NORMALIZE_INFERENCE"))
+            else _NC.INFERENCE)
 
     def get_recs(
         self,

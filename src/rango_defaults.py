@@ -29,6 +29,10 @@ shell env 는 구조적으로 불안정하다 — `source` 를 잊거나, 다른
 import os
 
 # ── 프로덕션 기본값 (all_log/v9_env.sh 에서 옮겨 옴) ─────────────────────────
+# ★ NORMALIZE_* 일곱 개는 여기서 **제거**했다.
+#   `src/tactic_gen/normalize_config.py` 의 파이썬 상수로 옮겼다 —
+#   문자열 env 는 `source` 를 잊거나 다른 진입점으로 새면 조용히
+#   다른 설정으로 돈다(실제로 두 번 당했다). 악용할 여지를 없앤다.
 PROD_DEFAULTS: dict[str, str] = {
     'ADMIT_MIN_FILES'         : '2',
     'AUGMENT_V2'              : '1',
@@ -44,7 +48,6 @@ PROD_DEFAULTS: dict[str, str] = {
     'INJECT_NOTATION'         : '1',
     'INJECT_SKIP_STDLIB'      : '1',
     'INJECT_TYPES'            : '1',
-    'NORMALIZE_INFERENCE'     : '1',
     # ★ 펑터 인스턴스 전개 — 아직 **실험 중**이라 기본값은 꺼짐.
     #   Module N := F(A). 로 생겨나는 N.member 를 검색 풀에 되살린다.
     #   근거·측정은 all_log/docs/premise/functor-names.md
@@ -52,12 +55,6 @@ PROD_DEFAULTS: dict[str, str] = {
     'FUNCTOR_EXPAND_MAX'      : '4000',
     'FUNCTOR_EXPAND_CONCRETE' : '1',   # 전개 시 elt/X.t 를 인자 모듈의 t 로 치환
     'OUT_TOKENS'              : '256',
-    'NORMALIZE_LTAC'          : '1',
-    'NORMALIZE_NAMES'         : '1',
-    'NORMALIZE_PREMISES'      : '1',
-    'NORMALIZE_RATE'          : '1.0',
-    'NORMALIZE_SKIP_STDLIB'   : '1',
-    'NORMALIZE_THEOREM'       : '1',
     'NOTATION_PROJ'           : '1',
     'NOTATION_PROJ_MAX'       : '20',
     'NOTATION_TOKENS'         : '220',

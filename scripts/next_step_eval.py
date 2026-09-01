@@ -53,9 +53,47 @@ MAXPT = int(os.environ.get("NS_MAX_PER_THM", "8"))
 _hs = os.environ.get("NS_HEADS", "apply,eapply,rewrite,erewrite")
 _HEADS = set() if _hs.strip() == "all" else {x.strip() for x in _hs.split(",") if x.strip()}
 OUT = Path(os.environ.get("NS_OUT", "all_log/next_step.jsonl"))
+
+# ── ★ 필터 풀 주입 (파이썬 변수 — 환경변수 아님) ────────────────────────────
+#   OCaml 플러그인(`ocaml/applic`)이 커널 단일화로 걸러 낸 후보를 프롬프트에 태운다.
+#   비워 두면 현행 그대로다(동작이 안 바뀐다).
+#     "union"  현행 풀 ∪ 필터 결과 → 같은 tf-idf 로 재랭킹
+#     "only"   필터 결과만
+#     "ordered" 풀 파일이 정한 **순서를 그대로** 쓴다 (tf-idf 재랭킹 없음)
+#              ★ union/only 는 우리 랭킹을 버리고 tf-idf 로 다시 정렬한다 —
+#                실측 top8 39.2% → 37.0%. 손해의 원인이 그것이었다.
+POOL_FILE = os.environ.get("NS_POOL", "all_log/pool_z.jsonl")
+POOL_MODE = "ordered"
+
+# ── ★★ gold lemma 강제 주입 (오라클) ─────────────────────────────────────
+#   검색을 **완전히 배제**하고 조립 능력만 잰다.
+#     gold prefix state + **정답 lemma 를 프롬프트 맨 앞에 억지로 삽입**
+#     → 모델이 gold tactic 을 조립해 내는가
+#   랭킹은 상관없다. 정답이 프롬프트에 실려 있기만 하면 된다.
+#   이렇게 하면 "도달성 실패" 가 0 이 되고 남는 것은 **조립 실패** 뿐이다.
+#: gold lemma 강제 주입 — **네 번째 인자**로 켠다 (`… <ckpt> <N> <ratios> inject`).
+#   환경변수를 새로 만들지 않는다. 기본은 꺼짐 — 검색만 재는 것이 기본이다.
+INJECT_GOLD = (sys.argv[4] if len(sys.argv) > 4 else "noinject") == "inject"
+#: ★ 후보를 **시퀀스 로그확률 순**으로 정렬할지. 켜면 `top1` 이 "모델의 최선
+#   추측" 이 된다 (실제 증명 탐색은 후보를 순서대로 시도하므로 이게 맞다).
+#   끄면 생성 순서 = 무작위 샘플 순서다.
+SORT_BY_SCORE = (sys.argv[5] if len(sys.argv) > 5 else "nosort") == "sort"
+INJECT_VERIFY = True    # 실제로 프롬프트에 실렸는지 확인해서 따로 센다
 OUT.parent.mkdir(parents=True, exist_ok=True)
 
 CONF = yaml.safe_load(open("all_log/ft_qwen3b_v9_conf.yaml"))
+# ★ conf 의 sentence_db 는 **학습용**(`/tmp/coq-dataset`)을 가리킨다. 그 경로는
+#   tmpfs 초기화로 사라졌고, 애초에 평가에는 CoqStoq TEST 를 써야 한다.
+#   포매터를 만들기 **전에** 덮어써야 한다 — 안 그러면 로드에서 죽는다.
+_T = "raw-data/coqstoq-test/coqstoq-test-sentences.db"
+_D = "raw-data/coqstoq-test"
+CONF["tactic_data"]["sentence_db_loc"] = _T
+CONF["tactic_data"]["data_loc"] = _D
+for _k in ("premise", "proof_ret"):
+    _c = CONF["tactic_data"]["formatter_conf"].get(_k)
+    if isinstance(_c, dict):
+        if "sentence_db_loc" in _c: _c["sentence_db_loc"] = _T
+        if "data_loc" in _c: _c["data_loc"] = _D
 td = TacticDataConf.from_yaml(CONF["tactic_data"])
 # ★★ CoqStoq TEST 정리는 **평가용 데이터셋**에 있다 — 학습용 /tmp/coq-dataset 이 아니다.
 #   데이터포인트 이름 규칙부터 다르다: 평가용은 `compcert-…`, 학습용은 `AbsInt-CompCert-…`.
@@ -65,9 +103,196 @@ DATA_LOC = Path("raw-data/coqstoq-test")
 SDB_LOC = Path("raw-data/coqstoq-test/coqstoq-test-sentences.db")
 sdb = SentenceDB.load(SDB_LOC)
 formatter = formatter_from_conf(td.formatter_conf)
+_pc = formatter.premise_client
+from tactic_gen.tactic_data import (example_collator_from_conf,  # noqa: E402
+                                    example_collator_conf_from_yaml, get_tokenizer)
+_col = example_collator_from_conf(
+    example_collator_conf_from_yaml(CONF["tactic_data"]["collator_conf"]))
+_tok = get_tokenizer(td.model_name)
+# 래퍼와 **같은** 정규화 설정을 쓴다 — 어긋나면 검증이 헛것을 본다
+_NORM = True
+
+POOL = {}
+if POOL_FILE and os.path.exists(POOL_FILE):
+    from premise_selection import coq_search_pool as _CSP
+    for _ln in open(POOL_FILE):
+        _ln = _ln.strip()
+        if not _ln:
+            continue
+        _d = json.loads(_ln)
+        _st = _d.get("stmts") or {}
+        # ★ `order` 가 있으면 **그 순서대로** 만든다. dict 순서에 기대지 않는다.
+        _names = _d.get("order") or list(_st)
+        # ★ `raw` 면 stmts 가 **이미 완성된 선언문**이다 (원본 소스 텍스트).
+        #   감싸면 `Lemma X : Lemma X : ….` 이 된다.
+        if _d.get("raw"):
+            POOL[(_d["idx"], _d["k"])] = [_st[a] for a in _names if _st.get(a)]
+        else:
+            POOL[(_d["idx"], _d["k"])] = [f"Lemma {a} : {_st[a]}." for a in _names
+                                          if _st.get(a)]
+    # ★ 풀이 조용히 비면 "필터를 붙였는데 효과가 없다" 로 오독된다.
+    assert POOL, f"{POOL_FILE} 을 읽었는데 지점이 0 — 형식을 확인하라"
+    assert POOL_MODE in ("union", "only", "ordered"), f"모르는 POOL_MODE: {POOL_MODE}"
+    _empty = sum(1 for v in POOL.values() if not v)
+    assert _empty < 0.1 * len(POOL), \
+        f"후보가 빈 지점 {_empty}/{len(POOL)} — stmts 가 비었는지 확인하라"
+    import statistics as _st
+    print(f"■ 필터 풀 {len(POOL):,} 지점 · 모드 {POOL_MODE} "
+          f"· 후보 중앙 {_st.median([len(v) for v in POOL.values()]):,.0f}", flush=True)
+
+
+_DECLRE = re.compile(r"^\s*(?:Local\s+|Global\s+|Program\s+)?"
+                    r"(?:Lemma|Theorem|Corollary|Remark|Definition|Fixpoint|Inductive|"
+                    r"Proposition|Instance|Record|Axiom|Fact|Property)\s+([A-Za-z_][\w'.]*)")
+
+
+def _find_decl(name, pool):
+    """풀에서 그 이름의 선언문을 찾는다. 없으면 None."""
+    nb = name.split(".")[-1]
+    for p in pool:
+        t = getattr(p, "text", "") or ""
+        m = _DECLRE.match(t)
+        if m and (m.group(1) == name or m.group(1).split(".")[-1] == nb):
+            return t
+    return None
+
+
+_DBCON = None
+_DECLKW = ("Lemma", "Theorem", "Corollary", "Remark", "Proposition",
+           "Fact", "Property", "Definition", "Axiom", "Instance")
+
+
+def _decl_from_db(name):
+    """문장 DB 에서 선언문을 찾는다 (stdlib 폴백).
+
+    현행 풀은 프로젝트 선언만 담으므로 stdlib gold 은 주입 자체가 불가능했다.
+    DB 에는 53,387 문장이 있고 stdlib 도 들어 있다."""
+    global _DBCON
+    import sqlite3
+    if _DBCON is None:
+        _DBCON = sqlite3.connect(str(SDB_LOC), check_same_thread=False)
+    nb = name.split(".")[-1]
+    cur = _DBCON.cursor()
+    for kw in _DECLKW:
+        cur.execute("SELECT text FROM sentence WHERE text LIKE ? LIMIT 1",
+                    (f"{kw} {nb} %",))
+        r = cur.fetchone()
+        if r:
+            t = " ".join((r[0] or "").split())
+            if not t.endswith("."): t += "."
+            return t
+    for kw in _DECLKW:
+        cur.execute("SELECT text FROM sentence WHERE text LIKE ? LIMIT 1",
+                    (f"{kw} {nb}:%",))
+        r = cur.fetchone()
+        if r:
+            t = " ".join((r[0] or "").split())
+            if not t.endswith("."): t += "."
+            return t
+    return None
+
+
+def _inject_gold(ex, gold, dp, pidx, k):
+    """★ 정답 lemma 를 프롬프트 **맨 앞**에 억지로 넣는다.
+
+    반환: (예제, 상태)   상태 ∈ {"넣음", "이미있음", "선언문없음"}
+    맨 앞에 두는 이유는 토큰 예산 절단에서 살아남게 하려는 것이지
+    랭킹 실험이 아니다 — 실려 있기만 하면 된다."""
+    prem = list(ex.premises or [])
+    nb = gold.split(".")[-1]
+    for t in prem:
+        m = _DECLRE.match(t or "")
+        if m and (m.group(1) == gold or m.group(1).split(".")[-1] == nb):
+            # 이미 있으면 맨 앞으로만 올린다
+            prem.remove(t); ex.premises = [t] + prem
+            return ex, "이미있음"
+    try:
+        proof = dp.proofs[pidx]
+        base = list(_pc.premise_filter.get_pos_and_avail_premises(
+            proof.steps[k], proof, dp).avail_premises)
+    except Exception:
+        base = []
+    d = _find_decl(gold, base)
+    if d is None:
+        # ★ 현행 풀(`avail_premises`)은 **프로젝트 것만** 담는다 — stdlib 이 없다.
+        #   실측: 주입 실패 180건 중 `Rle_trans`·`Z.gt_lt`·`eq_IZR`·`opp_IZR` 처럼
+        #   stdlib 이 큰 덩어리였다. 문장 DB 에는 다 있으므로 거기서 찾는다.
+        d = _decl_from_db(gold)
+    if d is None:
+        return ex, "선언문없음"
+    ex.premises = [d] + prem
+    return ex, "넣음"
+
+
+def _in_prompt(ex, gold):
+    """[PREMISES] 구간에 실제로 실렸나.
+
+    ★ **익명화를 반드시 같이 켜야 한다.** 모델이 보는 프롬프트는
+      `normalize=True` 로 만들어져 `PTree.gso` 가 `_L3` 로 바뀌어 있다.
+      `normalize=False` 로 확인하면 실제와 다른 문자열을 보게 된다.
+      정규화 매핑에서 gold 이 무엇으로 바뀌었는지 찾아 **그 이름**을 센다.
+
+    ★ 프롬프트 전체가 아니라 `[PREMISES]` 구간만 본다 — 전체를 보면
+      `[STATE]` 에 우연히 같은 이름이 있어 과대 계상된다(실측 83% 로 부풀었다).
+    """
+    from tactic_gen.tactic_data import last_inference_mapping
+    try:
+        s2 = _col.collate_input(_tok, ex, normalize=_NORM)
+    except TypeError:
+        s2 = _col.collate_input(_tok, ex)
+    except Exception:
+        return None
+    nb = gold.split(".")[-1]
+    target = nb
+    if _NORM:
+        m = last_inference_mapping() or {}
+        # 매핑은 {원래이름: 익명이름} 이다. gold 이 익명화됐으면 그 이름을 찾는다.
+        for k0, v0 in m.items():
+            if k0 == gold or k0.split(".")[-1] == nb:
+                target = v0
+                break
+    seg = s2.split("[PROOFS]")[0] if "[PROOFS]" in s2 else s2
+    seg = seg.split("[PREMISES]")[-1]
+    return bool(re.search(r"(?<![\w'])" + re.escape(target) + r"(?![\w'])", seg))
+
+
+def _inject(ex, i, k, dp, pidx):
+    """필터 결과를 풀에 넣고 **같은 랭커**로 다시 순위를 매긴다."""
+    texts = POOL.get((i, k))
+    if not texts:
+        return ex
+    from premise_selection import coq_search_pool as CSP
+    try:
+        proof = dp.proofs[pidx]
+        step = proof.steps[k]
+        extra = CSP.as_sentences(texts)
+        if POOL_MODE == "ordered":
+            # ★ 우리가 정한 순서를 **그대로** 쓴다. tf-idf 재랭킹을 건너뛴다.
+            _pr = [getattr(p, "text", "") for p in extra]
+            assert _pr, f"ordered 모드인데 premises 가 비었다 (idx={i} k={k})"
+            assert len(_pr) == len(texts), \
+                f"as_sentences 가 개수를 바꿨다: {len(texts)} → {len(_pr)}"
+            ex.premises = _pr
+            return ex
+        if POOL_MODE == "only":
+            pool = extra
+        else:
+            base = list(_pc.premise_filter.get_pos_and_avail_premises(
+                step, proof, dp).avail_premises)
+            pool = base + extra
+        ranked = _pc.get_ranked_premises(k, proof, dp, pool, False)
+        ex.premises = [getattr(p, "text", "") for p in ranked]
+    except Exception:
+        pass
+    return ex
 # ★ 래퍼가 체크포인트의 training_conf 를 이 프로세스에 전파한다(HARD_SEQ_LEN·OUT_TOKENS·
 #   normalize_inference). 여기서 env 로 못박지 않는다 — 학습과 어긋나면 _L# 이 밀린다.
 wrapper = DecoderLocalWrapper.from_checkpoint(Path(CKPT), normalize_inference=True)
+_NORM = bool(wrapper.normalize_inference)
+assert wrapper.hard_seq_len and wrapper.hard_seq_len > 0, "hard_seq_len 이 없다"
+assert not (INJECT_GOLD and POOL and POOL_MODE == "ordered"), \
+    "gold 주입과 정렬풀을 같이 켜면 무엇을 재는지 알 수 없다 — 하나만 켜라"
+print(f"■ gold 주입 {'ON (오라클)' if INJECT_GOLD else 'OFF'}", flush=True)
 print(f"■ {CKPT}\n   hard_seq_len={wrapper.hard_seq_len} · normalize={wrapper.normalize_inference}"
       f" · 후보 {NCAND}개 · 비율 {RATIOS}", flush=True)
 
@@ -148,9 +373,28 @@ for i in mine:
             continue
         try:
             ex = formatter.example_from_step(k, pidx, dp, training=False)
+            if POOL:
+                ex = _inject(ex, i, k, dp, pidx)
             gold = ex.next_steps[0]
+            _instate = None; _injst = None
+            if INJECT_GOLD:
+                _gn = sorted(lemma_names(gold))
+                if _gn:
+                    ex, _st = _inject_gold(ex, _gn[0], dp, pidx, k)
+                    S[r][f"주입:{_st}"] += 1
+                    _injst = _st
+                    if INJECT_VERIFY:
+                        _instate = _in_prompt(ex, _gn[0])
+                        S[r]["프롬프트에 실림" if _instate else "프롬프트에 없음"] += 1
             res = wrapper.get_recs(ex, NCAND, "", False, None)
             cands = list(res.next_tactic_list)
+            # ★ 샘플링(beam=False)이라 생성 순서에 뜻이 없다. 래퍼가 시퀀스
+            #   로그확률을 이미 계산해 주는데 지금까지 버리고 있었다 —
+            #   `top1` 이 "무작위 샘플 하나" 였다는 뜻이다. 정렬 비용은 0이다.
+            _sc = list(getattr(res, "score_list", None) or [])
+            if SORT_BY_SCORE and len(_sc) == len(cands) and len(cands) > 1:
+                cands = [c for _, c in sorted(zip(_sc, cands),
+                                              key=lambda t: -t[0])]
         except Exception as e:
             S[r]["오류"] += 1
             continue
@@ -176,6 +420,7 @@ for i in mine:
             S[r]["gold 가 일반 tactic"] += 1
             S[r]["└ 일반 top1 일치"] += (bool(cn) and cn[0] == g)
         fout.write(json.dumps(dict(idx=i, r=r, k=k, nsteps=nsteps, gold=gold,
+                                   inprompt=_instate, inject=_injst,
                                    cands=cands[:NCAND], gold_names=sorted(gl),
                                    cand_names=sorted(cl)), ensure_ascii=False) + "\n")
     done += 1

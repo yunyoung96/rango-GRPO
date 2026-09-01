@@ -1,0 +1,26 @@
+  bertrand 1/3 · 필터호출 4
+  bertrand 2/3 · 필터호출 6
+  bertrand 3/3 · 필터호출 10
+  qarith-stern-brocot 1/3 · 필터호출 14
+  qarith-stern-brocot 2/3 · 필터호출 16
+  qarith-stern-brocot 3/3 · 필터호출 19
+  stalmarck 1/3 · 필터호출 21
+  stalmarck 2/3 · 필터호출 24
+  stalmarck 3/3 · 필터호출 28
+  sudoku 1/3 · 필터호출 32
+  sudoku 2/3 · 필터호출 34
+  sudoku 3/3 · 필터호출 36
+
+■ ① 플러그인 필터 (36회 · 우주 중앙 12,184)
+   지점당 sec:  중앙 215ms · p90 342ms · 최대 670ms
+   색인 build:  중앙 401ms (정리당 1회 상각)
+   구간 apply        중앙   166ms · p90   235ms
+   구간 apply-in     중앙     0ms · p90    38ms
+   구간 rewrite+rwh  중앙    42ms · p90   102ms
+
+■ ② 파이썬 랭킹 (17지점 · 채널 후보 중앙 309개)
+   지점당: 중앙 2.1ms · p90 3.2ms
+   후보당: 중앙 6µs
+
+■ 합계 추정: 필터(sec) + 랭킹 = 노드당 총비용 → rango ~300ms 와 비교
+SPEED_DONE

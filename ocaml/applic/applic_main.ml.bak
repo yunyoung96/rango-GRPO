@@ -1,0 +1,394 @@
+(* ★★ 적용가능성 필터 — Coq 커널 단일화를 **직접** 부른다.
+ *
+ * `assert_succeeds (eapply L)` 는 tactic 을 실제로 실행하고 상태를 되돌린다.
+ * 판정은 정확하지만 후보 하나마다 증명 상태를 저장·복원하므로 0.11ms 가 든다.
+ * 여기서는 그 층을 걷어내고 `Unification.w_unify` 를 직접 부른다.
+ *
+ * 그리고 `assert_succeeds` 로는 못 하던 것을 한다 — **전역 환경 전체를 훑는다.**
+ * tactic 판으로는 후보 이름을 밖(파이썬)에서 만들어 넣어 줘야 했다. 여기서는
+ * `Environ.fold_constants` 로 환경에 있는 것을 전부 본다. 즉 "참조 가능한
+ * lemma 전체 → 필터" 를 한 번에 한다. *)
+
+open Names
+open Pp
+
+let max_arrows = 8            (* 화살표 접미사를 몇 단까지 볼까 *)
+
+(* ── 값싼 선별: 결론의 머리 기호 ───────────────────────────────────────── *)
+
+type key = KConst of Constant.t | KInd of inductive | KCtor of constructor
+         | KVar of Id.t | KSort | KFlex
+
+let key_of_constr (t : Constr.t) : key =
+  let hd = fst (Constr.decompose_app t) in
+  match Constr.kind hd with
+  | Constr.Const (c, _) -> KConst c
+  | Constr.Ind (i, _) -> KInd i
+  | Constr.Construct (c, _) -> KCtor c
+  | Constr.Var v -> KVar v
+  | Constr.Sort _ -> KSort
+  | _ -> KFlex
+
+let key_of_econstr sigma (t : EConstr.t) : key =
+  key_of_constr (EConstr.Unsafe.to_constr (fst (EConstr.decompose_app sigma t)))
+
+(* lemma 타입의 **모든 화살표 접미사**의 머리를 모은다.
+   `x -> y -> z` 는 `z` 로도 `y -> z` 로도 `전체` 로도 매칭될 수 있다. *)
+let suffix_keys (ty : Constr.t) : key list =
+  let rec go n acc t =
+    let acc = key_of_constr t :: acc in
+    if n >= max_arrows then acc
+    else match Constr.kind t with
+      | Constr.Prod (_, _, b) -> go (n + 1) acc b
+      | Constr.LetIn (_, _, _, b) -> go (n + 1) acc b
+      | Constr.Cast (c, _, _) -> go n acc c
+      | _ -> acc
+  in
+  go 0 [] ty
+
+let key_compat (a : key) (b : key) =
+  match a, b with
+  | KFlex, _ | _, KFlex -> true
+  | KSort, KSort -> true
+  | KConst x, KConst y -> Constant.CanOrd.equal x y
+  | KInd x, KInd y -> Ind.CanOrd.equal x y
+  | KCtor x, KCtor y -> Construct.CanOrd.equal x y
+  | KVar x, KVar y -> Id.equal x y
+  | _ -> false
+
+(* ── 진짜 판정: 커널 단일화 ───────────────────────────────────────────── *)
+
+(* `eapply L` 의 의미 그대로 — 앞의 전제들을 evar 로 채우고 결론을 goal 과 맞춘다. *)
+let unifies env sigma (concl : EConstr.t) (ty : EConstr.t) : bool =
+  let rec go n sigma t =
+    let ok =
+      try let _ = Unification.w_unify env sigma Conversion.CONV t concl in true
+      with e when CErrors.noncritical e -> false
+    in
+    if ok then true
+    else if n >= max_arrows then false
+    else
+      match EConstr.kind sigma t with
+      | Constr.Prod (_, a, b) ->
+        (try
+           let (sigma, ev) = Evarutil.new_evar env sigma a in
+           go (n + 1) sigma (EConstr.Vars.subst1 ev b)
+         with e when CErrors.noncritical e -> false)
+      | Constr.LetIn (_, a, _, b) -> go (n + 1) sigma (EConstr.Vars.subst1 a b)
+      | Constr.Cast (c, _, _) -> go n sigma c
+      | _ -> false
+  in
+  go 0 sigma ty
+
+(* ── rewrite 모드 ─────────────────────────────────────────────────────── *)
+
+(* `rewrite L` 은 **부분항**을 치환한다. goal 전체와 맞을 필요가 없다.
+   그래서 goal 의 부분항을 머리 기호로 색인해 두고, lemma 등식의 좌·우변
+   머리와 맞는 것만 실제로 단일화한다 — 판별트리를 커널 항 위에서 하는 셈이다. *)
+
+let subterm_index sigma (concl : EConstr.t) =
+  let tbl : (string, EConstr.t list) Hashtbl.t = Hashtbl.create 97 in
+  let all = ref [] in
+  let key_str k = match k with
+    | KConst c -> "c" ^ Constant.to_string c
+    | KInd i -> "i" ^ MutInd.to_string (fst i) ^ string_of_int (snd i)
+    | KCtor (i, j) -> "k" ^ MutInd.to_string (fst i) ^ string_of_int (snd i)
+                      ^ "_" ^ string_of_int j
+    | KVar v -> "v" ^ Id.to_string v
+    | KSort -> "s" | KFlex -> "?"
+  in
+  let rec go t =
+    all := t :: !all;
+    let k = key_str (key_of_econstr sigma t) in
+    Hashtbl.replace tbl k (t :: (try Hashtbl.find tbl k with Not_found -> []));
+    EConstr.iter sigma go t
+  in
+  go concl;
+  (tbl, !all, key_str)
+
+(* lemma 타입의 전제를 evar 로 채운 뒤 결론이 등식이면 좌·우변을 준다. *)
+let eq_sides env sigma (ty : EConstr.t) =
+  let rec go n sigma t =
+    match EConstr.kind sigma t with
+    | Constr.Prod (_, a, b) when n < max_arrows ->
+      (try
+         let (sigma, ev) = Evarutil.new_evar env sigma a in
+         go (n + 1) sigma (EConstr.Vars.subst1 ev b)
+       with e when CErrors.noncritical e -> (sigma, None))
+    | Constr.LetIn (_, a, _, b) when n < max_arrows ->
+      go (n + 1) sigma (EConstr.Vars.subst1 a b)
+    | Constr.Cast (c, _, _) -> go n sigma c
+    | _ ->
+      let (hd, args) = EConstr.decompose_app sigma t in
+      (match EConstr.kind sigma hd with
+       | Constr.Ind (i, _) when Array.length args >= 2 ->
+         let nm = MutInd.to_string (fst i) in
+         if nm = "Coq.Init.Logic.eq" || nm = "Coq.Init.Logic.iff" then
+           let n = Array.length args in
+           (sigma, Some (args.(n - 2), args.(n - 1)))
+         else (sigma, None)
+       | _ -> (sigma, None))
+  in
+  go 0 sigma ty
+
+(* ── 본체 ─────────────────────────────────────────────────────────────── *)
+
+
+(* ── ★★ 판별트리 (Coq 자신의 것) ──────────────────────────────────────────
+ *
+ * `Btermdn.Make` 는 Coq 이 hint DB 에 쓰는 **판별트리**다. 결정적으로
+ * **커널 항 위에서** 돈다 — 출력형 텍스트가 아니다. 그래서 파이썬으로 8판본을
+ * 만들다 못 넘던 벽(elaboration·notation·암묵인자·변환)이 애초에 없다.
+ *
+ * 쓰는 법: 모든 전역 등식의 좌·우변을 패턴으로 넣어 두고, goal 의 **부분항**
+ * 하나하나로 `lookup` 한다. 반환되는 것이 "그 부분항을 redex 로 삼을 수 있는
+ * lemma" 다 — 사용자가 물어본 "rewrite 가능한 모든 패턴 찾기" 그 자체다. *)
+
+module Key = struct
+  type t = Constant.t * int
+  let compare (c1, i1) (c2, i2) =
+    let c = Constant.CanOrd.compare c1 c2 in
+    if c <> 0 then c else Int.compare i1 i2
+end
+
+module DN = Btermdn.Make (Key)
+
+(* ★ `None` 은 "전부 투명" 이라 트리가 거의 안 거른다(실측 raw 33,168/5redex).
+   `Some TransparentState.empty` = **아무것도 펼치지 않음** = 최대 판별력. *)
+let ts_rigid : TransparentState.t option = Some TransparentState.empty
+
+let dn_index : DN.t ref = ref DN.empty
+let dn_nconst = ref (-1)
+let dn_npat = ref 0
+let dn_build_sec = ref 0.0
+
+let nb_constants env = Environ.fold_constants (fun _ _ n -> n + 1) env 0
+
+let dn_depth = ref 2
+
+let set_depth n =
+  dn_depth := n; Btermdn.dnet_depth := n;
+  dn_nconst := -1                       (* 깊이가 바뀌면 색인을 다시 만든다 *)
+
+let build_index env sigma =
+  Btermdn.dnet_depth := !dn_depth;
+  let t0 = Unix.gettimeofday () in
+  let idx = ref DN.empty and np = ref 0 in
+  Environ.fold_constants
+    (fun c _ () ->
+       try
+         let (sigma, tm) = Evd.fresh_global env sigma (GlobRef.ConstRef c) in
+         let ty = Retyping.get_type_of env sigma tm in
+         let (sigma, sides) = eq_sides env sigma ty in
+         match sides with
+         | None -> ()
+         | Some (l, r) ->
+           List.iteri
+             (fun i d ->
+                try
+                  let p = DN.constr_pattern env sigma ts_rigid d in
+                  idx := DN.add !idx p (c, i); incr np
+                with e when CErrors.noncritical e -> ())
+             [l; r]
+       with e when CErrors.noncritical e -> ())
+    env ();
+  dn_index := !idx; dn_npat := !np;
+  dn_nconst := nb_constants env;
+  dn_build_sec := Unix.gettimeofday () -. t0
+
+(* ── 지역 가설 ────────────────────────────────────────────────────────────
+ * gold 의 12.7% 가 `H`·`IH`·`IHl` 같은 **지역 가설**이다. 전역 상수만 훑으면
+ * 원리적으로 못 찾는다. 그리고 `rewrite L in H` 는 **가설 안**이 대상이므로
+ * 결론만 봐서도 안 된다. 후보에도 대상에도 가설을 넣는다. *)
+
+let local_hyps env sigma =
+  List.filter_map
+    (fun d ->
+       let open Context.Named.Declaration in
+       match d with
+       | LocalAssum (na, ty) -> Some (na.Context.binder_name, EConstr.of_constr ty)
+       | LocalDef (na, _, ty) -> Some (na.Context.binder_name, EConstr.of_constr ty))
+    (Environ.named_context env)
+
+let rw_dn_tac () : unit Proofview.tactic =
+  Proofview.Goal.enter (fun gl ->
+      let env = Proofview.Goal.env gl in
+      let sigma = Proofview.Goal.sigma gl in
+      let concl = Proofview.Goal.concl gl in
+      let n = nb_constants env in
+      if !dn_nconst <> n then build_index env sigma;
+      let t0 = Unix.gettimeofday () in
+      let hyps = local_hyps env sigma in
+      (* ★ 대상 = 결론의 부분항 **+ 각 가설 타입의 부분항**.
+         `rewrite L in H` 는 가설 안을 고치므로 결론만 봐서는 못 찾는다. *)
+      let subs = ref [] in
+      let rec go t = subs := t :: !subs; EConstr.iter sigma go t in
+      go concl;
+      List.iter (fun (_, ty) -> go ty) hyps;
+      (* ★ 바인더 **아래**의 부분항은 그대로 쓰면 안 된다.
+         `forall x, f x = g x` 안의 `f x` 에서 `x` 는 de Bruijn 인덱스라
+         바깥 문맥에서는 뜻이 없다 — 단일화에 넘기면 헛것을 맞춘다.
+         `closed0` 로 **닫힌** 부분항만 남긴다. (열린 것을 제대로 다루려면
+         setoid_rewrite 처럼 문맥을 들고 다녀야 하는데, `rewrite` 자체가
+         바인더 아래를 못 고치므로 여기서는 버리는 것이 맞다.) *)
+      let redexes =
+        List.filter
+          (fun t ->
+             (match key_of_econstr sigma t with
+              | KFlex | KSort -> false
+              | _ -> Array.length (snd (EConstr.decompose_app sigma t)) > 0)
+             && EConstr.Vars.closed0 sigma t)
+          !subs
+      in
+      let tbl = Hashtbl.create 97 in
+      let tried = Hashtbl.create 997 in
+      let raw = ref 0 in
+      let side_matches sg d =
+        List.exists
+          (fun st ->
+             try let _ = Unification.w_unify env sg Conversion.CONV d st in true
+             with e when CErrors.noncritical e -> false)
+          redexes
+      in
+      (* ① 전역 — 판별트리로 좁히고 커널로 확정 *)
+      List.iter
+        (fun st ->
+           let cands =
+             try DN.lookup env sigma ts_rigid !dn_index st
+             with e when CErrors.noncritical e -> [] in
+           raw := !raw + List.length cands;
+           List.iter
+             (fun (c, side) ->
+                let nm = Constant.to_string c in
+                let tk = nm ^ "#" ^ string_of_int side in
+                if not (Hashtbl.mem tried tk) then begin
+                  Hashtbl.replace tried tk ();
+                  let ok =
+                    try
+                      let (sg, tm) = Evd.fresh_global env sigma (GlobRef.ConstRef c) in
+                      let ty = Retyping.get_type_of env sg tm in
+                      let (sg, sides) = eq_sides env sg ty in
+                      match sides with
+                      | None -> false
+                      | Some (l, r) -> side_matches sg (if side = 0 then l else r)
+                    with e when CErrors.noncritical e -> false
+                  in
+                  if ok then
+                    Hashtbl.replace tbl
+                      (Libnames.string_of_qualid
+                         (Nametab.shortest_qualid_of_global Id.Set.empty
+                            (GlobRef.ConstRef c))) ()
+                end)
+             cands)
+        redexes;
+      (* ② 지역 가설 — `rewrite H` / `rewrite H in H'` *)
+      List.iter
+        (fun (id, ty) ->
+           let ok =
+             try
+               let (sg, sides) = eq_sides env sigma ty in
+               match sides with
+               | None -> false
+               | Some (l, r) -> side_matches sg l || side_matches sg r
+             with e when CErrors.noncritical e -> false
+           in
+           if ok then Hashtbl.replace tbl (Id.to_string id) ())
+        hyps;
+      let dt = Unix.gettimeofday () -. t0 in
+      Hashtbl.iter (fun nm () -> Feedback.msg_notice (str "DNRW " ++ str nm)) tbl;
+      Feedback.msg_notice
+        (str (Printf.sprintf
+                "DN_STAT const=%d pat=%d build=%.3f sub=%d redex=%d raw=%d hit=%d sec=%.4f"
+                !dn_nconst !dn_npat !dn_build_sec (List.length !subs)
+                (List.length redexes) !raw (Hashtbl.length tbl) dt));
+      Proofview.tclUNIT ())
+
+let filter_tac () : unit Proofview.tactic =
+  Proofview.Goal.enter (fun gl ->
+      let env = Proofview.Goal.env gl in
+      let sigma0 = Proofview.Goal.sigma gl in
+      let concl = Proofview.Goal.concl gl in
+      let gkey = key_of_econstr sigma0 concl in
+      let hyps = local_hyps env sigma0 in
+      (* 전방추론(`apply L in H`) 은 L 의 **첫 전제**가 H 와 맞으면 된다.
+         후보×가설 전부를 단일화하면 비싸므로 머리 기호로 먼저 거른다. *)
+      let hkeys = List.map (fun (_, ty) -> key_of_econstr sigma0 ty) hyps in
+      let t0 = Unix.gettimeofday () in
+      let seen = ref 0 and pass_ap = ref 0 and pass_in = ref 0 in
+      let out_ap = ref [] and out_in = ref [] in
+      let first_prem_key (ty : Constr.t) =
+        match Constr.kind ty with
+        | Constr.Prod (_, a, _) -> Some (key_of_constr a)
+        | _ -> None
+      in
+      let consider name (ty0 : Constr.t) getty =
+        incr seen;
+        (* ① apply — 화살표 접미사 중 하나가 goal 과 맞나 *)
+        if List.exists (fun k -> key_compat k gkey) (suffix_keys ty0) then begin
+          let ok =
+            try let (sg, ty) = getty () in unifies env sg concl ty
+            with e when CErrors.noncritical e -> false in
+          if ok then begin incr pass_ap; out_ap := name :: !out_ap end
+        end;
+        (* ② apply … in H — 첫 전제가 어떤 가설과 맞나 *)
+        match first_prem_key ty0 with
+        | None -> ()
+        | Some KFlex -> ()     (* ★ 유연한 첫 전제는 모든 가설과 맞아 폭발한다 *)
+        | Some KSort -> ()
+        | Some pk ->
+          if List.exists (fun hk -> match hk with
+                                    | KFlex | KSort -> false
+                                    | _ -> key_compat pk hk) hkeys then begin
+            let ok =
+              try
+                let (sg, ty) = getty () in
+                (match EConstr.kind sg ty with
+                 | Constr.Prod (_, a, _) ->
+                   List.exists
+                     (fun (_, hty) ->
+                        try let _ = Unification.w_unify env sg Conversion.CONV a hty in true
+                        with e when CErrors.noncritical e -> false)
+                     hyps
+                 | _ -> false)
+              with e when CErrors.noncritical e -> false in
+            if ok then begin incr pass_in; out_in := name :: !out_in end
+          end
+      in
+      Environ.fold_constants
+        (fun c cb () ->
+           let nm () =
+             Libnames.string_of_qualid
+               (Nametab.shortest_qualid_of_global Id.Set.empty (GlobRef.ConstRef c)) in
+           consider (nm ()) cb.Declarations.const_type
+             (fun () ->
+                let (sg, tm) = Evd.fresh_global env sigma0 (GlobRef.ConstRef c) in
+                (sg, Retyping.get_type_of env sg tm)))
+        env ();
+      (* ★ 지역 가설도 후보다 — gold 의 12.7% 가 `H`·`IH`·`IHl` 이다. *)
+      List.iter
+        (fun (id, ty) ->
+           consider (Id.to_string id) (EConstr.Unsafe.to_constr ty)
+             (fun () -> (sigma0, ty)))
+        hyps;
+      let dt = Unix.gettimeofday () -. t0 in
+      List.iter (fun n -> Feedback.msg_notice (str "APPLIC " ++ str n)) (List.rev !out_ap);
+      List.iter (fun n -> Feedback.msg_notice (str "APPLICIN " ++ str n)) (List.rev !out_in);
+      Feedback.msg_notice
+        (str (Printf.sprintf "APPLIC_STAT scanned=%d apply=%d applyin=%d hyps=%d sec=%.3f"
+                !seen !pass_ap !pass_in (List.length hyps) dt));
+      Proofview.tclUNIT ())
+
+
+(* ── 별칭 정규화 ──────────────────────────────────────────────────────────
+ * `sym_eq` 는 `eq_sym` 의 옛 이름이다. 플러그인은 `shortest_qualid_of_global`
+ * 로 정규 이름을 찍으므로, 증명 원문의 별칭과 문자열 비교하면 **가짜 미검출**
+ * 이 난다(실측 15건 중 3건). 정답 이름을 같은 함수로 정규화해 비교한다. *)
+
+let canon (r : Libnames.qualid) =
+  let nm =
+    try
+      let g = Nametab.locate r in
+      Libnames.string_of_qualid (Nametab.shortest_qualid_of_global Id.Set.empty g)
+    with Not_found -> "?" in
+  Feedback.msg_notice
+    (str "CANON " ++ str (Libnames.string_of_qualid r) ++ str " -> " ++ str nm)

@@ -2140,3 +2140,253 @@ premise 길이 편차가 극심하다 — 최소 16 · p25 43 · 중앙 147 · �
     all_log/oracle25k_s{0,1}.jsonl      대조
     all_log/ns25k_named_s{0,1}.jsonl    대조
     all_log/au_research/chain47k.log    실행 로그
+
+[2026-08-31 KST] 구조적 IDF(rig) 도입 + 파라미터 축소
+- 동기: applic-idf(이름별 조회표)는 스플릿 전이 불가(미관측 gold −4.60 bit, @10 −10pp 실측)
+- 정의: rig(L) = 매칭 항(결론/전제/rewrite패턴)의 전위순회 경직 라벨 수
+        Î(L) = rig·log₂b  (격자 join×Baire 가지치기 합성 — 말뭉치 불필요)
+- 구현: applic_main.ml rigidity(), 네 채널 전부 rig= 출력 (APPLICIN 은 rig/lcp/lgg 신설)
+        r11_eval 에 sigc(채널별 신호) 추가 — 이전엔 마지막 줄이 sig 를 통째로 덮어씀
+- VAL(v4 풀, 110지점, 프로젝트 LOO) 절제:
+        기준(전체−idf) 49.1% | −rig 44.5%(단독 최다 기여) | +idf 42.7%(해악)
+        lgg+lcp+rig+std+ing 5특징·21파라 = @10 60.0% (+10.9pp, 58파라 전체보다 좋음)
+- 교훈: v5 재수집이 같은 파일명을 덮어써 진행중 파일로 스캔하면 지점수가 준다
+        (shrink 스캔 39지점 무효 — v5 완료 후 재실행)
+- 진행: v5 VAL/TEST/TRAIN(coq-art) 재수집(새 플러그인+sigc), undecidability make -k 재빌드
+
+[2026-08-31 KST] r11_v5 수집(전 채널 rig+sigc) → 파라미터 최종화 14개
+- 명명 규약: 수집 회차 로그 = r11_vN_{val,test,train}.log (학습 v9/v10 과 구분, 사용자 지시)
+- v5 VAL(110지점) 절제: rig −16.4pp 단독 최대. slen/nsym/e/z 등은 0 또는 해악
+- 조합: rig단독(5파라) 64.5% > 전체 57파라 59.1%. lgg+lcp+rig+std 68.2%
+- 굵히기(동률 결정적 정렬 후): 14파라(lgg4+lcp4+rig4+std2) = 69.1% = 21파라와 동률
+  → applic_rank 기본값으로 채택 (KEEP 4특징, BUCKETS 굵힘)
+- 학습0 고정식 lgg/g+lcp/g+λ·rig: λ=0.2 에서 65.5% (λ 0.05~0.5 둔감)
+- 전이(coq-art 146지점→VAL): 59.1% — in-split 69.1% 대비 −10pp. 양성 65개가 얇음
+  → undecidability make -k 재빌드로 TRAIN 다양화 진행중
+- TEST 는 수집중 — 완료 후 최종 14파라 + 전이 딱 한 번 측정 예정
+
+[2026-08-31 KST] TRAIN 저장소 선별 교훈
+- Priyanka-Mondal/Coq (563 vo) = Coq 소스트리 사본(lib/plugins/…) — 재생 시
+  stdlib 충돌로 우주가 990개(프렐류드뿐)로 무너져 gold 생존 5.3%. 제외.
+- 교훈: rango TRAIN 저장소 중 "Coq/stdlib/교과서 사본"류는 자기 빌드가 돼도
+  재생 데이터로는 오염. 수집 전 cand 중앙값(<2,000 이면 의심)으로 걸러야 함.
+- 재수집: coq-art 전체(상한500) + undecidability(597 vo) = 정리 982건 진행중
+
+[2026-09-01 KST] 완전 학습형 가중치 (VAL 110지점, 프로젝트 LOO)
+- A 쌍별로지스틱 one-hot 14파라: @10 56.4% (NB-14 69.1% 보다 나쁨 — 쌍별 목적이
+  구간 one-hot 에선 과소적합)
+- B 쌍별로지스틱 연속 4파라: 67.3% — 구간 없이 NB-14 에 −1.8pp 근접
+  단 lcp/g 가중치가 음수(−2~−3.7): lgg 와 공선성 탓 부호 뒤집힘(해석 불가)
+- C GP-EI 베이지안최적화 4파라: 68.2% (@5 는 57.3%로 최고) — 두 가중치 다 양수, 해석 가능
+- 결론: 볼록 학습·BO 어느 쪽도 닫힌형 세기(69.1%)를 못 넘음 → 신호 집합이 포화,
+  "학습 방법"이 아니라 "특징"이 병목. 논문 서술: NB 는 근사가 아니라 사실상 최적점
+
+[2026-09-01 KST] apply-in 자기채널 회수 37.5% 분석 (VAL only_in 8지점)
+- 실패 5건 분해: 4건 = iff 정리 (or_comm · Nat.le_succ_l ×2 · Nat.lt_eq_cases)
+  → rwh 채널에는 있음(합집합 7/8=87.5%). in 채널이 iff 를 원리적으로 안 봤던 것
+  1건 = NoDup_remove_1: 가설이 ulist(=NoDup 의 Definition) — 알려진 δ 한계
+  (합성 재현으로 색인·질의 자체는 정상 확인: 같은 모양이면 in=1)
+- 수리(r12): iff_sides 도우미 + iff 양변을 P-트리 색인 + 질의 iff 분기
+  apply L in H 의 Coq 실의미(iff proj 자동)와 채널 정의를 일치시킴
+- 결론: "필터링은 건드릴 것 없다" 는 apply/rewrite/rewrite-in 에선 참(87~100%),
+  apply-in 만 iff 확장 1건이 필요했다. δ(ulist) 는 기존 결론 유지(확장 비용 대비 희귀)
+- 순서: TEST 본수집(v5)이 끝난 뒤 night3 가 r12 빌드 → only_in 3종 재수집 → pretty
+
+[2026-09-01 06:10 KST] TEST 본수집 조기 마감 결정
+- math-classes 정리들이 개당 30분+ (type class 우주) — 130/196 에서 수시간 정체 전망
+- TEST 풀 131행(6~7프로젝트)으로 마감, 꼬리(math-classes 중반 이후·poltac·zfc) 미수집
+- r12 only_in 재수집에서도 math-classes 제외. 필요시 별도 세션에서 채움
+
+[2026-09-01 06:20 KST] night1 결과 — 전이 성립 확정
+- TEST in-split(LOO·14파라 NB): 전체 @10 69.4% (VAL 69.1% 재현). apply 75.0 rewrite 66.7
+- TEST 완전학습형: A(one-hot 로지스틱) 69.4 = NB 동급 · B 67.3 · C(GP-EI) 68.4
+  → "닫힌형 세기 ≈ 최적점" 두 스플릿에서 반복
+- 전이(TRAIN 658행·양성293 → 동결): VAL BO-4 68.2(−0.9pp) · TEST NB-14/FIX-0 70.4(+1.0pp)
+  → 양성 65→293 확장으로 전이 손실 −10pp → ±1pp. FIX-0(학습0)이 TEST 70.4 ★
+- 문제: LOG-4 전이 rewrite-in 0% — 공선성으로 lcp 가중치 음수(−2.49), rwh 는 lgg 가
+  없어 lcp 가 유일 구조신호 → 역정렬. BO-4(+9.36)·FIX-0 은 정상.
+  pretty_rank 의 share=max(lgg,z)/g 가 rwh 구조신호 부재를 원천 교정 예정
+
+[2026-09-01 07:4x KST] r12 iff 수리가 헛돈 원인 → r13
+- 증상: r12 재수집 후에도 VAL apply-in 자기채널 38% 그대로, 합성재현 iffp=0
+- 원인: iff_sides 가 Constr.Ind 로 매치 — **iff 는 Definition(Const)** 다.
+  concl_parts 주석에 이미 적혀 있었다("and 는 귀납형이지만 iff 는 Definition").
+  rw_sides 가 iff 를 잡던 것도 Ind 분기가 아니라 setoid 폴백이었음
+- 검증(r13): myiff0/myiff2/Nat.le_succ_l 전부 APPLICIN 등장, in=1.
+  stdlib 우주 iffp=78, applyin 후보 242→283 (비용 미미)
+- 교훈: 판별 분기는 반드시 양성 카운터(iffp=)와 함께 넣어라 — 조용한 0 방지.
+  r12 풀 = r11 과 동일 의미(분기 불발) → r13 으로 only_in 3종 재수집
+
+[2026-09-01 07:35 KST] pretty_rank 기준선 (r12=iff 미반영) — 자기채널·전이 프로토콜 가동
+- 프로토콜: TRAIN 5겹 CV 로 K 선택(K=1, λ만 학습 → λ=1.1) → 동결 → VAL/TEST 1회
+  동결식 score = share + overlap + 1.1·rig  (자유 파라미터 1개)
+- VAL 자기채널: 회수 91.1% · @10 전체 49.6 (apply 67.3 · apply-in 0[n=6,iff탓]
+  · rewrite 57.1 · rewrite-in 30.0[n=40])
+- TEST 자기채널: 회수 81.4% · @10 전체 55.2 (apply 68.9 · apply-in 49.0[n=49]
+  · rewrite 55.6 · rewrite-in 43.2[n=44])
+- 해석: 필터(채널회수)는 견고, 병목은 채널 내 랭킹 — 특히 rwh(후보 ~1.2k)
+- 주의: 합집합-최선 지표(69%)와 다른 더 어려운 지표(자기채널+보강 분모)
+
+[2026-09-01 08:0x KST] night4 함정 — 파일명 태그 드리프트
+- 증상: r13 재수집을 했는데 pretty 가 r12 수치 그대로 (VAL apply-in 0%)
+- 원인: 프로젝트 필터에 -math-classes 를 추가하자 _TAG 가 바뀌어 출력이
+  …reglangmathclasses_{val,test}.jsonl 새 파일로 감. pretty 입력 경로는 옛 파일
+- 검증: r13 풀(ver=r13) 직접 확인 — VAL apply-in 자기채널 회수 3/8→7/8 ★
+  (iff 4건 전부 복귀, 잔여 1건=NoDup_remove_1 δ). TRAIN onlyin 264행 r13
+- 교훈: 수집 출력 경로는 필터 문자열에서 파생시키지 말 것. 다음 정리 때
+  OUT 을 명시 인자로 바꾼다. pretty 를 올바른 경로로 재실행(r13_pretty2)
+
+[2026-09-01 08:2x KST] r13 확정표 (ver-우선 병합 · 자기채널 · TRAIN 동결 λ=1.1)
+- VAL(127지점): 회수 91.3 · @10 46.5 · @20 52.0 · @50 66.1
+    apply 66.0 · apply-in 0.0(n=8,회수87.5,순위낮음) · rewrite 64.0 · rewrite-in 25.5
+- TEST(173지점): 회수 87.3 · @10 58.4 · @20 65.3 · @50 72.3
+    apply 68.3 · apply-in 63.3(회수89.8★iff효과) · rewrite 52.9 · rewrite-in 42.6
+- iff 수리 효과(TEST): apply-in 회수 +20.4pp · @10 +14.3pp. 다른 형태 무변(예상대로)
+- 다음 병목: rwh 채널 내 랭킹(@10 26~43%) + or_comm 류 초일반 iff 의 순위
+
+[2026-09-01 08:4x KST] hp(가설 최근성 1/hp) 신호 — 무효
+- K4(eta) CV 37.6% = K3 과 동일, K-선택은 여전히 K=1 → eta 자동 탈락
+- 해석: 전역 MRR 목적에선 apply 지점이 지배해 rwh 전용 신호가 못 이김.
+  rwh 를 올리려면 (a) 채널별 목적/가중(파라미터 증가 — 요구사항과 상충) 또는
+  (b) rwh 에 맞는 새 구조 신호(재작성 방향·d 깊이·nm 등) 탐색이 필요
+- 최종 확정치는 r13_pretty3 (= r13_pretty_hp 와 동일 가중치 [1,1,1.1,0,0])
+
+[2026-09-01 09:1x KST] rwh 신호 판별력 탐침 (TRAIN+VAL rewrite-in 95지점·회수 55)
+- 채널 내 gold vs 비gold AUC:
+    rig 0.710 ★ | d 0.334(역=0.666) ★미사용이었음 | z 0.604 | lcp 0.540 | nm 0.503 | hp 0.475
+- 발견: d(등식 깊이=전제 수) — gold 중앙 2 vs 비gold 3. "전제 하나가 부담 하나"
+  구조 신호인데 식에 없었다. hp 무효를 AUC 도 재확인(0.475)
+- 조치: pfeats 에 d 추가, K-사다리를 AUC 순으로 재구성(K2=lam+kap), CV 가 선택
+
+[2026-09-01 KST] ★ 돌파: 필터→tf-idf 기준선 + BLEND (사용자 질문이 단초)
+- goal 텍스트를 재수집 없이 오프라인 조인 (r11_goals_{split}.jsonl, 조인율 100%)
+- 토큰-idf: TRAIN 진술문 N=301,455 문서로 동결. lex=Σ_{t∈stmt∩goal} idf(t)
+- 자기채널 @10 (TRAIN 에서 ρ=0.5 선택 후 동결):
+    VAL:  STRUCT 46.5 → TFIDF 59.1 → BLEND 57.5
+    TEST: STRUCT 58.4 → TFIDF 57.2 → BLEND 62.4 ★
+    rewrite-in: VAL 25.5→53.2(TFIDF) · TEST 42.6→53.2(BLEND) — rwh 병목 해소
+- 해석: 구조(share/lcp/rig)와 어휘(lex)가 상보적. TFIDF 단독은 TEST 에서 뒤집힘
+  → BLEND 가 강건 승자. 파라미터 2개(λ, ρ) + 동결 토큰표(전이 실증)
+- 남은 구멍: VAL apply-in(n=8) 여전히 0% — 초일반 iff gold 는 어휘로도 안 갈림
+
+[2026-09-01 KST] ★★ 정식 확정 — score = share + overlap + rig + 0.2·lex (파라미터 2개)
+- TRAIN 5겹 CV 사다리: K0 32.1 → K1(+λrig) 36.6 → K2(+ρlex) 41.7 ★ → K3~5 무이득
+  CV 선택 K=2, 동결 (λ=1.0, ρ=0.2). 토큰표는 TRAIN 진술문만(N=301,455)
+- VAL(127):  회수 91.3 · @10 55.1 · @20 61.4 · @50 81.9  (STRUCT 대비 +8.6pp)
+- TEST(173): 회수 87.3 · @10 63.6 · @20 71.7 · @50 79.2  (+5.2pp)
+    apply 76.7 · apply-in 59.2 · rewrite 70.6 · rewrite-in 48.9
+- CV 의 ρ=0.2 가 임시 스캔 ρ=0.5 보다 두 스플릿 모두 강건 — 프로토콜 유효 실증
+- 이야기: 구조(격자 share/overlap + Baire rig)와 어휘(토큰-idf lex)가 상보,
+  각자 못 가르는 실패 조각을 서로 채움. 남은 구멍 = VAL apply-in(n=8) 초일반 iff
+
+[2026-09-01 KST] r14→r15: TEST apply 자기채널 −11.6pp 의 진범 2종 수리
+- 부류① 거대 텔레스코프: max_arrows 20→28 (r14) — buchberger 6건 중 3건 복귀
+  (arrows_sweep 실측 12→20 비용 +11% 평탄 → 28 도 싸다)
+- 부류② 레코드 사영 + 관계 결합자: eqA_sym : … → symmetric A eqA —
+  `symmetric` 이 Definition 이라 색인은 symmetric 머리·goal 은 eqA 머리로 영원히 어긋남
+  (dnA=0 실측). 수리(r15) = {symmetric,transitive,reflexive,antisymmetric} 만
+  화이트리스트 δ — 색인 go·descend·depth_of·suffix_depths 네 walker 에 동일 폴백
+  (walker 마다 규칙이 다르면 태그 깊이가 어긋난다). 검증: eqA_sym ap=1, nap +9
+- 교훈: δ 전면 전개는 폭발(mathcomp)하지만 **작은 화이트리스트는 유계** —
+  '어디까지 계산과 같다고 볼 것인가'를 상수 집합으로 명시하는 설계
+
+[2026-09-01 KST] ★★ r15 공식표 (buchberger r15 병합 · 동결식 share+overlap+rig+0.2·lex)
+- TEST(173): 회수 91.3(+4.0) · @10 67.6(+4.0) · @20 75.7 · @50 83.2
+    apply @10 88.3(+11.6★수리 직결) · apply-in 59.2 · rewrite 70.6 · rewrite-in 48.9
+- VAL(127): 불변 (55.1 / 회수 91.3) — buchberger 는 TEST 프로젝트
+- 하루 궤적(TEST @10): 58.4 → 63.6(+lex) → 67.6(+필터수리 2건)
+- 남은 구멍: VAL apply-in(n=8, 초일반 iff 랭킹) · rewrite-in(48.9) · TEST 꼬리(math-classes 등)
+
+[2026-09-01 KST] nlex 채택 — lex 를 goal idf 질량으로 정규화 ([0,1], share 와 동단위)
+- 동결: score = share + overlap + 0.988·rig + 7.78·nlex (파라미터 2개 유지)
+- TEST 68.8(+1.2) · VAL 55.1(동률) · CV 41.8(동률)
+  형태별 TEST: apply-in +8.1 · rewrite +11.8 · apply −3.3 · rewrite-in −4.2(44.7)
+- 이유: 무계 raw lex 가 구조 항을 삼키던 스케일 문제 해소 + 이론 단위 정합
+- 하루 최종 궤적(TEST @10): 58.4 → 63.6 → 67.6 → 68.8 (회수 91.3)
+- 남은 구멍: rewrite-in 44.7 · VAL apply-in(n=8) 초일반 iff · TEST 꼬리 미수집
+
+[2026-09-01 KST] rwh 다듬기 — 문맥 국소화 2변형 실패, rhh 시험 중
+- 변형A 후보별 자기-최애-가설 문맥: rewrite-in 38.3→19.1(VAL)/44.7→38.3(TEST) 붕괴
+  → 개념 결함: 추론 시 목표 가설 미지 + 후보마다 다른 잣대
+- 변형B max-단일가설 설명: 31.9/25.5 — 역시 하락
+- 결론: rwh 어휘 문맥도 **전체(가설들+결론)**가 맞다 — 가설 재작성도 결론을 향한다
+- 다음: rwh 는 문맥이 커서(gmass↑) nlex 과소평가 → rwh 전용 ρ 보정(rhh)을
+  K6=(λ,ρ,rhh) 후보로, CV 1pp 규칙 심사 중
+
+[2026-09-01 KST] rhh 도 CV 기각(42.0=42.0) — 진단: TRAIN rwh 표본 기근
+- TRAIN rewrite-in 34지점 · 회수 23.5% = 양성 ~8개 → CV 가 rwh 전용 항의
+  이득을 관측할 표본이 없음. 방법 4연속 기각의 공통 원인일 가능성
+- 조치: HoTT(이전 tb2 에서 560/560 완전 빌드 실적) 재빌드 → TRAIN only_in 에 추가
+  → rwh 양성 보강 후 rhh 재심사. 실패 시 rewrite-in 44.7 을 현 한계로 동결
+
+[2026-09-01 KST] HoTT 보강 실패 — Type-이론 스타일 비호환
+- HoTT only_in 93지점 양성 0: 등식이 paths(자기 정의)라 R-트리 밖 + 전부
+  Type-sort 라 prop_only 와 충돌. 지원=prop_only 해제+paths 색인 = 대개조 → 접음
+- 순보강: apply-in 양성 →46(undec 45) · rewrite-in 8→14 (여전히 기근)
+- TRAIN 저장소 교훈 갱신: 사본 오염(Priyanka) · Type-이론(HoTT) 두 부류 배제
+
+[2026-09-01 KST] ★ 공식 최종 (HoTT 정제 후) — rwh 다듬기 사이클 종료
+- 동결: share + overlap + 1.019·rig + 7.70·nlex (K=2, TRAIN 5겹 CV)
+- TEST(173): 회수 91.3 · @10 69.4 ★ · @20 76.3 · @50 80.9
+    apply 86.7 · apply-in 67.3 · rewrite 82.4 · rewrite-in 44.7
+- VAL(127): 회수 91.3 · @10 54.3 · @50 77.2 (rewrite-in 36.2)
+- rewrite-in 다듬기 5시도 전부 기각(κd·문맥국소2·rhh·HoTT보강) → 44.7 을
+  현 신호 집합의 한계로 동결. 논문 서술: 실패 계보 자체가 절제 증거
+- 하루 궤적(TEST @10): 58.4 → 63.6(lex) → 67.6(필터수리) → 68.8(nlex) → 69.4(정제)
+
+[2026-09-01 KST] TRAIN 수치 기록 (공식 최종)
+- CV(정직) 자기@10 41.8% · 재적합 전체 39.2(회수 49.6)
+- 형태별: apply 67.6(회수73.0) · apply-in 22.0(33.9) · rewrite 41.2(52.5) · rewrite-in 12.5(29.2)
+- 해석: 조건부(회수된 것 중 top10)로는 79% ≈ TEST 76% — 랭킹은 3스플릿 일관.
+  TRAIN 절대치가 낮은 건 저장소 특성(회수 50%)이 상한이기 때문
+
+[2026-09-01 KST] ★ TRAIN 회수 급락의 뿌리 — proj_args 폴백 결함
+- undec _CoqProject 가 theories/ 아래 → 폴백 -R . "" → From Undecidability
+  Require 전멸 → head 정의 실종 → 증명 열린 채 다음 정리로 흘러 오염 수집
+  (실측: four_squares_zero 지점 문맥이 Zsquare_bound 내부. stderr 를 버려
+  오류가 안 보였음 — _coqtop 이 stdout 만 반환)
+- 수리: proj_args 가 한 단계 하위 _CoqProject 도 탐색 (-Q theories Undecidability)
+- 파장: 기존 TRAIN 풀의 undec 행 전체가 무효 → 본풀+only_in 재수집 체인 가동
+- 교훈: ① 수집기 스모크에 "문맥 스냅샷 대 dp goal 대조" 넣을 것
+        ② 자식 stderr 를 버리지 말 것
+
+[2026-09-01 KST] ★★ TRAIN 수리 완결 + assert 5겹
+- proj_args 수리 후: TRAIN 회수 49.6→81.5 · @10 39.2→63.6 (CV 63.5)
+  apply-in 회수 33.9→86.2 · rewrite-in 29.2→78.8 — "낮은 회수"는 허상이었다
+- 재적합: K=2 유지(rhh 건강 표본으로도 기각) · λ=1.019 ρ=7.961 안정
+  TEST 68.8(−0.6 오차수준) · VAL 55.1 — 3스플릿 조건부 78/60/75% 일관
+- assert 5겹: proj_args 경로실존 · _coqtop stderr(rerr 기록) · CHECK↔채널 일관성
+  · train_pool 저장소 생존하한(50+·<10% 즉사) · pretty 쓰는중-읽기 거부
+- 남은 회수 여지: TRAIN rewrite 69.4 (δ-정의 등식 추정) — 한계효용 낮아 보류
+
+[2026-09-01 KST] ★ §7 완전보고 + 별칭 + K=4 + PIECE 채택
+- 별칭 46건(Print 로 Notation 표적 추출): 4형태 회수 86~100% 달성
+  (TRAIN rewrite 69.4→96.7 · VAL rewrite-in 87.2→95.7)
+- 별칭 반영 사다리: 처음으로 K=4 선택 — std(−0.998) 가 문턱 통과.
+  동결 [share, 1.002·overlap, 1.026·rig, −0.998·std, 8.021·nlex]
+- PIECE(채널별 랭커, rwh→순수 tf-idf) 채택 — 선택 근거 TRAIN 만(45.5>40.9):
+  VAL rwh 42.6→63.8(@20 74.5) · TEST @20/@50 +4/+9 · 전체 VAL +5.9
+- rwh 가 어휘 지배 채널인 이유: 후보들이 같은 redex 공유 → 구조 신호 동질
+- 그외 계열 = 외부참조만(HYPS 지역 필터) 확인. unfold175·destruct82·case59…
+- 산출: results/r15.md (§7 형식: 3스플릿×5계열×[회수+@10/20/50×Any/All]×3랭커)
+
+[2026-09-01 KST] ★★ rwh 랭커 탐색 + 채널별 가설 완결 → 최종 PIECE(rwh→RRF)
+- rwh 6후보 CV(TRAIN 66지점): RRF 52.1 > SUBTOK 48.0 > TFIDF 47.5 > TFSH
+  > HYPQ 44.8 > BM25 44.6 → RRF 선택 (학습 0: 1/(60+r_BLEND)+1/(60+r_TFIDF))
+  TEST rwh 42.6→55.3 @10 (+12.7) · @20 68.1 · @50 74.5
+- PERCHAN(채널별 독립 가중, 9파라): CV 는 채널마다 다른 K 선택
+  (ap K2 λ.2ρ1 · in K3 β0! · rw K4 · rwh TFIDF) — 그러나 전이에선 PIECE 와
+  동률(VAL 50.9/TEST 57.8) → 채널별로 갈라야 할 것은 가중치가 아니라 랭커 종류
+- 최종: ap/in/rw = BLEND(전역 K4, 4파라) · rwh = RRF(0파라)
+  TEST 전체 60.8 @10 (전 랭커 최고) · results/r15.md 3랭커 §7 표 갱신
+- §3 속도 요구: RRF 추가 비용은 정렬 2회 — 무시 가능. 노드당 비용 실측은 다음 사이클
+
+[2026-09-01 KST] §3 속도 최적화 — 노드당 217ms (rango 300ms 예산 안착)
+- 실측 분해(타이머 tap/tin/trw): ap 161 · in 0 · rw 42 · 랭킹(파이썬) 2ms
+- 수확: (후보×깊이) sides 캐시 — descend+rw_sides_all 이 redex 무관인데
+  redex ~80개마다 재계산되던 중복 제거 → rw 88→42ms. 전체 249→217ms,
+  p90 409→338, 최대 1191→672
+- 무효: abstract_ok 메모(원인 아님) · 머리라벨 사전계산(선별은 병목 아님,
+  단 unfold 깊이 밀림 함정을 DSDIFF 디버그로 잡음 · 구신 diff 0줄 회귀무결)
+- 판정: 잔여 ap 161ms = 진짜 후보 커널 단일화 — 재현율 위험으로 동결
+- 교훈: 최적화는 반드시 등가성 diff(정렬 채널라인)로 회귀 확인 후 채택

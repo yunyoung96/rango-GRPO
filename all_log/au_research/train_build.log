@@ -1,0 +1,31 @@
+■ db 프로젝트 2270 · 커밋 매칭 2268
+     1/20 possientis-Prog                    클론X timeout
+     2/20 HoTT-Coq-HoTT                          소량 1/560
+     3/20 LASER-UMASS-TacTok                     빌드✗
+     4/20 uds-psl-coq-synthetic-incompleteness   소량 54/784
+     5/20 uds-psl-coq-library-undecidability     소량 51/673
+     6/20 UniMath-Schools                        빌드✗
+     7/20 Priyanka-Mondal-Coq                클론X timeout
+     8/20 AbsInt-CompCert                        소량 52/253
+     9/20 TiarkRompf-reachability                부분 56/150
+    10/20 coq-community-coq-art                  완전✓
+    11/20 McDonald-Chadwick-LBS-Assignment1      완전✓
+    12/20 kushti-flp                             완전✓
+    13/20 Aqissiaq-ICTAC-DenotSymbEx             부분 8/9
+    14/20 elazarg-blockchain                     부분 6/15
+    15/20 ensino-unb-projeto-permequiv-trio      완전✓
+    16/20 fdesjardins-theorem-proving            부분 1/3
+    17/20 erwanor-stack-compiler                 완전✓
+    18/20 melpereira7-VF_2122                    소량 1/6
+    19/20 kolya-vasiliev-vqc-rus                 부분 1/2
+    20/20 pratapsingh1729-abstract-machines-in-c 완전✓
+
+■ TRAIN 빌드 성공률 (표본 20)
+   완전 빌드             6   30.0%
+   소량                5   25.0%
+   부분 빌드             5   25.0%
+   클론 실패             2   10.0%
+   빌드 0              2   10.0%
+
+   ★ 쓸 만한 것 (완전+부분) 11/20 = 55.0%
+   파일 기준 컴파일률 427/9380 = 4.6%

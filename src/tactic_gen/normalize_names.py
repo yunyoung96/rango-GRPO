@@ -26,7 +26,7 @@
     바꾸면 goal 자체가 이해 불가능해진다.
   · tactic 이름·Coq 키워드는 절대 건드리지 않는다(`destruct`, `intros`, `auto` …).
   · 프롬프트와 정답에 **같은 매핑**을 적용한다. 어긋나면 그 자체가 학습 노이즈다.
-  · NORMALIZE_RATE(기본 0.5)로 일부만 정규화한다 — 테스트는 실제 이름이므로,
+  · normalize_config.RATE 로 일부만 정규화한다 — 테스트는 실제 이름이므로,
     원본과 섞어야 모델이 '메커니즘'을 배우고 실제 이름에도 적용한다.
 
 ## 실현 가능성(gold 400 step 실측)
@@ -36,6 +36,7 @@
     정답 tactic 이 치환된 이름을 쓰는 예제  93/377 = 25%  ← 이 25%가 강한 압력을 받는다
 """
 from __future__ import annotations
+from tactic_gen import normalize_config as _NC  # 파이썬 상수 설정
 import rango_defaults as _D   # ★ 프로덕션 기본값 단일 출처
 
 import hashlib
@@ -137,7 +138,7 @@ def _stdlib_names() -> set:
 
 def is_stdlib_name(name: str) -> bool:
     """표준 라이브러리 전용 이름인가 (익명화 제외 대상)."""
-    if (not _D.flag("NORMALIZE_SKIP_STDLIB")):
+    if not _NC.SKIP_STDLIB:
         return False
     n = (name or "").split(".")[-1]
     return n in _stdlib_names()
@@ -183,7 +184,7 @@ def premise_names(premises) -> list:
     ## 대가
 
       gold 가 쓴 lemma 중 프롬프트에 있는 비율은 77% 다. 나머지 23% 는 사전학습 기억으로
-      맞히던 것인데 정규화하면 그 경로가 막힌다. 그래서 NORMALIZE_RATE(0.5)로 섞는다.
+      맞히던 것인데 정규화하면 그 경로가 막힌다. 그래서 normalize_config.RATE 로 섞는다.
 
     ## 중복 이름은 제외한다
 
@@ -267,9 +268,7 @@ def build_mapping(injected: dict, seed_key: str, avoid_text: str = "",
     # ★ 주입 정의가 없어도 premise·정리 이름은 정규화 대상이다(v7/v8).
     #   예전엔 여기서 즉시 반환해 [TYPES]/[DEFINITIONS] 가 빈 예제는 premise 정규화가
     #   **조용히 건너뛰어졌다**.
-    if not injected and (not _D.flag("NORMALIZE_PREMISES")) \
-            and (not _D.flag("NORMALIZE_THEOREM")) \
-            and (not _D.flag("NORMALIZE_LTAC")):
+    if not injected and not _NC.PREMISES and not _NC.THEOREM and not _NC.LTAC:
         return {}
     injected = injected or {}
     names = []
@@ -284,10 +283,10 @@ def build_mapping(injected: dict, seed_key: str, avoid_text: str = "",
                 m = re.match(r"\s*([A-Za-z_][\w']*)", part)
                 if m and m.group(1) not in _PROTECTED and m.group(1) not in _HEADERS:
                     ctors.append(m.group(1))
-    # ★ v7: [PREMISES] 의 lemma 이름도 대상에 넣는다(NORMALIZE_PREMISES=1 일 때만).
+    # ★ v7: [PREMISES] 의 lemma 이름도 대상에 넣는다(normalize_config.PREMISES 가 True 일 때만).
     #   주입 정의 이름과 겹치면 그쪽 매핑을 따른다(중복 금지).
     prem_names = []
-    if _D.flag("NORMALIZE_PREMISES"):
+    if _NC.PREMISES:
         for pn in premise_names(premises):
             # ★ renameable() 을 쓰면 안 된다 — 그건 **정의 인덱스(func_defs)** 에 있는 이름만
             #   허용하는데 premise 는 lemma 라 인덱스에 없다(실측: 235건 중 134건이 이 필터에
@@ -297,7 +296,7 @@ def build_mapping(injected: dict, seed_key: str, avoid_text: str = "",
                     and pn not in _PROTECTED and pn not in _HEADERS and len(pn) > 1
                     and not is_stdlib_name(pn)):     # ★ stdlib 은 익명화 제외
                 prem_names.append(pn)
-    # ★ v8: 증명 중인 정리 이름 (NORMALIZE_THEOREM=1 일 때만)
+    # ★ v8: 증명 중인 정리 이름 (normalize_config.THEOREM 이 True 일 때만)
     #
     #   ★ 동명 충돌 처리: CompCert 는 모듈마다 같은 이름의 보조정리를 둔다
     #     (Val.sub_zero_r 와 Int.sub_zero_r). 그래서 증명 중인 정리 이름이
@@ -305,7 +304,7 @@ def build_mapping(injected: dict, seed_key: str, avoid_text: str = "",
     #     텍스트 치환은 **같은 문자열을 두 이름으로 바꿀 수 없으므로**, 둘 다 L# 가
     #     되어 "증명 대상"과 "주어진 사실"을 구분할 수 없게 된다.
     #     → 충돌 시엔 매핑에 넣지 않고 전역에 기록해, collate 가 **선언부만** G# 로 바꾼다.
-    # ★★ v9: **파일 내 Ltac 이름**도 대상 (NORMALIZE_LTAC=1 일 때만).
+    # ★★ v9: **파일 내 Ltac 이름**도 대상 (normalize_config.LTAC 이 True 일 때만).
     #
     #   근거(실측, Qwen2.5-Coder-3B · n=400 · 가짜는 `_` 조각 섞기라 토큰 구성 동일):
     #       프로젝트 Lemma        실명 선호 61.8%  (4.7σ)
@@ -317,7 +316,7 @@ def build_mapping(injected: dict, seed_key: str, avoid_text: str = "",
     #   notation 이 가린 이름은 반대로 회상이 없으므로 **대상에 넣지 않는다** —
     #   막을 게 없는데 "뜻 있는 이름" 신호만 잃는 순손실이다.
     ltac_ns = []
-    if _D.flag("NORMALIZE_LTAC"):
+    if _NC.LTAC:
         for t in (ltac_names or []):
             m = re.match(r"\s*(?:Ltac|Ltac2)\s+([A-Za-z_][\w']*)", t if isinstance(t, str) else "")
             if not m:
@@ -331,7 +330,7 @@ def build_mapping(injected: dict, seed_key: str, avoid_text: str = "",
     global LAST_THM_DECL
     LAST_THM_DECL = None
     thm = None
-    if _D.flag("NORMALIZE_THEOREM"):
+    if _NC.THEOREM:
         t = theorem_name(proof_script or "")
         if t and t not in names and t not in ctors:
             # ★★ **동명 선언이 프롬프트에 둘 이상이면 매핑하지 않는다.**
@@ -653,12 +652,12 @@ def apply_inverse(text: str, mapping: dict) -> str:
 
 
 def should_normalize(key: str) -> bool:
-    """이 예제를 정규화할지 — NORMALIZE_RATE 비율만큼, key 해시로 결정적으로 고른다.
+    """이 예제를 정규화할지 — normalize_config.RATE 비율만큼, key 해시로 결정적으로 고른다.
 
     ★ 전부 정규화하면 테스트(실제 이름)와 분포가 어긋난다. 섞어야 모델이 메커니즘을 배우고
       실제 이름에도 적용한다.
     """
-    rate = _D.fnum("NORMALIZE_RATE")
+    rate = _NC.RATE
     if rate <= 0:
         return False
     if rate >= 1:

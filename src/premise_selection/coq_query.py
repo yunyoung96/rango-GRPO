@@ -62,8 +62,16 @@ def _split_top(s: str, op: str) -> Optional[tuple]:
     return None
 
 
+#: 적용(application)이 **아닌** 것을 여는 머리말. 이걸 공백으로 쪼개면
+#: `match ?a0 ?a1 … ?a14` 같은 **파스 오류** 패턴이 나오고, 질의 하나가 깨지면
+#: 그 뒤 질의가 전부 죽는다(실측으로 19~51개를 잃었다).
+_NOTAPP = re.compile(r"^\s*(?:match|if|let|fun|forall|exists|fix|cofix)\b")
+
+
 def _args_of(t: str) -> Optional[list]:
     """`f a (g b) c` → ['f', 'a', '(g b)', 'c']. 적용이 아니면 None."""
+    if _NOTAPP.match(t or ""):
+        return None
     out, buf, d = [], "", 0
     for c in t.strip():
         if c in "([{":
@@ -198,6 +206,74 @@ def ladder(goal: str, locals_: set, max_levels: int = 3) -> list:
     return out[:max_levels + 1]
 
 
+#: 적용의 **끝**을 알리는 낱말. 여기서 런이 끊긴다.
+_APPKW = {"with", "end", "then", "else", "in", "return", "as", "at", "is",
+          "fun", "forall", "exists", "let", "match", "if", "fix", "cofix"}
+_IDENT = re.compile(r"[A-Za-z_?][\w'.]*")
+
+
+def _chunks(t: str):
+    """문자열을 깊이 0 기준으로 낱덩이로 쪼갠다 — 이름 · 괄호덩이 · 그 밖(연산자)."""
+    i, n = 0, len(t)
+    while i < n:
+        c = t[i]
+        if c.isspace():
+            i += 1; continue
+        if c in "([{":
+            d, a = 0, i
+            while i < n:
+                if t[i] in "([{": d += 1
+                elif t[i] in ")]}":
+                    d -= 1
+                    if d == 0: i += 1; break
+                i += 1
+            yield ("grp", t[a:i]); continue
+        m = _IDENT.match(t, i)
+        if m:
+            yield ("kw" if m.group(0) in _APPKW else "id", m.group(0)); i = m.end(); continue
+        yield ("op", c); i += 1
+
+
+def app_subterms(t: str, maxn: int = 12) -> list:
+    """★★ **괄호 없는 적용 부분항**까지 훑는다.
+
+    `rewrite` 는 부분항을 치환한다. 그런데 예전 판은 괄호 친 것만 모아서
+    `match PTree.get i (PTree.set j x (snd m)) with …` 의 **진짜 redex** 인
+    `PTree.get i (PTree.set j x (snd m))` 을 통째로 놓쳤다 — 괄호가 없어서다.
+    gold 가 `PTree.gso : get i (set j x m) = get i m` 인데 그 좌변을 질의로
+    만들지 않았다는 뜻이다.
+
+    깊이 0 에서 `이름`·`괄호덩이` 가 이어지는 **최대 런**을 적용으로 보고,
+    괄호덩이 안쪽으로 재귀한다. 낱말(`with`/`end`/…)과 연산자에서 런이 끊긴다.
+    """
+    out = []
+
+    def walk(s, depth=0):
+        if depth > 6 or not s:
+            return
+        run = []
+
+        def flush():
+            if len(run) >= 2:
+                e = " ".join(run)
+                if 6 < len(e) < 300:
+                    out.append(e)
+            run.clear()
+
+        for kind, tok in _chunks(s):
+            if kind in ("id", "grp"):
+                run.append(tok)
+                if kind == "grp":
+                    walk(tok[1:-1], depth + 1)
+            else:
+                flush()
+        flush()
+
+    walk(strip_outer(t))
+    # 긴 것 우선 — 큰 redex 가 더 특징적이다. 중복은 뺀다.
+    return sorted(dict.fromkeys(out), key=len, reverse=True)[:maxn]
+
+
 def rewrite_targets(goal: str, locals_: set, maxn: int = 4) -> list:
     """`SearchRewrite` 질의 대상 — goal 의 큰 부분항부터, 각각 사다리 1~2단."""
     subs, st = [], []
@@ -211,6 +287,8 @@ def rewrite_targets(goal: str, locals_: set, maxn: int = 4) -> list:
                 subs.append(f)
     # ★ 긴 것만 고르면 안 된다 — `rewrite F2R_0` 의 대상 `F2R (Float beta 0 e)` 는
     #   작은 부분항이다. 길이 스펙트럼에 고루 걸치도록 큰 것/작은 것을 섞는다.
+    # ★ 괄호 없는 적용도 넣는다 — 예전 판이 통째로 놓치던 자리다.
+    subs += app_subterms(goal)
     subs = sorted(set(subs), key=len, reverse=True)
     pick = []
     if subs:

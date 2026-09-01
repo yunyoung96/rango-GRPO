@@ -7,8 +7,8 @@
 **3표 적대적 검증**(2/3 이상이 반증하면 기각) → 확인/기각/미검증으로 분류.
 **기각된 주장도 남긴다** — 같은 생각이 다시 떠올랐을 때 되풀이하지 않으려고.
 
+> **적용가능성 기반 검색** 문서 셋은 [../applicability/](../applicability/) 로 옮겼다.
+
 | 문서 | 질문 | 결론 |
 |---|---|---|
 | [train-dataset-recovery.md](train-dataset-recovery.md) | TRAIN 원본 `.v` 를 복구할 방법이 있나 | **있다.** `splits/commits.json` 이 열쇠 — 실제로 96.1% 복구(13GB) |
-| [classical-lemma-retrieval.md](classical-lemma-retrieval.md) | `rewrite`/`apply` 할 lemma 를 찾는 고전(비-LLM) 연구가 있나 | **있다.** 두 갈래 — 관련성 랭킹(TF-IDF·MePo·MaSh) 과 **적용가능성 색인**(지문/판별트리). 우리 문제는 후자인데 전자 도구로 풀고 있다 |
-| [applicability-filter.md](applicability-filter.md) | 적용가능성으로 먼저 거르고 점수를 매기면 gold 가 더 실리나 | **음성 (8판본 · 색인 4종).** 양쪽 elaborate 후에도 판별트리 45.1% / 치환트리 44.7% / 지문 47.6% (축소 5.7배), 깊이 0 은 88.2% / 2.6배. 남은 벽은 **변환(delta/iota)**. → **Coq 내장 `SearchPattern`/`SearchRewrite`** 가 그걸 넘는다. `?x`+사다리+기호결합+스코프보존+elaborate기호로 CompCert gold 복원 39.2%→**75.2%**(apply 80.0% · rewrite 68.0%). **필터가 아니라 확장**으로 써야 한다(현행풀∪Coq검색 gold 85.0%). ★ 최종은 **`assert_succeeds` 커널 단일화** — 후보당 0.11ms·**12배 축소**·gold 생존 80.8% |

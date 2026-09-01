@@ -1,0 +1,30 @@
+
+■ VAL · 정리 150 · apply/rewrite 4형태 전수
+   형태               스텝     지역가설   외부lemma
+   apply           183        0       183   (0% 지역)
+   apply-in          0
+   rewrite         178        0       178   (0% 지역)
+   rewrite-in        8        0         8   (0% 지역)
+   ── rewrite-in 외부 예시:
+       rewrite size_map in prf.
+       rewrite (absolu_inject_nat m) in H0.
+       rewrite (absolu_inject_nat n) in H0.
+       rewrite get_rect in Hl2.
+
+■ TEST · 정리 300 · apply/rewrite 4형태 전수
+   형태               스텝     지역가설   외부lemma
+   apply           466        0       466   (0% 지역)
+   apply-in         23        0        23   (0% 지역)
+   rewrite         177        0       177   (0% 지역)
+   rewrite-in       18        0        18   (0% 지역)
+   ── apply-in 외부 예시:
+       apply Int.ltu_inv in H.
+       apply fset_in_singleton_eq in E2.
+       apply fset_in_singleton_eq in E3.
+       apply P in E.
+   ── rewrite-in 외부 예시:
+       rewrite H'4 in H'2; elim H'2; auto.
+       erewrite Mem.loadbytes_length in H1 by eauto.
+       rewrite Z2Nat.id in H1 by lia.
+       erewrite Mem.loadbytes_length in H0 by eauto.
+FORM_DIST_DONE

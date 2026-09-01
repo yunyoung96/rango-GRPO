@@ -1,0 +1,820 @@
+[12:30] ★RSS 63044MB  pid=1708179 ppid=1707065
+[12:35] ★종료/사망: dn_rank_eval
+[12:40] ★종료/사망: dn_rank_eval
+[12:45] ★15분 진척 없음: cc='   … 30/187 · 지점 76' val='   … 20/150 · 기록 43' test='   … 30/236 · 기록 71'
+[12:45] ★종료/사망: dn_rank_eval
+[12:50] ★종료/사망: dn_rank_eval
+[12:55] ★종료/사망: dn_rank_eval
+[13:00] ★고아 coqtop 4개
+[13:00] ★종료/사망: dn_rank_eval
+[13:05] ★고아 coqtop 3개
+[13:05] ★종료/사망: dn_rank_eval
+[13:10] ★고아 coqtop 3개
+[13:10] ★종료/사망: dn_rank_eval
+[13:15] ★고아 coqtop 3개
+[13:15] ★종료/사망: dn_rank_eval
+[13:20] ★고아 coqtop 4개
+[13:25] ★고아 coqtop 4개
+[13:30] ★고아 coqtop 4개
+[13:45] ★RSS 75342MB  pid=1720897 ppid=1716847
+[13:50] ★RSS 144524MB  pid=1720897 ppid=1716847
+[13:50] ★메모리 460GB
+[13:55] ★RSS 236861MB  pid=1720897 ppid=1716847
+[13:55] ★메모리 550GB
+[14:00] ★RSS 279735MB  pid=1720897 ppid=1716847
+[14:00] ★메모리 591GB
+[14:05] ★RSS 353285MB  pid=1720897 ppid=1716847
+[14:05] ★메모리 529GB
+[14:10] ★RSS 425320MB  pid=1720897 ppid=1716847
+[14:10] ★메모리 664GB
+[14:15] ★RSS 508308MB  pid=1720897 ppid=1716847
+[14:15] ★메모리 745GB
+[14:25] ★RSS 71895MB  pid=1737834 ppid=1716847
+[14:25] ★메모리 317GB
+[14:30] ★RSS 142309MB  pid=1737834 ppid=1716847
+[14:30] ★메모리 362GB
+[14:35] ★RSS 231065MB  pid=1737834 ppid=1716847
+[14:35] ★메모리 391GB
+[14:40] ★RSS 280168MB  pid=1737834 ppid=1716847
+[14:40] ★메모리 520GB
+[14:45] ★RSS 364229MB  pid=1737834 ppid=1716847
+[14:45] ★메모리 601GB
+[14:50] ★RSS 419093MB  pid=1737834 ppid=1716847
+[14:50] ★메모리 657GB
+[14:55] ★RSS 502862MB  pid=1737834 ppid=1716847
+[14:55] ★메모리 739GB
+[15:00] ★메모리 633GB
+[15:10] ★종료/사망: dn_rank_eval
+[15:15] ★종료/사망: dn_rank_eval
+[15:20] ★종료/사망: dn_rank_eval
+[15:25] ★종료/사망: dn_rank_eval
+[15:30] ★종료/사망: dn_rank_eval
+[15:35] ★종료/사망: dn_rank_eval
+[15:40] ★종료/사망: dn_rank_eval
+[15:45] ★종료/사망: dn_rank_eval
+[15:50] ★메모리 308GB
+[15:50] ★종료/사망: dn_rank_eval
+[15:55] ★메모리 308GB
+[15:55] ★종료/사망: dn_rank_eval
+[16:01] ★메모리 310GB
+[16:01] ★종료/사망: dn_rank_eval
+[16:06] ★종료/사망: dn_rank_eval
+[16:11] ★종료/사망: dn_rank_eval
+[16:16] ★종료/사망: dn_rank_eval
+[16:21] ★고아 coqtop 4개
+[16:21] ★종료/사망: dn_rank_eval
+[16:26] ★고아 coqtop 4개
+[16:26] ★종료/사망: dn_rank_eval
+[16:26] ★종료/사망: r11_eval.py VAL
+[16:31] ★고아 coqtop 4개
+[16:31] ★종료/사망: dn_rank_eval
+[16:31] ★종료/사망: r11_eval.py VAL
+[16:36] ★고아 coqtop 5개
+[16:36] ★종료/사망: r11_eval.py TEST
+[16:41] ★고아 coqtop 5개
+[16:41] ★종료/사망: r11_eval.py VAL
+[16:41] ★종료/사망: r11_eval.py TEST
+[16:46] ★고아 coqtop 5개
+[16:46] ★종료/사망: r11_eval.py VAL
+[16:46] ★종료/사망: r11_eval.py TEST
+[16:51] ★고아 coqtop 5개
+[16:51] ★종료/사망: r11_eval.py VAL
+[16:51] ★종료/사망: r11_eval.py TEST
+[16:56] ★고아 coqtop 5개
+[16:56] ★종료/사망: r11_eval.py VAL
+[16:56] ★종료/사망: r11_eval.py TEST
+[17:01] ★고아 coqtop 5개
+[17:01] ★종료/사망: r11_eval.py VAL
+[17:01] ★종료/사망: r11_eval.py TEST
+[17:06] ★고아 coqtop 5개
+[17:06] ★종료/사망: r11_eval.py VAL
+[17:06] ★종료/사망: r11_eval.py TEST
+[17:11] ★고아 coqtop 5개
+[17:11] ★종료/사망: r11_eval.py VAL
+[17:11] ★종료/사망: r11_eval.py TEST
+[17:16] ★고아 coqtop 5개
+[17:16] ★종료/사망: r11_eval.py VAL
+[17:21] ★고아 coqtop 8개
+[17:26] ★고아 coqtop 8개
+[17:26] ★종료/사망: r11_eval.py VAL
+[17:31] ★고아 coqtop 8개
+[17:31] ★종료/사망: r11_eval.py VAL
+[17:36] ★고아 coqtop 8개
+[17:36] ★종료/사망: r11_eval.py VAL
+[17:41] ★고아 coqtop 8개
+[17:41] ★종료/사망: r11_eval.py VAL
+[17:46] ★고아 coqtop 8개
+[17:46] ★메모리 325GB
+[17:46] ★종료/사망: r11_eval.py VAL
+[17:51] ★RSS 9710MB  pid=1862950 ppid=1856122
+[17:51] ★고아 coqtop 8개
+[17:51] ★메모리 331GB
+[17:51] ★종료/사망: r11_eval.py VAL
+[17:56] ★RSS 10135MB  pid=1864442 ppid=1
+[17:56] ★고아 coqtop 10개
+[18:01] ★고아 coqtop 9개
+[18:01] ★종료/사망: r11_eval.py VAL
+[18:06] ★고아 coqtop 9개
+[18:06] ★메모리 325GB
+[18:06] ★종료/사망: r11_eval.py VAL
+[18:11] ★고아 coqtop 9개
+[18:11] ★메모리 327GB
+[18:11] ★종료/사망: r11_eval.py VAL
+[18:16] ★RSS 8385MB  pid=1870308 ppid=1864595
+[18:16] ★고아 coqtop 9개
+[18:16] ★종료/사망: r11_eval.py VAL
+[18:21] ★RSS 9486MB  pid=1871493 ppid=1864595
+[18:21] ★고아 coqtop 9개
+[18:21] ★종료/사망: r11_eval.py VAL
+[18:26] ★RSS 9709MB  pid=1873819 ppid=1864595
+[18:26] ★고아 coqtop 9개
+[18:26] ★종료/사망: r11_eval.py VAL
+[18:31] ★RSS 11064MB  pid=1874429 ppid=1864595
+[18:31] ★고아 coqtop 9개
+[18:31] ★종료/사망: r11_eval.py VAL
+[18:36] ★고아 coqtop 9개
+[18:36] ★메모리 304GB
+[18:36] ★종료/사망: r11_eval.py VAL
+[18:41] ★RSS 9996MB  pid=1874640 ppid=1864595
+[18:41] ★고아 coqtop 9개
+[18:41] ★종료/사망: r11_eval.py VAL
+[18:46] ★고아 coqtop 9개
+[18:46] ★종료/사망: r11_eval.py VAL
+[18:51] ★고아 coqtop 9개
+[18:51] ★종료/사망: r11_eval.py VAL
+[18:56] ★고아 coqtop 9개
+[18:56] ★종료/사망: r11_eval.py VAL
+[19:01] ★고아 coqtop 9개
+[19:01] ★종료/사망: r11_eval.py VAL
+[19:06] ★고아 coqtop 9개
+[19:06] ★종료/사망: r11_eval.py VAL
+[19:11] ★고아 coqtop 9개
+[19:11] ★종료/사망: dn_rank_eval
+[19:11] ★종료/사망: r11_eval.py VAL
+[19:16] ★고아 coqtop 9개
+[19:16] ★종료/사망: dn_rank_eval
+[19:16] ★종료/사망: r11_eval.py VAL
+[19:21] ★고아 coqtop 10개
+[19:21] ★종료/사망: dn_rank_eval
+[19:21] ★종료/사망: r11_eval.py VAL
+[19:26] ★RSS 9918MB  pid=1886671 ppid=1886153
+[19:26] ★고아 coqtop 10개
+[19:26] ★종료/사망: dn_rank_eval
+[19:26] ★종료/사망: r11_eval.py VAL
+[19:31] ★RSS 9116MB  pid=1887015 ppid=1886153
+[19:31] ★고아 coqtop 10개
+[19:31] ★종료/사망: dn_rank_eval
+[19:31] ★종료/사망: r11_eval.py VAL
+[19:36] ★RSS 10623MB  pid=1888199 ppid=1886153
+[19:36] ★고아 coqtop 10개
+[19:36] ★종료/사망: dn_rank_eval
+[19:36] ★종료/사망: r11_eval.py VAL
+[19:41] ★RSS 11782MB  pid=1889988 ppid=1
+[19:41] ★고아 coqtop 12개
+[19:41] ★종료/사망: dn_rank_eval
+[19:46] ★종료/사망: dn_rank_eval
+[19:46] ★종료/사망: r11_eval.py VAL
+[19:51] ★종료/사망: dn_rank_eval
+[19:51] ★종료/사망: r11_eval.py VAL
+[19:56] ★RSS 10213MB  pid=1901323 ppid=1898734
+[19:56] ★종료/사망: dn_rank_eval
+[19:56] ★종료/사망: r11_eval.py VAL
+[20:01] ★종료/사망: dn_rank_eval
+[20:01] ★종료/사망: r11_eval.py VAL
+[20:06] ★RSS 9612MB  pid=1902886 ppid=1898734
+[20:06] ★종료/사망: dn_rank_eval
+[20:06] ★종료/사망: r11_eval.py VAL
+[20:11] ★종료/사망: dn_rank_eval
+[20:11] ★종료/사망: r11_eval.py VAL
+[20:16] ★종료/사망: dn_rank_eval
+[20:16] ★종료/사망: r11_eval.py VAL
+[20:21] ★종료/사망: dn_rank_eval
+[20:21] ★종료/사망: r11_eval.py VAL
+[20:26] ★종료/사망: dn_rank_eval
+[20:26] ★종료/사망: r11_eval.py VAL
+[20:31] ★RSS 8812MB  pid=1921673 ppid=1898734
+[20:31] ★종료/사망: dn_rank_eval
+[20:31] ★종료/사망: r11_eval.py VAL
+[20:36] ★종료/사망: dn_rank_eval
+[20:41] ★종료/사망: dn_rank_eval
+[20:41] ★종료/사망: r11_eval.py VAL
+[20:46] ★종료/사망: dn_rank_eval
+[20:46] ★종료/사망: r11_eval.py VAL
+[20:51] ★RSS 9827MB  pid=1930913 ppid=1898734
+[20:51] ★종료/사망: dn_rank_eval
+[20:51] ★종료/사망: r11_eval.py VAL
+[20:56] ★종료/사망: dn_rank_eval
+[20:56] ★종료/사망: r11_eval.py VAL
+[21:01] ★종료/사망: dn_rank_eval
+[21:01] ★종료/사망: r11_eval.py VAL
+[21:06] ★종료/사망: dn_rank_eval
+[21:06] ★종료/사망: r11_eval.py VAL
+[21:11] ★종료/사망: dn_rank_eval
+[21:11] ★종료/사망: r11_eval.py VAL
+[21:16] ★종료/사망: dn_rank_eval
+[21:16] ★종료/사망: r11_eval.py VAL
+[21:21] ★종료/사망: dn_rank_eval
+[21:21] ★종료/사망: r11_eval.py VAL
+[21:26] ★RSS 11657MB  pid=1940662 ppid=1936816
+[21:26] ★종료/사망: dn_rank_eval
+[21:26] ★종료/사망: r11_eval.py VAL
+[21:31] ★종료/사망: dn_rank_eval
+[21:31] ★종료/사망: r11_eval.py VAL
+[21:36] ★RSS 8105MB  pid=1944030 ppid=1936816
+[21:36] ★종료/사망: dn_rank_eval
+[21:36] ★종료/사망: r11_eval.py VAL
+[21:41] ★종료/사망: dn_rank_eval
+[21:41] ★종료/사망: r11_eval.py VAL
+[21:46] ★종료/사망: dn_rank_eval
+[21:46] ★종료/사망: r11_eval.py VAL
+[21:51] ★종료/사망: dn_rank_eval
+[21:51] ★종료/사망: r11_eval.py VAL
+[21:56] ★종료/사망: dn_rank_eval
+[21:56] ★종료/사망: r11_eval.py VAL
+[22:01] ★종료/사망: dn_rank_eval
+[22:01] ★종료/사망: r11_eval.py VAL
+[22:06] ★RSS 9435MB  pid=1950470 ppid=1936816
+[22:06] ★종료/사망: dn_rank_eval
+[22:06] ★종료/사망: r11_eval.py VAL
+[22:11] ★종료/사망: dn_rank_eval
+[22:11] ★종료/사망: r11_eval.py VAL
+[22:11] ★종료/사망: r11_eval.py TEST
+[22:16] ★종료/사망: dn_rank_eval
+[22:16] ★종료/사망: r11_eval.py VAL
+[22:16] ★종료/사망: r11_eval.py TEST
+[22:21] ★종료/사망: dn_rank_eval
+[22:21] ★종료/사망: r11_eval.py VAL
+[22:21] ★종료/사망: r11_eval.py TEST
+[22:26] ★종료/사망: dn_rank_eval
+[22:26] ★종료/사망: r11_eval.py VAL
+[22:26] ★종료/사망: r11_eval.py TEST
+[22:31] ★종료/사망: dn_rank_eval
+[22:31] ★종료/사망: r11_eval.py VAL
+[22:31] ★종료/사망: r11_eval.py TEST
+[22:36] ★종료/사망: dn_rank_eval
+[22:36] ★종료/사망: r11_eval.py VAL
+[22:36] ★종료/사망: r11_eval.py TEST
+[22:41] ★종료/사망: dn_rank_eval
+[22:41] ★종료/사망: r11_eval.py VAL
+[22:46] ★종료/사망: dn_rank_eval
+[22:46] ★종료/사망: r11_eval.py TEST
+[22:51] ★종료/사망: dn_rank_eval
+[22:51] ★종료/사망: r11_eval.py VAL
+[22:51] ★종료/사망: r11_eval.py TEST
+[22:56] ★종료/사망: dn_rank_eval
+[22:56] ★종료/사망: r11_eval.py VAL
+[22:56] ★종료/사망: r11_eval.py TEST
+[23:01] ★종료/사망: dn_rank_eval
+[23:01] ★종료/사망: r11_eval.py VAL
+[23:01] ★종료/사망: r11_eval.py TEST
+[23:06] ★종료/사망: dn_rank_eval
+[23:06] ★종료/사망: r11_eval.py VAL
+[23:06] ★종료/사망: r11_eval.py TEST
+[23:11] ★종료/사망: dn_rank_eval
+[23:11] ★종료/사망: r11_eval.py VAL
+[23:11] ★종료/사망: r11_eval.py TEST
+[23:16] ★종료/사망: dn_rank_eval
+[23:16] ★종료/사망: r11_eval.py VAL
+[23:16] ★종료/사망: r11_eval.py TEST
+[23:21] ★종료/사망: dn_rank_eval
+[23:21] ★종료/사망: r11_eval.py VAL
+[23:21] ★종료/사망: r11_eval.py TEST
+[23:26] ★종료/사망: dn_rank_eval
+[23:26] ★종료/사망: r11_eval.py VAL
+[23:26] ★종료/사망: r11_eval.py TEST
+[23:31] ★종료/사망: dn_rank_eval
+[23:31] ★종료/사망: r11_eval.py VAL
+[23:31] ★종료/사망: r11_eval.py TEST
+[23:36] ★종료/사망: dn_rank_eval
+[23:36] ★종료/사망: r11_eval.py VAL
+[23:36] ★종료/사망: r11_eval.py TEST
+[23:41] ★종료/사망: dn_rank_eval
+[23:41] ★종료/사망: r11_eval.py VAL
+[23:41] ★종료/사망: r11_eval.py TEST
+[23:46] ★종료/사망: dn_rank_eval
+[23:46] ★종료/사망: r11_eval.py VAL
+[23:46] ★종료/사망: r11_eval.py TEST
+[23:51] ★종료/사망: dn_rank_eval
+[23:51] ★종료/사망: r11_eval.py VAL
+[23:51] ★종료/사망: r11_eval.py TEST
+[23:56] ★종료/사망: dn_rank_eval
+[23:56] ★종료/사망: r11_eval.py VAL
+[23:56] ★종료/사망: r11_eval.py TEST
+[00:01] ★종료/사망: dn_rank_eval
+[00:01] ★종료/사망: r11_eval.py VAL
+[00:01] ★종료/사망: r11_eval.py TEST
+[00:06] ★종료/사망: dn_rank_eval
+[00:06] ★종료/사망: r11_eval.py VAL
+[00:06] ★종료/사망: r11_eval.py TEST
+[00:11] ★종료/사망: dn_rank_eval
+[00:11] ★종료/사망: r11_eval.py VAL
+[00:11] ★종료/사망: r11_eval.py TEST
+[00:16] ★종료/사망: dn_rank_eval
+[00:16] ★종료/사망: r11_eval.py VAL
+[00:16] ★종료/사망: r11_eval.py TEST
+[00:21] ★종료/사망: dn_rank_eval
+[00:21] ★종료/사망: r11_eval.py VAL
+[00:21] ★종료/사망: r11_eval.py TEST
+[00:26] ★종료/사망: dn_rank_eval
+[00:26] ★종료/사망: r11_eval.py VAL
+[00:26] ★종료/사망: r11_eval.py TEST
+[00:31] ★종료/사망: dn_rank_eval
+[00:31] ★종료/사망: r11_eval.py VAL
+[00:31] ★종료/사망: r11_eval.py TEST
+[00:36] ★종료/사망: dn_rank_eval
+[00:36] ★종료/사망: r11_eval.py VAL
+[00:36] ★종료/사망: r11_eval.py TEST
+[00:41] ★종료/사망: dn_rank_eval
+[00:41] ★종료/사망: r11_eval.py VAL
+[00:41] ★종료/사망: r11_eval.py TEST
+[00:46] ★종료/사망: dn_rank_eval
+[00:46] ★종료/사망: r11_eval.py VAL
+[00:46] ★종료/사망: r11_eval.py TEST
+[00:51] ★메모리 302GB
+[00:51] ★종료/사망: dn_rank_eval
+[00:51] ★종료/사망: r11_eval.py VAL
+[00:51] ★종료/사망: r11_eval.py TEST
+[00:56] ★종료/사망: dn_rank_eval
+[00:56] ★종료/사망: r11_eval.py VAL
+[00:56] ★종료/사망: r11_eval.py TEST
+[01:01] ★종료/사망: dn_rank_eval
+[01:01] ★종료/사망: r11_eval.py VAL
+[01:01] ★종료/사망: r11_eval.py TEST
+[01:06] ★종료/사망: dn_rank_eval
+[01:06] ★종료/사망: r11_eval.py VAL
+[01:06] ★종료/사망: r11_eval.py TEST
+[01:11] ★종료/사망: dn_rank_eval
+[01:11] ★종료/사망: r11_eval.py VAL
+[01:11] ★종료/사망: r11_eval.py TEST
+[01:16] ★종료/사망: dn_rank_eval
+[01:16] ★종료/사망: r11_eval.py VAL
+[01:16] ★종료/사망: r11_eval.py TEST
+[01:21] ★종료/사망: dn_rank_eval
+[01:21] ★종료/사망: r11_eval.py VAL
+[01:21] ★종료/사망: r11_eval.py TEST
+[01:26] ★종료/사망: dn_rank_eval
+[01:26] ★종료/사망: r11_eval.py VAL
+[01:26] ★종료/사망: r11_eval.py TEST
+[01:31] ★종료/사망: dn_rank_eval
+[01:31] ★종료/사망: r11_eval.py VAL
+[01:31] ★종료/사망: r11_eval.py TEST
+[01:36] ★종료/사망: dn_rank_eval
+[01:36] ★종료/사망: r11_eval.py VAL
+[01:36] ★종료/사망: r11_eval.py TEST
+[01:41] ★종료/사망: dn_rank_eval
+[01:41] ★종료/사망: r11_eval.py VAL
+[01:41] ★종료/사망: r11_eval.py TEST
+[01:46] ★종료/사망: dn_rank_eval
+[01:46] ★종료/사망: r11_eval.py VAL
+[01:46] ★종료/사망: r11_eval.py TEST
+[01:51] ★종료/사망: dn_rank_eval
+[01:51] ★종료/사망: r11_eval.py VAL
+[01:51] ★종료/사망: r11_eval.py TEST
+[01:56] ★종료/사망: dn_rank_eval
+[01:56] ★종료/사망: r11_eval.py VAL
+[01:56] ★종료/사망: r11_eval.py TEST
+[02:01] ★종료/사망: dn_rank_eval
+[02:01] ★종료/사망: r11_eval.py VAL
+[02:01] ★종료/사망: r11_eval.py TEST
+[02:06] ★종료/사망: dn_rank_eval
+[02:06] ★종료/사망: r11_eval.py VAL
+[02:06] ★종료/사망: r11_eval.py TEST
+[02:11] ★종료/사망: dn_rank_eval
+[02:11] ★종료/사망: r11_eval.py VAL
+[02:11] ★종료/사망: r11_eval.py TEST
+[02:16] ★종료/사망: dn_rank_eval
+[02:16] ★종료/사망: r11_eval.py VAL
+[02:16] ★종료/사망: r11_eval.py TEST
+[02:21] ★종료/사망: dn_rank_eval
+[02:21] ★종료/사망: r11_eval.py VAL
+[02:21] ★종료/사망: r11_eval.py TEST
+[02:26] ★종료/사망: dn_rank_eval
+[02:26] ★종료/사망: r11_eval.py VAL
+[02:26] ★종료/사망: r11_eval.py TEST
+[02:31] ★종료/사망: dn_rank_eval
+[02:31] ★종료/사망: r11_eval.py VAL
+[02:31] ★종료/사망: r11_eval.py TEST
+[02:36] ★종료/사망: dn_rank_eval
+[02:36] ★종료/사망: r11_eval.py VAL
+[02:36] ★종료/사망: r11_eval.py TEST
+[02:41] ★종료/사망: dn_rank_eval
+[02:41] ★종료/사망: r11_eval.py VAL
+[02:41] ★종료/사망: r11_eval.py TEST
+[02:46] ★종료/사망: dn_rank_eval
+[02:46] ★종료/사망: r11_eval.py VAL
+[02:46] ★종료/사망: r11_eval.py TEST
+[02:51] ★종료/사망: dn_rank_eval
+[02:51] ★종료/사망: r11_eval.py VAL
+[02:51] ★종료/사망: r11_eval.py TEST
+[02:56] ★종료/사망: dn_rank_eval
+[02:56] ★종료/사망: r11_eval.py VAL
+[02:56] ★종료/사망: r11_eval.py TEST
+[03:01] ★종료/사망: dn_rank_eval
+[03:01] ★종료/사망: r11_eval.py VAL
+[03:01] ★종료/사망: r11_eval.py TEST
+[03:06] ★종료/사망: dn_rank_eval
+[03:06] ★종료/사망: r11_eval.py VAL
+[03:06] ★종료/사망: r11_eval.py TEST
+[03:11] ★종료/사망: dn_rank_eval
+[03:11] ★종료/사망: r11_eval.py VAL
+[03:11] ★종료/사망: r11_eval.py TEST
+[03:16] ★종료/사망: dn_rank_eval
+[03:16] ★종료/사망: r11_eval.py VAL
+[03:16] ★종료/사망: r11_eval.py TEST
+[03:21] ★종료/사망: dn_rank_eval
+[03:21] ★종료/사망: r11_eval.py VAL
+[03:21] ★종료/사망: r11_eval.py TEST
+[03:26] ★종료/사망: dn_rank_eval
+[03:26] ★종료/사망: r11_eval.py VAL
+[03:26] ★종료/사망: r11_eval.py TEST
+[03:31] ★종료/사망: dn_rank_eval
+[03:31] ★종료/사망: r11_eval.py VAL
+[03:31] ★종료/사망: r11_eval.py TEST
+[03:36] ★종료/사망: dn_rank_eval
+[03:36] ★종료/사망: r11_eval.py VAL
+[03:36] ★종료/사망: r11_eval.py TEST
+[03:41] ★종료/사망: dn_rank_eval
+[03:41] ★종료/사망: r11_eval.py VAL
+[03:41] ★종료/사망: r11_eval.py TEST
+[03:46] ★종료/사망: dn_rank_eval
+[03:46] ★종료/사망: r11_eval.py VAL
+[03:46] ★종료/사망: r11_eval.py TEST
+[03:51] ★메모리 309GB
+[03:51] ★종료/사망: dn_rank_eval
+[03:51] ★종료/사망: r11_eval.py VAL
+[03:51] ★종료/사망: r11_eval.py TEST
+[03:56] ★종료/사망: dn_rank_eval
+[03:56] ★종료/사망: r11_eval.py VAL
+[03:56] ★종료/사망: r11_eval.py TEST
+[04:01] ★종료/사망: dn_rank_eval
+[04:01] ★종료/사망: r11_eval.py VAL
+[04:01] ★종료/사망: r11_eval.py TEST
+[04:06] ★종료/사망: dn_rank_eval
+[04:06] ★종료/사망: r11_eval.py VAL
+[04:06] ★종료/사망: r11_eval.py TEST
+[04:11] ★종료/사망: dn_rank_eval
+[04:11] ★종료/사망: r11_eval.py VAL
+[04:11] ★종료/사망: r11_eval.py TEST
+[04:16] ★종료/사망: dn_rank_eval
+[04:16] ★종료/사망: r11_eval.py VAL
+[04:16] ★종료/사망: r11_eval.py TEST
+[04:21] ★종료/사망: dn_rank_eval
+[04:21] ★종료/사망: r11_eval.py VAL
+[04:21] ★종료/사망: r11_eval.py TEST
+[04:26] ★종료/사망: dn_rank_eval
+[04:26] ★종료/사망: r11_eval.py VAL
+[04:26] ★종료/사망: r11_eval.py TEST
+[04:31] ★종료/사망: dn_rank_eval
+[04:31] ★종료/사망: r11_eval.py VAL
+[04:31] ★종료/사망: r11_eval.py TEST
+[04:36] ★종료/사망: dn_rank_eval
+[04:36] ★종료/사망: r11_eval.py VAL
+[04:36] ★종료/사망: r11_eval.py TEST
+[04:41] ★종료/사망: dn_rank_eval
+[04:41] ★종료/사망: r11_eval.py VAL
+[04:41] ★종료/사망: r11_eval.py TEST
+[04:46] ★종료/사망: dn_rank_eval
+[04:46] ★종료/사망: r11_eval.py VAL
+[04:46] ★종료/사망: r11_eval.py TEST
+[04:51] ★종료/사망: dn_rank_eval
+[04:51] ★종료/사망: r11_eval.py VAL
+[04:51] ★종료/사망: r11_eval.py TEST
+[04:56] ★종료/사망: dn_rank_eval
+[04:56] ★종료/사망: r11_eval.py VAL
+[04:56] ★종료/사망: r11_eval.py TEST
+[05:01] ★종료/사망: dn_rank_eval
+[05:01] ★종료/사망: r11_eval.py VAL
+[05:01] ★종료/사망: r11_eval.py TEST
+[05:06] ★종료/사망: dn_rank_eval
+[05:06] ★종료/사망: r11_eval.py VAL
+[05:06] ★종료/사망: r11_eval.py TEST
+[05:11] ★종료/사망: dn_rank_eval
+[05:11] ★종료/사망: r11_eval.py VAL
+[05:11] ★종료/사망: r11_eval.py TEST
+[05:16] ★종료/사망: dn_rank_eval
+[05:16] ★종료/사망: r11_eval.py VAL
+[05:16] ★종료/사망: r11_eval.py TEST
+[05:21] ★종료/사망: dn_rank_eval
+[05:21] ★종료/사망: r11_eval.py VAL
+[05:21] ★종료/사망: r11_eval.py TEST
+[05:26] ★종료/사망: dn_rank_eval
+[05:26] ★종료/사망: r11_eval.py VAL
+[05:26] ★종료/사망: r11_eval.py TEST
+[05:31] ★종료/사망: dn_rank_eval
+[05:31] ★종료/사망: r11_eval.py VAL
+[05:31] ★종료/사망: r11_eval.py TEST
+[05:36] ★종료/사망: dn_rank_eval
+[05:36] ★종료/사망: r11_eval.py VAL
+[05:36] ★종료/사망: r11_eval.py TEST
+[05:41] ★종료/사망: dn_rank_eval
+[05:41] ★종료/사망: r11_eval.py VAL
+[05:41] ★종료/사망: r11_eval.py TEST
+[05:46] ★종료/사망: dn_rank_eval
+[05:46] ★종료/사망: r11_eval.py VAL
+[05:46] ★종료/사망: r11_eval.py TEST
+[05:51] ★종료/사망: dn_rank_eval
+[05:51] ★종료/사망: r11_eval.py VAL
+[05:51] ★종료/사망: r11_eval.py TEST
+[05:56] ★종료/사망: dn_rank_eval
+[05:56] ★종료/사망: r11_eval.py VAL
+[05:56] ★종료/사망: r11_eval.py TEST
+[06:01] ★종료/사망: dn_rank_eval
+[06:01] ★종료/사망: r11_eval.py VAL
+[06:01] ★종료/사망: r11_eval.py TEST
+[06:06] ★종료/사망: dn_rank_eval
+[06:06] ★종료/사망: r11_eval.py VAL
+[06:06] ★종료/사망: r11_eval.py TEST
+[06:11] ★종료/사망: dn_rank_eval
+[06:11] ★종료/사망: r11_eval.py VAL
+[06:11] ★종료/사망: r11_eval.py TEST
+[06:16] ★종료/사망: dn_rank_eval
+[06:16] ★종료/사망: r11_eval.py VAL
+[06:16] ★종료/사망: r11_eval.py TEST
+[06:21] ★종료/사망: dn_rank_eval
+[06:21] ★종료/사망: r11_eval.py VAL
+[06:21] ★종료/사망: r11_eval.py TEST
+[06:26] ★종료/사망: dn_rank_eval
+[06:26] ★종료/사망: r11_eval.py VAL
+[06:26] ★종료/사망: r11_eval.py TEST
+[06:31] ★종료/사망: dn_rank_eval
+[06:31] ★종료/사망: r11_eval.py VAL
+[06:31] ★종료/사망: r11_eval.py TEST
+[06:36] ★종료/사망: dn_rank_eval
+[06:36] ★종료/사망: r11_eval.py VAL
+[06:36] ★종료/사망: r11_eval.py TEST
+[06:41] ★종료/사망: dn_rank_eval
+[06:41] ★종료/사망: r11_eval.py VAL
+[06:41] ★종료/사망: r11_eval.py TEST
+[06:46] ★종료/사망: dn_rank_eval
+[06:46] ★종료/사망: r11_eval.py VAL
+[06:46] ★종료/사망: r11_eval.py TEST
+[06:51] ★종료/사망: dn_rank_eval
+[06:51] ★종료/사망: r11_eval.py VAL
+[06:51] ★종료/사망: r11_eval.py TEST
+[06:56] ★종료/사망: dn_rank_eval
+[06:56] ★종료/사망: r11_eval.py VAL
+[06:56] ★종료/사망: r11_eval.py TEST
+[07:01] ★종료/사망: dn_rank_eval
+[07:01] ★종료/사망: r11_eval.py VAL
+[07:01] ★종료/사망: r11_eval.py TEST
+[07:06] ★종료/사망: dn_rank_eval
+[07:06] ★종료/사망: r11_eval.py VAL
+[07:06] ★종료/사망: r11_eval.py TEST
+[07:11] ★종료/사망: dn_rank_eval
+[07:11] ★종료/사망: r11_eval.py VAL
+[07:11] ★종료/사망: r11_eval.py TEST
+[07:16] ★종료/사망: dn_rank_eval
+[07:16] ★종료/사망: r11_eval.py VAL
+[07:16] ★종료/사망: r11_eval.py TEST
+[07:21] ★종료/사망: dn_rank_eval
+[07:21] ★종료/사망: r11_eval.py VAL
+[07:21] ★종료/사망: r11_eval.py TEST
+[07:26] ★종료/사망: dn_rank_eval
+[07:26] ★종료/사망: r11_eval.py VAL
+[07:26] ★종료/사망: r11_eval.py TEST
+[07:31] ★종료/사망: dn_rank_eval
+[07:31] ★종료/사망: r11_eval.py VAL
+[07:31] ★종료/사망: r11_eval.py TEST
+[07:36] ★종료/사망: dn_rank_eval
+[07:36] ★종료/사망: r11_eval.py VAL
+[07:36] ★종료/사망: r11_eval.py TEST
+[07:41] ★종료/사망: dn_rank_eval
+[07:41] ★종료/사망: r11_eval.py VAL
+[07:41] ★종료/사망: r11_eval.py TEST
+[07:46] ★종료/사망: dn_rank_eval
+[07:46] ★종료/사망: r11_eval.py VAL
+[07:46] ★종료/사망: r11_eval.py TEST
+[07:51] ★종료/사망: dn_rank_eval
+[07:51] ★종료/사망: r11_eval.py VAL
+[07:51] ★종료/사망: r11_eval.py TEST
+[07:56] ★종료/사망: dn_rank_eval
+[07:56] ★종료/사망: r11_eval.py VAL
+[07:56] ★종료/사망: r11_eval.py TEST
+[08:01] ★종료/사망: dn_rank_eval
+[08:01] ★종료/사망: r11_eval.py VAL
+[08:01] ★종료/사망: r11_eval.py TEST
+[08:06] ★종료/사망: dn_rank_eval
+[08:06] ★종료/사망: r11_eval.py VAL
+[08:06] ★종료/사망: r11_eval.py TEST
+[08:11] ★종료/사망: dn_rank_eval
+[08:11] ★종료/사망: r11_eval.py VAL
+[08:11] ★종료/사망: r11_eval.py TEST
+[08:16] ★종료/사망: dn_rank_eval
+[08:16] ★종료/사망: r11_eval.py VAL
+[08:16] ★종료/사망: r11_eval.py TEST
+[08:21] ★종료/사망: dn_rank_eval
+[08:21] ★종료/사망: r11_eval.py VAL
+[08:21] ★종료/사망: r11_eval.py TEST
+[08:26] ★종료/사망: dn_rank_eval
+[08:26] ★종료/사망: r11_eval.py VAL
+[08:26] ★종료/사망: r11_eval.py TEST
+[08:31] ★종료/사망: dn_rank_eval
+[08:31] ★종료/사망: r11_eval.py VAL
+[08:31] ★종료/사망: r11_eval.py TEST
+[08:36] ★종료/사망: dn_rank_eval
+[08:36] ★종료/사망: r11_eval.py VAL
+[08:36] ★종료/사망: r11_eval.py TEST
+[08:41] ★종료/사망: dn_rank_eval
+[08:41] ★종료/사망: r11_eval.py VAL
+[08:41] ★종료/사망: r11_eval.py TEST
+[08:46] ★종료/사망: dn_rank_eval
+[08:46] ★종료/사망: r11_eval.py VAL
+[08:46] ★종료/사망: r11_eval.py TEST
+[08:51] ★종료/사망: dn_rank_eval
+[08:51] ★종료/사망: r11_eval.py VAL
+[08:51] ★종료/사망: r11_eval.py TEST
+[08:56] ★종료/사망: dn_rank_eval
+[08:56] ★종료/사망: r11_eval.py VAL
+[08:56] ★종료/사망: r11_eval.py TEST
+[09:01] ★종료/사망: dn_rank_eval
+[09:01] ★종료/사망: r11_eval.py VAL
+[09:01] ★종료/사망: r11_eval.py TEST
+[09:06] ★종료/사망: dn_rank_eval
+[09:06] ★종료/사망: r11_eval.py VAL
+[09:06] ★종료/사망: r11_eval.py TEST
+[09:11] ★종료/사망: dn_rank_eval
+[09:11] ★종료/사망: r11_eval.py VAL
+[09:11] ★종료/사망: r11_eval.py TEST
+[09:16] ★종료/사망: dn_rank_eval
+[09:16] ★종료/사망: r11_eval.py VAL
+[09:16] ★종료/사망: r11_eval.py TEST
+[09:21] ★종료/사망: dn_rank_eval
+[09:21] ★종료/사망: r11_eval.py VAL
+[09:21] ★종료/사망: r11_eval.py TEST
+[09:26] ★종료/사망: dn_rank_eval
+[09:26] ★종료/사망: r11_eval.py VAL
+[09:26] ★종료/사망: r11_eval.py TEST
+[09:31] ★종료/사망: dn_rank_eval
+[09:31] ★종료/사망: r11_eval.py VAL
+[09:31] ★종료/사망: r11_eval.py TEST
+[09:36] ★종료/사망: dn_rank_eval
+[09:36] ★종료/사망: r11_eval.py VAL
+[09:36] ★종료/사망: r11_eval.py TEST
+[09:41] ★종료/사망: dn_rank_eval
+[09:41] ★종료/사망: r11_eval.py VAL
+[09:41] ★종료/사망: r11_eval.py TEST
+[09:46] ★종료/사망: dn_rank_eval
+[09:46] ★종료/사망: r11_eval.py VAL
+[09:46] ★종료/사망: r11_eval.py TEST
+[09:51] ★종료/사망: dn_rank_eval
+[09:51] ★종료/사망: r11_eval.py VAL
+[09:51] ★종료/사망: r11_eval.py TEST
+[09:56] ★종료/사망: dn_rank_eval
+[09:56] ★종료/사망: r11_eval.py VAL
+[09:56] ★종료/사망: r11_eval.py TEST
+[10:01] ★종료/사망: dn_rank_eval
+[10:01] ★종료/사망: r11_eval.py VAL
+[10:01] ★종료/사망: r11_eval.py TEST
+[10:06] ★종료/사망: dn_rank_eval
+[10:06] ★종료/사망: r11_eval.py VAL
+[10:06] ★종료/사망: r11_eval.py TEST
+[10:11] ★종료/사망: dn_rank_eval
+[10:11] ★종료/사망: r11_eval.py VAL
+[10:11] ★종료/사망: r11_eval.py TEST
+[10:16] ★종료/사망: dn_rank_eval
+[10:16] ★종료/사망: r11_eval.py VAL
+[10:16] ★종료/사망: r11_eval.py TEST
+[10:21] ★종료/사망: dn_rank_eval
+[10:21] ★종료/사망: r11_eval.py VAL
+[10:21] ★종료/사망: r11_eval.py TEST
+[10:26] ★종료/사망: dn_rank_eval
+[10:26] ★종료/사망: r11_eval.py VAL
+[10:26] ★종료/사망: r11_eval.py TEST
+[10:31] ★종료/사망: dn_rank_eval
+[10:31] ★종료/사망: r11_eval.py VAL
+[10:31] ★종료/사망: r11_eval.py TEST
+[10:36] ★종료/사망: dn_rank_eval
+[10:36] ★종료/사망: r11_eval.py VAL
+[10:36] ★종료/사망: r11_eval.py TEST
+[10:41] ★종료/사망: dn_rank_eval
+[10:41] ★종료/사망: r11_eval.py VAL
+[10:41] ★종료/사망: r11_eval.py TEST
+[10:46] ★종료/사망: dn_rank_eval
+[10:46] ★종료/사망: r11_eval.py VAL
+[10:46] ★종료/사망: r11_eval.py TEST
+[10:51] ★종료/사망: dn_rank_eval
+[10:51] ★종료/사망: r11_eval.py VAL
+[10:51] ★종료/사망: r11_eval.py TEST
+[10:56] ★종료/사망: dn_rank_eval
+[10:56] ★종료/사망: r11_eval.py VAL
+[10:56] ★종료/사망: r11_eval.py TEST
+[11:01] ★종료/사망: dn_rank_eval
+[11:01] ★종료/사망: r11_eval.py VAL
+[11:01] ★종료/사망: r11_eval.py TEST
+[11:06] ★종료/사망: dn_rank_eval
+[11:06] ★종료/사망: r11_eval.py VAL
+[11:06] ★종료/사망: r11_eval.py TEST
+[11:11] ★종료/사망: dn_rank_eval
+[11:11] ★종료/사망: r11_eval.py VAL
+[11:11] ★종료/사망: r11_eval.py TEST
+[11:16] ★종료/사망: dn_rank_eval
+[11:16] ★종료/사망: r11_eval.py VAL
+[11:16] ★종료/사망: r11_eval.py TEST
+[11:21] ★종료/사망: dn_rank_eval
+[11:21] ★종료/사망: r11_eval.py VAL
+[11:21] ★종료/사망: r11_eval.py TEST
+[11:26] ★종료/사망: dn_rank_eval
+[11:26] ★종료/사망: r11_eval.py VAL
+[11:26] ★종료/사망: r11_eval.py TEST
+[11:31] ★종료/사망: dn_rank_eval
+[11:31] ★종료/사망: r11_eval.py VAL
+[11:31] ★종료/사망: r11_eval.py TEST
+[11:36] ★종료/사망: dn_rank_eval
+[11:36] ★종료/사망: r11_eval.py VAL
+[11:36] ★종료/사망: r11_eval.py TEST
+[11:41] ★종료/사망: dn_rank_eval
+[11:41] ★종료/사망: r11_eval.py VAL
+[11:41] ★종료/사망: r11_eval.py TEST
+[11:46] ★종료/사망: dn_rank_eval
+[11:46] ★종료/사망: r11_eval.py VAL
+[11:46] ★종료/사망: r11_eval.py TEST
+[11:51] ★종료/사망: dn_rank_eval
+[11:51] ★종료/사망: r11_eval.py VAL
+[11:51] ★종료/사망: r11_eval.py TEST
+[11:56] ★종료/사망: dn_rank_eval
+[11:56] ★종료/사망: r11_eval.py VAL
+[11:56] ★종료/사망: r11_eval.py TEST
+[12:01] ★종료/사망: dn_rank_eval
+[12:01] ★종료/사망: r11_eval.py VAL
+[12:01] ★종료/사망: r11_eval.py TEST
+[12:06] ★종료/사망: dn_rank_eval
+[12:06] ★종료/사망: r11_eval.py VAL
+[12:06] ★종료/사망: r11_eval.py TEST
+[12:11] ★종료/사망: dn_rank_eval
+[12:11] ★종료/사망: r11_eval.py VAL
+[12:11] ★종료/사망: r11_eval.py TEST
+[12:16] ★종료/사망: dn_rank_eval
+[12:16] ★종료/사망: r11_eval.py VAL
+[12:16] ★종료/사망: r11_eval.py TEST
+[12:21] ★종료/사망: dn_rank_eval
+[12:21] ★종료/사망: r11_eval.py VAL
+[12:21] ★종료/사망: r11_eval.py TEST
+[12:26] ★종료/사망: dn_rank_eval
+[12:26] ★종료/사망: r11_eval.py VAL
+[12:26] ★종료/사망: r11_eval.py TEST
+[12:31] ★종료/사망: dn_rank_eval
+[12:31] ★종료/사망: r11_eval.py VAL
+[12:31] ★종료/사망: r11_eval.py TEST
+[12:36] ★종료/사망: dn_rank_eval
+[12:36] ★종료/사망: r11_eval.py VAL
+[12:36] ★종료/사망: r11_eval.py TEST
+[12:41] ★종료/사망: dn_rank_eval
+[12:41] ★종료/사망: r11_eval.py VAL
+[12:41] ★종료/사망: r11_eval.py TEST
+[12:46] ★종료/사망: dn_rank_eval
+[12:46] ★종료/사망: r11_eval.py VAL
+[12:46] ★종료/사망: r11_eval.py TEST
+[12:51] ★종료/사망: dn_rank_eval
+[12:51] ★종료/사망: r11_eval.py VAL
+[12:51] ★종료/사망: r11_eval.py TEST
+[12:56] ★종료/사망: dn_rank_eval
+[12:56] ★종료/사망: r11_eval.py VAL
+[12:56] ★종료/사망: r11_eval.py TEST
+[13:01] ★종료/사망: dn_rank_eval
+[13:01] ★종료/사망: r11_eval.py VAL
+[13:01] ★종료/사망: r11_eval.py TEST
+[13:06] ★종료/사망: dn_rank_eval
+[13:06] ★종료/사망: r11_eval.py VAL
+[13:06] ★종료/사망: r11_eval.py TEST
+[13:11] ★종료/사망: dn_rank_eval
+[13:11] ★종료/사망: r11_eval.py VAL
+[13:11] ★종료/사망: r11_eval.py TEST
+[13:16] ★종료/사망: dn_rank_eval
+[13:16] ★종료/사망: r11_eval.py VAL
+[13:16] ★종료/사망: r11_eval.py TEST
+[13:21] ★종료/사망: dn_rank_eval
+[13:21] ★종료/사망: r11_eval.py VAL
+[13:21] ★종료/사망: r11_eval.py TEST
+[13:26] ★종료/사망: dn_rank_eval
+[13:26] ★종료/사망: r11_eval.py VAL
+[13:26] ★종료/사망: r11_eval.py TEST
+[13:31] ★종료/사망: dn_rank_eval
+[13:31] ★종료/사망: r11_eval.py VAL
+[13:31] ★종료/사망: r11_eval.py TEST
+[13:36] ★종료/사망: dn_rank_eval
+[13:36] ★종료/사망: r11_eval.py VAL
+[13:36] ★종료/사망: r11_eval.py TEST
+[13:41] ★종료/사망: dn_rank_eval
+[13:41] ★종료/사망: r11_eval.py VAL
+[13:41] ★종료/사망: r11_eval.py TEST
+[13:46] ★종료/사망: dn_rank_eval
+[13:46] ★종료/사망: r11_eval.py VAL
+[13:46] ★종료/사망: r11_eval.py TEST
+[13:51] ★종료/사망: dn_rank_eval
+[13:51] ★종료/사망: r11_eval.py VAL
+[13:51] ★종료/사망: r11_eval.py TEST
+[13:56] ★종료/사망: dn_rank_eval
+[13:56] ★종료/사망: r11_eval.py VAL
+[13:56] ★종료/사망: r11_eval.py TEST
+[14:01] ★종료/사망: dn_rank_eval
+[14:01] ★종료/사망: r11_eval.py VAL
+[14:01] ★종료/사망: r11_eval.py TEST
+[14:06] ★종료/사망: dn_rank_eval
+[14:06] ★종료/사망: r11_eval.py VAL
+[14:06] ★종료/사망: r11_eval.py TEST
+[14:11] ★종료/사망: dn_rank_eval
+[14:11] ★종료/사망: r11_eval.py VAL
+[14:11] ★종료/사망: r11_eval.py TEST
+[14:16] ★종료/사망: dn_rank_eval
+[14:16] ★종료/사망: r11_eval.py VAL
+[14:16] ★종료/사망: r11_eval.py TEST
