@@ -45,11 +45,13 @@ DPD = "raw-data/coq-dataset/data_points"
 OUT = ("all_log/r11_pool_train_onlyin.jsonl" if ONLY_IN
        else "all_log/r11_pool_train_all.jsonl" if ALL_PT
        else "all_log/r11_pool_train.jsonl")
-JOBS = 2
+JOBS = int(sys.argv[4]) if len(sys.argv) > 4 and sys.argv[4].isdigit() else 2   # coqtop 워커 수 (12코어 공유 서버: 4 권장)
+RESUME = "resume" in sys.argv[5:]   # 기존 출력의 (proj,thm,thmi) 는 건너뛰고 이어쓴다
 MAX_PT = 10**9 if ALL_PT else 3
 
 sdb = SentenceDB.load(Path("raw-data/coq-dataset/sentences.db"))
 
+REPOS_NAME = {pd: nm for nm, pd in REPOS.items()}
 for nm, pd in REPOS.items():
     assert os.path.isdir(pd), f"저장소 없음: {pd}"
     assert any(True for _ in Path(pd).rglob("*.vo")), f".vo 없음(빌드 안 됨): {pd}"
@@ -149,13 +151,20 @@ if __name__ == "__main__":
                 jobs.append((pdir, path, head, tt, chunks, ks, golds,
                              tacs, texts, rel, pi))
                 got += 1
+    done_keys = set()
+    if RESUME and os.path.exists(OUT):
+        for l in open(OUT):
+            try: r_ = json.loads(l); done_keys.add((r_["proj"], r_["thm"], r_["thmi"]))
+            except Exception: pass
+        n0 = len(jobs); jobs = [j for j in jobs if (j[9] and (REPOS_NAME.get(j[0], j[0]), j[9], j[10]) not in done_keys)]
+        print(f"■ 이어쓰기: 기처리 정리 {len(done_keys)} · 남은 작업 {len(jobs)}/{n0}", flush=True)
     assert jobs, f"정리를 하나도 못 골랐다 — skip={dict(skip)}"
     print(f"■ TRAIN · 정리 {len(jobs)} · 저장소 {len(REPOS)} · 병렬 {JOBS}"
           f" · 건너뜀 {dict(skip)}", flush=True)
 
     R.OUT = OUT          # run() 은 파일을 안 쓰지만 표시용으로 맞춘다
     S = collections.defaultdict(collections.Counter); nrec = 0
-    with open(OUT, "w") as fo, cf.ThreadPoolExecutor(JOBS) as ex:
+    with open(OUT, "a" if RESUME else "w") as fo, cf.ThreadPoolExecutor(JOBS) as ex:
         for n, recs in enumerate(ex.map(R.run, jobs)):
             for r in recs:
                 nrec += 1
