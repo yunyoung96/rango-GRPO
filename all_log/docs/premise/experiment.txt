@@ -2398,3 +2398,12 @@ premise 길이 편차가 극심하다 — 최소 16 · p25 43 · 중앙 147 · �
 - 학습 파라미터 0: CV·K-사다리·채널분기·가중치 전부 제거. 순위 융합이 스케일
   조율을 대체한다는 것이 최종 서사
 - results/r15.md §7 v3: RRF-0(최종) + BLEND/TFIDF/PIECE(비교군) 4랭커 전표
+
+[2026-09-02 KST] ★★ r16–r17 확정 — 채널별 RRF (k=20 · 학습 0)
+- r16 예선: SUBTOK 기각(동률) · 4-way RRF 기각(VAL 40.9 붕괴 — 구조 3신호는
+  하나의 관점) · exact→apply 재분류 수확(절반이 ap top10)
+- r17: k 스윕 20 채택(TRAIN 57.4·전이 유지) · 채널별 7후보 독립 선발 —
+  ap/in/rwh=S1rrf, rw=S2rrf(overlap 제외: redex 매칭에서 lcp 가 share 와 중복)
+- 최종: score_c = 1/(20+r_구조c)+1/(20+r_어휘) · TRAIN 57.6 / VAL 50.9 / TEST 61.8
+  (r15 대비 3스플릿 전부 ≥) · 학습 파라미터 0 유지
+- 문서: versions/r16.md·r17.md · results/r17.md(§7·TFIDF 비교) · r15 에 계승 표지
