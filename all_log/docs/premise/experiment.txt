@@ -2465,3 +2465,17 @@ premise 길이 편차가 극심하다 — 최소 16 · p25 43 · 중앙 147 · �
 - sft_build(셔플 포함) → 토크나이즈(길이·마스크 assert) → GPU 6-step: 4.09→3.70 ✓
 - 실측 결정근거 확보: target잘림 22.5% → hard_seq_len 4096 (또는 진술문 절단 강화)
 - 남은 학습-전 칸: ②variant 전체배치(진행) → ④전지점 풀 수집(설계 필요) → ③물질화 v2
+
+[2026-09-01 19:30 KST] 세션 재시작 사고 + 복구 + SFT 준비 진척
+- 사고: 세션 재시작으로 scratchpad(tmpfs) 전체 소실 (재부팅 아님, uptime 61일). TRAIN 저장소
+  빌드(coq-art·undec)·watchdog·체인 스크립트 소실. all_log/ 산출물은 무사.
+- 복구: tmp/tr/ (gitignore, 영속) 에 재클론·재빌드 — coq-art 191/192 vo 23s · undec 597/673 vo 229s.
+  variant_gen 이어쓰기(append + .done 사이드카) 추가·검증(건너뜀 205). scripts/{mckill,rebuild_tr,after_rebuild}.sh.
+  교훈(메모리 저장): 체크아웃·빌드는 tmp/tr, 장기 스크립트는 scripts/.
+- 시각 정정: 이 서버 로컬 TZ = KST. 이전 기록의 "2026-09-02 새벽"은 2026-09-01 저녁이 맞다 (design 문서는 수정).
+- seq_len 결정 4096: VAL 60지점 실측 target잘림 3072→23% · 4096→2% · 5120→0%. 모델 컨텍스트 32k.
+- 프롬프트 채움(v1 물질화): 블록 꽉참 ap 60/60·in 56·rw 60·rwh 58·oth 60, 골드 프롬프트 내 42/42.
+- ④ 규모 실측: 빌드된 TRAIN = 전체 파일의 2.6% → 외부참조 후보 4,862 지점(-in 746). 병목 = 빌드된
+  저장소 수 → train_build_campaign.py (상위 60 프로젝트) 19:28 착수. train_pool `all` 모드 추가.
+- 모델: Qwen3-Coder 소형 dense 없음(전부 MoE). Qwen3-4B-Base drop-in(토크나이저 길이 동일);
+  Qwen3.5-4B-Base 는 transformers 5.1.0 미지원(5.16.1 필요) + 커널 부재 → 2순위. GPU 프로브 진행중.

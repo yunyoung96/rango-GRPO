@@ -35,15 +35,18 @@ from data_management.dataset_file import DatasetFile
 PER_PROJ = int(sys.argv[1]) if len(sys.argv) > 1 else 120
 #: ★ only_in — `-in` 스텝 있는 정리만, 그 스텝 전부(≤6). 표본 보강용.
 ONLY_IN = (sys.argv[3] if len(sys.argv) > 3 else "") == "only_in"
+#: ★ all — ④ 전 지점 모드: 정리당 지점 상한 없음(SFT 물질화용). 출력 r11_pool_train_all.jsonl
+ALL_PT = (sys.argv[3] if len(sys.argv) > 3 else "") == "all"
 _SCR = "/app/coq-modeling/tmp/tr"   # 영속 위치 (scratchpad=tmpfs 는 세션 재시작 때 소실됨)
 _DEF = f"coq-community-coq-art={_SCR}/coq-community-coq-art"
 REPOS = dict(kv.split("=", 1) for kv in
              (sys.argv[2] if len(sys.argv) > 2 else _DEF).split(","))
 DPD = "raw-data/coq-dataset/data_points"
 OUT = ("all_log/r11_pool_train_onlyin.jsonl" if ONLY_IN
+       else "all_log/r11_pool_train_all.jsonl" if ALL_PT
        else "all_log/r11_pool_train.jsonl")
 JOBS = 2
-MAX_PT = 3
+MAX_PT = 10**9 if ALL_PT else 3
 
 sdb = SentenceDB.load(Path("raw-data/coq-dataset/sentences.db"))
 
