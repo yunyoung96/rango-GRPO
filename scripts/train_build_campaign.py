@@ -105,6 +105,51 @@ def _run(cmd, *a, **k):
     return _orig_run(cmd, *a, **k)
 V.subprocess.run = _run
 
+def retry_empty_root(d, proj):
+    """★ 2차 폴백 — `-R . ""` (빈 논리 루트). 소형 교재 사본류는 `Require Import foo` 를 최상위 이름으로 쓰는데
+    `-R top Name` 으로는 `Name.foo` 만 묶여 "논리경로 매핑 불일치" 로 남는다. 기존 빌드 산출은 지우고 다시 만든다."""
+    for f in ("Makefile", "Makefile.conf", ".Makefile.d", "_CoqProject"):
+        fp = os.path.join(d, f)
+        if os.path.exists(fp): os.rename(fp, fp + ".prev")
+    sh("find . \\( -name '*.vo' -o -name '*.vos' -o -name '*.vok' -o -name '*.glob' -o -name '*.aux' \\) -delete", cwd=d, timeout=300)
+    files = [f for f in V.vfiles(d) if V.legal_path(f)]
+    open(os.path.join(d, "_CoqProject"), "w").write('-R . ""\n' + "\n".join(files) + "\n")
+    ok, msg = sh("coq_makefile -f _CoqProject -o Makefile", cwd=d, timeout=180)
+    if not ok: return "makefile 실패(빈루트)", msg, len(files), 0, ["빈루트 -R . \"\""]
+    try:
+        p = subprocess.run(f"make -j{JOBS} -k", shell=True, cwd=d, capture_output=True, text=True, timeout=PER + 120)
+        out = (p.stdout or "") + (p.stderr or "")
+    except subprocess.TimeoutExpired:
+        out = "timeout"
+    nvo = len(V.vofiles(d)); nv = len(V.vfiles(d))
+    causes = collections.Counter(V.classify(m) for _, _, m in V.ERR.findall(out))
+    cause = "완전 빌드" if nv and nvo >= nv else (causes.most_common(1)[0][0] if causes else "오류 없음/미상")
+    return cause, out[-300:], nv, nvo, ["빈루트 -R . \"\""]
+
+
+if __name__ == "__main__" and len(sys.argv) > 1 and sys.argv[1] == "--retry-logical":
+    # 캠페인 결과 중 "논리경로 매핑 불일치" · vo < 50% 인 프로젝트를 빈 루트로 재시도. 나아지면 행을 갱신한다.
+    rows = [json.loads(l) for l in open(OUT)]
+    todo = [r for r in rows if r.get("v", 0) and r.get("vo", 0) < 0.5 * r["v"] and "논리경로" in (r.get("cause") or "")
+            and os.path.isdir(os.path.join(WORK, r["proj"])) and "빈루트" not in " ".join(r.get("route", []))]
+    print(f"■ 빈루트 재시도 대상 {len(todo)}: {[r['proj'][:24] for r in todo]}", flush=True)
+    for r in todo:
+        d = os.path.join(WORK, r["proj"]); t0 = time.time()
+        cause, msg, nv, nvo, route = retry_empty_root(d, r["proj"])
+        better = nvo > r.get("vo", 0)
+        print(f"   {r['proj'][:36]:36s} vo {r.get('vo',0)}→{nvo}/{nv} {'채택' if better else '유지'} {int(time.time()-t0)}s {cause[:30]}", flush=True)
+        if better:
+            r.update(cause=cause, v=nv, vo=nvo, route=r.get("route", []) + route, err=msg)
+        else:   # 되돌린다: 이전 빌드 산출이 지워졌으므로 원래 방식으로 다시 빌드
+            for f in ("Makefile", "Makefile.conf", ".Makefile.d", "_CoqProject"):
+                fp = os.path.join(d, f)
+                if os.path.exists(fp): os.remove(fp)
+                if os.path.exists(fp + ".prev"): os.rename(fp + ".prev", fp)
+            subprocess.run(f"make -j{JOBS} -k", shell=True, cwd=d, capture_output=True, text=True, timeout=PER + 120)
+            r["route"] = r.get("route", []) + ["빈루트✗"]
+    open(OUT, "w").write("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows))
+    print("RETRY_LOGICAL_DONE"); sys.exit(0)
+
 if __name__ == "__main__" and len(sys.argv) > 2 and sys.argv[1] == "--prescreen-test":
     d = sys.argv[2]; proj = os.path.basename(d.rstrip("/"))
     t0 = time.time(); bad = prescreen(d, proj)
