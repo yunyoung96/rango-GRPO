@@ -174,10 +174,21 @@ def point_shuffle(path):
         random.shuffle(keys)
         for k in keys:
             if groups[k]: out.append(groups[k].pop())
-    # assert: 같은 지점 행이 인접하지 않는다 (그룹 수 > 1 일 때)
+    # 같은 지점 행이 인접하지 않는다 — 라운드로빈 끝자락(남은 그룹이 1개)에서 생기는 인접은 앞쪽 비인접 위치와
+    # 교환해 수리한다. 수리 후에도 남으면(병리적 소표본) 0.1% 까지 허용·경고, 넘으면 assert.
+    key = lambda r: (r["proj"], r["thm"], r["thmi"], r["k"])
     if len(keys) > 1:
-        for a, b in zip(out, out[1:]):
-            assert (a["proj"], a["thm"], a["thmi"], a["k"]) !=                    (b["proj"], b["thm"], b["thmi"], b["k"]), "지점 인접!"
+        for _ in range(3):
+            bad = [i for i in range(1, len(out)) if key(out[i]) == key(out[i - 1])]
+            if not bad: break
+            for i in bad:
+                for j in range(1, len(out) - 1):
+                    if key(out[j]) != key(out[i]) and key(out[j - 1]) != key(out[i]) and key(out[j + 1]) != key(out[i]) \
+                            and key(out[i - 1]) != key(out[j]) and (i + 1 >= len(out) or key(out[i + 1]) != key(out[j])):
+                        out[i], out[j] = out[j], out[i]; break
+        bad = sum(1 for i in range(1, len(out)) if key(out[i]) == key(out[i - 1]))
+        if bad: print(f"   ★ 지점 인접 잔여 {bad}/{len(out)} (수리 불가)", flush=True)
+        assert bad <= max(1, len(out) // 1000), f"지점 인접 {bad}건 — 셔플 실패"
     with open(path, "w") as f:
         for r in out: f.write(json.dumps(r, ensure_ascii=False) + "\n")
     return len(out)

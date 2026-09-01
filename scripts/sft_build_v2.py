@@ -262,6 +262,13 @@ def build_point(r, stat):
 
 if __name__ == "__main__":
     POOL = [a for a in sys.argv[3:] if a.endswith(".jsonl")]
+    # ★ 샤딩: `--shard i/N` — 실측 1.6 s/지점(BM25 유사증명 검색이 지배)이라 12만 지점은 단일 프로세스로 50h+.
+    #   행을 (proj, thm) 순으로 정렬해 연속 구간으로 나누면 샤드 안에서 dp/의존 캐시가 잘 맞는다. 샤드 출력은
+    #   OUT.part{i}; 병합·지점 셔플은 scripts/sft_merge_shuffle.py 가 한다.
+    SHARD = None
+    if "--shard" in sys.argv:
+        a_, b_ = sys.argv[sys.argv.index("--shard") + 1].split("/"); SHARD = (int(a_), int(b_))
+        OUT = OUT + f".part{SHARD[0]}"
     if POOL:
         # ★ 전 지점 풀: gold 없는 무참조 행도 학습 대상 (load_merge 는 gold 없는 행을 버린다). 좌표 중복은 마지막 행.
         _m = {}
@@ -274,7 +281,12 @@ if __name__ == "__main__":
     else:
         rows, _ = SB.PR.load_merge(SB.SPLITS[SPLIT.upper()])
     print(f"■ 풀: {POOL or SB.SPLITS[SPLIT.upper()]} · 행 {len(rows)}", flush=True)
-    random.shuffle(rows)
+    if SHARD:
+        rows.sort(key=lambda r: (r["proj"], r["thm"], r["thmi"], r["k"]))
+        i_, n_ = SHARD; lo = len(rows) * i_ // n_; hi = len(rows) * (i_ + 1) // n_
+        rows = rows[lo:hi]; print(f"■ 샤드 {i_}/{n_}: 행 {lo}..{hi} ({len(rows)})", flush=True)
+    else:
+        random.shuffle(rows)
     stat = collections.Counter(); n = 0; t0 = time.time(); plen = []
     with open(OUT, "w") as fo:
         for r in rows:
@@ -290,13 +302,16 @@ if __name__ == "__main__":
                 fo.write(json.dumps(pr, ensure_ascii=False) + "\n"); stat[pr["case"]] += 1
             plen.append(len(TOK(prs[0]["prompt"], add_special_tokens=False).input_ids))
             n += 1
-            if n % 20 == 0: print(f"  {n} 지점 · {int(time.time()-t0)}s", flush=True)
+            if n % 100 == 0: print(f"  {n} 지점 · {int(time.time()-t0)}s · {n/max(1,time.time()-t0):.2f}/s", flush=True)
     assert n == 0 or plen, "길이 통계 없음"
     plen.sort()
     print(f"■ SFT 물질화 v2 {SPLIT}: 지점 {n} · 행 {sum(v for k, v in stat.items() if k[0] in 'AB-')} · {int(time.time()-t0)}s")
     print("   통계:", dict(stat))
     if plen:
         print(f"   프롬프트 토큰: 중앙 {plen[len(plen)//2]} · p90 {plen[int(len(plen)*.9)]} · 최대 {plen[-1]} · >{HARD-64} {sum(1 for x in plen if x > HARD-64)}/{len(plen)}")
-    ns = SB.point_shuffle(OUT)
-    print(f"   지점 셔플 완료 ({ns}행 · 인접 assert 통과)")
-    print("SFTBUILD2_DONE")
+    if SHARD:
+        print("SFTBUILD2_SHARD_DONE")
+    else:
+        ns = SB.point_shuffle(OUT)
+        print(f"   지점 셔플 완료 ({ns}행 · 인접 assert 통과)")
+        print("SFTBUILD2_DONE")

@@ -20,9 +20,16 @@ grep -q 'COLLECT_ALL_DONE rc=0' all_log/au_research/r19_v1_train_all.log || say 
 NPOOL=$(wc -l < all_log/r11_pool_train_all.jsonl); say "수집 종료 · 풀 행 $NPOOL"
 [ "$NPOOL" -ge 1000 ] || fail "풀 행 $NPOOL < 1000"
 
-say "① 대량 물질화 v2 시작"
-python3 scripts/sft_build_v2.py train 10000000 all_log/r11_pool_train_all.jsonl > all_log/au_research/sft2_full.log 2>&1 || fail "물질화"
+say "① 대량 물질화 v2 시작 (샤드 8 병렬)"
+NS=8; rm -f all_log/sft2_pairs_train.jsonl.part*
+for i in $(seq 0 $((NS-1))); do
+  python3 scripts/sft_build_v2.py train 10000000 all_log/r11_pool_train_all.jsonl --shard $i/$NS > all_log/au_research/sft2_full_$i.log 2>&1 &
+done
+wait
+for i in $(seq 0 $((NS-1))); do grep -q SFTBUILD2_SHARD_DONE all_log/au_research/sft2_full_$i.log || fail "물질화 샤드 $i"; done
+python3 scripts/sft_merge_shuffle.py all_log/sft2_pairs_train.jsonl > all_log/au_research/sft2_full.log 2>&1 || fail "병합·셔플"
 grep -q SFTBUILD2_DONE all_log/au_research/sft2_full.log || fail "물질화 완료 마커 없음"
+grep -h '통계\|프롬프트 토큰' all_log/au_research/sft2_full_*.log | head -16; cat all_log/au_research/sft2_full.log
 NROWS=$(wc -l < all_log/sft2_pairs_train.jsonl); say "물질화 행 $NROWS"
 [ "$NROWS" -ge 1000 ] || fail "행 $NROWS < 1000"
 
