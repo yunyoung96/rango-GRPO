@@ -276,6 +276,13 @@
            표본 성공률(v2, 20개): ≥50% vo 11 · 부분 4 · 0vo 5. 19:28 KST 착수.
        (b) train_pool.py `all` 모드(정리당 상한 없음 → r11_pool_train_all.jsonl) 준비 완료.
            캠페인 결과 저장소 전부에 대해 r19 필터로 수집 → 물질화 입력.
+       **(a) 결과 (2026-09-01 21:06, 36분)**: 60 프로젝트 → 완전 9 · ≥50% 17 · 부분 23 · 0vo/클론실패 4 +
+           기존 7 = 컴파일 .v **4,127 / 10,875 (37.9%)**, 캠페인 전 788 의 ×5.2. 하네스 수정 3건이 결정적:
+           순환 심링크 제거(possientis 0→231) · coqdep 사전검사(구문오류 1파일이 전체를 죽임) ·
+           -Q→-R(짧은 Require 해석, 231→415). 빈 루트 `-R . ""` 2차 폴백은 13개 전부 개선 없음
+           (남은 "논리경로 불일치"는 외부 라이브러리(paco·stdpp 등) 부재 — opam 변경 금지라 보류).
+           TacTok(집합체)·HoTT·Priyanka·CompCert(held-out)·coq-art 사본은 배제.
+       (b) 착수 2026-09-01 21:1x: scripts/collect_all.sh (워커 4 · 이어쓰기 · 로그 r19_v1_train_all.log).
   ☑ ③물질화 v2 **구현·스모크 통과** (2026-09-01 20:2x, scripts/sft_build_v2.py):
      · 방식: rango GeneralFormatter+ProofPremiseCollator 를 그대로 태우고 **[PREMISES] 자리만
        5블록으로 치환** (allocate_and_fmt 를 프로세스 안에서 감쌈). [PROOFS](BM25 12)·[TYPES]/
