@@ -33,7 +33,7 @@ REPOS = dict(kv.split("=", 1) for kv in
              (sys.argv[2] if len(sys.argv) > 2 else
               f"coq-community-coq-art={_SCR}/coq-community-coq-art").split(","))
 OUT = "all_log/sft_variants.jsonl"
-DONE = OUT + ".done"   # 처리 완료 정리 (proj\tthm\tthmi) — 이어쓰기(resume)용, 전부기각 정리도 기록
+DONE = OUT + ".done2"  # (규칙표 v2: constructor 계열 추가 → 새 사이드카) 처리 완료 정리 (proj\tthm\tthmi) — 이어쓰기(resume)용, 전부기각 정리도 기록
 sdb = SentenceDB.load(Path("raw-data/coq-dataset/sentences.db"))
 
 DECL = re.compile(r"^(\s*(?:Local\s+|Global\s+)?(?:Theorem|Lemma|Fact|Remark|"
@@ -41,11 +41,54 @@ DECL = re.compile(r"^(\s*(?:Local\s+|Global\s+)?(?:Theorem|Lemma|Fact|Remark|"
 HEAD_T = re.compile(r"^(\s*)(apply|eapply|rewrite|erewrite)\b(\s*<-)?\s*")
 
 
+# ★ constructor 계열 (사용자 제안 2026-09-01): 같은 상태에서 동치인 표기를 서로 바꿔 출력 다양성을 학습.
+#   채택은 여전히 Qed 재실행이 판정한다 (split→constructor 는 단일 생성자 타입에서만 성립하는 식).
+CTOR_T = re.compile(r"^(\s*)(constructor|econstructor|split|left|right)\b(\s*\d+)?(?=\s*[;.]|\s+(?:with|$))")
+try:
+    _IND = json.load(open("data/ind_constructors_clean.json"))
+    CTORS = set()
+    for _t, _v in _IND.items():
+        _cs = _v.get("constructors") if isinstance(_v, dict) else _v
+        if isinstance(_cs, dict): _cs = list(_cs.keys())
+        for _c in (_cs or []): CTORS.add(_c if isinstance(_c, str) else str(_c[0]) if isinstance(_c, (list, tuple)) else str(_c))
+except Exception:
+    CTORS = set()
+# stdlib 의 흔한 생성자 (인덱스는 프로젝트 정의만 담는다)
+CTORS |= {"le_n", "le_S", "eq_refl", "refl_equal", "or_introl", "or_intror", "conj", "ex_intro", "I", "in_eq", "in_cons",
+          "Forall_nil", "Forall_cons", "Exists_cons_hd", "Exists_cons_tl", "inl", "inr", "Some", "None", "pair", "tt",
+          "O", "S", "nil", "cons", "true", "false", "Lt", "Gt", "Eq", "Z0", "Zpos", "Zneg", "xH", "xO", "xI",
+          "ex_intro2", "exist", "existT", "left", "right", "inleft", "inright", "sig_intro", "Permutation_nil",
+          "Permutation_skip", "Permutation_swap", "Permutation_trans", "Acc_intro", "le_pred", "Rle_refl"}
+assert len(CTORS) > 1000, f"생성자 인덱스 로드 실패 {len(CTORS)}"
+_APPLY_ONE = re.compile(r"^(\s*)(apply|eapply)\s+([A-Za-z_][\w']*(?:\.[A-Za-z_][\w']*)*)\s*(?=[;.]|$)")   # 마침표는 이름에 안 붙인다
+
+
+def ctor_variants(step):
+    t = step; lead = t[:len(t) - len(t.lstrip("\n"))]; body = t.lstrip("\n"); out = []
+    m = CTOR_T.match(body)
+    if m:
+        h = m.group(2); num = (m.group(3) or "").strip()
+        def rep(new): return lead + body[:m.start(2)] + new + body[m.end(3) if m.group(3) else m.end(2):]
+        if h == "constructor" and not num: out.append(("ctor→ector", rep("econstructor")))
+        if h == "econstructor" and not num: out.append(("ector→ctor", rep("constructor")))
+        if h == "split": out.append(("split→ctor", rep("constructor")))
+        if h == "left": out.append(("left→ctor1", rep("constructor 1")))
+        if h == "right": out.append(("right→ctor2", rep("constructor 2")))
+        return out
+    m = _APPLY_ONE.match(body)          # `apply C.` 에서 C 가 생성자면 constructor/econstructor 로
+    if m and m.group(3).split(".")[-1] in CTORS:
+        rest = body[m.end(3):]
+        out.append(("applyC→ctor", lead + body[:m.start(2)] + "constructor" + rest))
+        out.append(("applyC→ector", lead + body[:m.start(2)] + "econstructor" + rest))
+    return out
+
+
 def variants_of(step):
     """스텝 텍스트 → [(rule, 변형텍스트)]. 원문 구조(; 이후, in 절)는 유지."""
     t = step
+    cv = ctor_variants(t)
     m = HEAD_T.match(t.lstrip("\n"))
-    if not m: return []
+    if not m: return cv
     lead_ws = t[:len(t) - len(t.lstrip("\n"))]
     body = t.lstrip("\n")
     out = []
@@ -60,6 +103,7 @@ def variants_of(step):
         out.append(("rw→rw<-", sub("rewrite", " <-")))
     if h == "rewrite" and arr == "<-":
         out.append(("rw<-→rw", sub("rewrite", "")))
+    out = out + [c for c in cv if c not in out]
     assert all(v != step for _, v in out), "변형이 원문과 동일"
     return out
 

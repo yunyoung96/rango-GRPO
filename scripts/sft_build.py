@@ -41,7 +41,9 @@ VARIANTS = collections.defaultdict(list)
 if os.path.exists("all_log/sft_variants.jsonl"):
     for l in open("all_log/sft_variants.jsonl"):
         v = json.loads(l)
-        VARIANTS[(v["proj"], v["thm"], v["thmi"], v["k"])].append(v)
+        _key = (v["proj"], v["thm"], v["thmi"], v["k"])
+        if all(x["variant"].strip() != v["variant"].strip() for x in VARIANTS[_key]):   # 규칙표 v1/v2 재실행 중복 제거
+            VARIANTS[_key].append(v)
 
 
 def rankdata_avg(v):

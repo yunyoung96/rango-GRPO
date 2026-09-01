@@ -237,7 +237,8 @@ def run(job):
     for k in ks:
         body.append(chunks[prev]); body.append(f'idtac "@@@{k}".')
         body.append("try applic_filter.")
-        body.append(f"try applic_check {golds[k]}."); prev = k
+        if golds.get(k): body.append(f"try applic_check {golds[k]}.")   # 무참조 스텝(gold 없음)은 필터만
+        prev = k
     body.append("Admitted.")
     d = os.path.dirname(os.path.abspath(path))
     with tempfile.NamedTemporaryFile("w", suffix=".v", dir=d, delete=False) as f:

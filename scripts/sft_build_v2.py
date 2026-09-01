@@ -143,7 +143,7 @@ def build_point(r, stat):
     used_base = {n.split(".")[-1] for v in blocks.values() for n in v}
     # case A/B — 채널 정확 주입 (v1 과 동일 규칙)
     case = "-"
-    if form_ch:
+    if form_ch and golds:                      # gold 없는 무참조 스텝(intros·simpl…)은 주입 없이 '-'
         bl = blocks[form_ch]
         def hit(names):
             bs = set()
@@ -244,7 +244,17 @@ def build_point(r, stat):
 
 if __name__ == "__main__":
     POOL = [a for a in sys.argv[3:] if a.endswith(".jsonl")]
-    rows, _ = SB.PR.load_merge(POOL or SB.SPLITS[SPLIT.upper()])
+    if POOL:
+        # ★ 전 지점 풀: gold 없는 무참조 행도 학습 대상 (load_merge 는 gold 없는 행을 버린다). 좌표 중복은 마지막 행.
+        _m = {}
+        for _pf in POOL:
+            for l in open(_pf):
+                r_ = json.loads(l)
+                if r_.get("local"): continue
+                _m[(r_["proj"], r_["thm"], r_["thmi"], r_["k"])] = r_
+        rows = list(_m.values())
+    else:
+        rows, _ = SB.PR.load_merge(SB.SPLITS[SPLIT.upper()])
     print(f"■ 풀: {POOL or SB.SPLITS[SPLIT.upper()]} · 행 {len(rows)}", flush=True)
     random.shuffle(rows)
     stat = collections.Counter(); n = 0; t0 = time.time(); plen = []

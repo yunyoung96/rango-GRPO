@@ -48,6 +48,7 @@ OUT = ("all_log/r11_pool_train_onlyin.jsonl" if ONLY_IN
 JOBS = int(sys.argv[4]) if len(sys.argv) > 4 and sys.argv[4].isdigit() else 2   # coqtop 워커 수 (12코어 공유 서버: 4 권장)
 RESUME = "resume" in sys.argv[5:]   # 기존 출력의 (proj,thm,thmi) 는 건너뛰고 이어쓴다
 MAX_PT = 10**9 if ALL_PT else 3
+OTH_PER_THM = 5      # all 모드: 정리당 무참조 지점 상한 (균등 표본)
 
 sdb = SentenceDB.load(Path("raw-data/coq-dataset/sentences.db"))
 
@@ -121,12 +122,24 @@ if __name__ == "__main__":
                           "apply", "eapply", "rewrite", "erewrite", "unfold",
                           "destruct", "induction", "case", "elim", "exact", "eexact")
                       and R.NAMED.search(s.step.text or "") and s.goals]
-                if not ks: continue
+                ks_oth = []
+                if ALL_PT:
+                    # ★ all 모드: **무참조 스텝**(intros·simpl·constructor·split·auto…)도 지점으로 — SFT 는 증명의
+                    #   모든 수를 배워야 한다(v10 도 전 스텝 학습). 외부참조 스텝은 전부, 무참조는 정리당 ≤ OTH_PER_THM 균등.
+                    cand = [k for k, s in enumerate(proof.steps)
+                            if k not in set(ks) and s.goals and R.HEADT.match(s.step.text or "")
+                            and (s.step.text or "").strip() not in ("Proof.", "Qed.", "Defined.", "Admitted.")
+                            and not re.match(r"^\s*[-+*{}]+\s*$", s.step.text or "")]
+                    if cand:
+                        stp = len(cand) / min(OTH_PER_THM, len(cand))
+                        ks_oth = sorted({cand[int(i * stp)] for i in range(min(OTH_PER_THM, len(cand)))})
+                if not ks and not ks_oth: continue
                 if ONLY_IN:
                     ks = [k for k in ks
                           if R.tac_form(proof.steps[k].step.text or "")
                           in ("apply-in", "rewrite-in")][:6]
                     if not ks: continue
+                ks_ext = list(ks)
                 if len(ks) > MAX_PT and not ONLY_IN:
                     # ★ `-in` 을 먼저 챙긴다 — 전체의 2~6% 라 균등으론 안 모인다
                     _in = [k for k in ks if R.tac_form(proof.steps[k].step.text or "")
@@ -138,10 +151,11 @@ if __name__ == "__main__":
                         stp = len(_rest) / need
                         take += [_rest[int(x * stp)] for x in range(need)]
                     ks = sorted(set(take))
+                ks = sorted(set(ks) | set(ks_oth))
                 steps = [s.step.text for s in proof.steps]
                 chunks, prev = {}, 0
                 for k in ks: chunks[prev] = "".join(steps[prev:k]); prev = k
-                golds = {k: R.NAMED.search(proof.steps[k].step.text).group(1)
+                golds = {k: (R.NAMED.search(proof.steps[k].step.text).group(1) if k in set(ks_ext) else None)
                          for k in ks}
                 tacs = {}; texts = {}
                 for _k in ks:
