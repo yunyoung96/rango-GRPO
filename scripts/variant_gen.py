@@ -150,15 +150,12 @@ if __name__ == "__main__":
     nw = 0; stat = collections.Counter()
     # ── 이어쓰기: 이미 처리한 정리는 건너뛴다 (출력은 append). 채택 행 + done 사이드카 합집합.
     done_keys = set()
-    for f_ in (OUT, DONE):
-        if os.path.exists(f_):
-            for l in open(f_):
-                if f_ == OUT:
-                    try: r_ = json.loads(l); done_keys.add((r_["proj"], r_["thm"], r_["thmi"]))
-                    except Exception: pass
-                else:
-                    a_ = l.rstrip("\n").split("\t")
-                    if len(a_) == 3: done_keys.add((a_[0], a_[1], int(a_[2])))
+    # ★ 이어쓰기 기준은 **사이드카(DONE)만** — 출력(OUT)의 채택 행으로 건너뛰면 규칙표가 바뀌었을 때(v2: constructor 계열)
+    #   옛 채택분이 있는 정리가 재방문되지 않는다. 중복 변형은 물질화 로더가 제거한다.
+    if os.path.exists(DONE):
+        for l in open(DONE):
+            a_ = l.rstrip("\n").split("\t")
+            if len(a_) == 3: done_keys.add((a_[0], a_[1], int(a_[2])))
     fo = open(OUT, "a"); fd = open(DONE, "a")
     done_thm = 0; skipped = 0
     print(f"■ 이어쓰기: 기처리 정리 {len(done_keys)}", flush=True)
