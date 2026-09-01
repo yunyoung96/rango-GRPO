@@ -2498,3 +2498,7 @@ premise 길이 편차가 극심하다 — 최소 16 · p25 43 · 중앙 147 · �
 - scripts/sft_train.py + ft_qwen3_4b_v11_conf.yaml. GPU1, B 4×누적 4, seq 5120, 8 step: loss 1.93→0.61 ✓,
   피크 71.0GB, ≈20 s/step → 30k step ≈ 7일/1GPU (2GPU DDP ≈ 3.5일). steps 는 행 수 실측 후 확정.
 - (시각 정정: 앞 항목의 "20:55" 는 실제 20:25 경. 이후 시각은 date 실측값으로 적는다.)
+[2026-09-01 20:51 KST] SFT 사후 검사기 sft_check.py (C1~C15) 도입 → TRAIN 40지점 62행 SFT_CHECK_OK
+- 잡은 버그: 동명이인 한정자 줄이 rango 이름추출(Mod 만 봄)에 걸려 두 lemma 가 같은 _L# (3/62) → _PROTECTED 보호로 실명 유지.
+  1차 수정은 다채널 반복까지 동명으로 세어 익명률 24→16 하락 → 서로 다른 전체 이름 기준으로 고쳐 24/31.
+- 검사기 자체 오류 2건(C14 공백 차이·C11 별칭) 수정. 모델 선택 문서는 model_selection.txt 로 분리, 설계문서에 [8. 검사 목록] 추가.

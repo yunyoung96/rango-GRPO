@@ -283,7 +283,7 @@
      · [Others] = 기존 rango tf-idf(RETRIEVAL_MODE=tfidf) 상위 중 채널 밖 10개 (요구 [4]).
      · 익명화 = rango build_mapping 한 매핑(프롬프트·정답·변형). 블록 줄 = "Lemma 이름 : 진술."
        — 같은 lemma 가 여러 채널에 실리면 rango 가 동명중복으로 보고 실명을 남기므로 매핑 목록은
-       중복 제거(실명 17/34 → 7/31: 남은 7 = stdlib·진짜 동명). 동명이인은 한정자 유지.
+       중복 제거(실명 17/34 → 7/31: 남은 7 = stdlib·진짜 동명). 동명이인은 한정자 유지 + 보호집합(→[8] C14).
      · case B 주입 선언문 = 풀 진술 → rango 후보 원문 → sentence DB (없으면 지점 제외: 1/41).
      · v10 gold 주입 OFF(우리 case A/B 가 대신) · CUTS hopeless 판정 OFF · 변형 조인 ≤2 · 지점 셔플.
      · **섹션별 토큰 예산 실측** (TRAIN 40지점, 평균/p90/최대):
@@ -307,25 +307,50 @@
   □ ①+ 캠페인 완료 → train_pool all 전 지점 수집 → 대량 물질화(v2) → 행 수 → steps 확정 →
      본학습 v11 (다른 서버) 착수
 
-■ **모델 결정 = Qwen3-4B-Base** (2026-09-01 20:3x, 사용자 결정 — 1차 본학습부터 적용):
-  · Qwen3 에 3B 는 없음 → 4B-Base. 프로브 통과(4096 토큰 1.07 s/step · 피크 41.7GB · 8.0GB bf16).
-  · 대가: v10(2.5-Coder-3B-Instruct) 대비 개선의 원인(데이터 vs 모델)을 한 번에 못 가름 — 필요하면
-    2.5-Coder-3B 팔을 같은 데이터로 추가해 분리 (2순위).
-  · 학습 conf: all_log/ft_qwen3_4b_v11_conf.yaml (v10 레시피 유지, model_name·hard_seq_len 5120 만 변경).
-
-■ 모델 후보 검토 (2026-09-01, HF 실측):
-  · Qwen3-Coder 는 소형 dense 없음 (30B-A3B · 480B-A35B · Coder-Next 80B-A3B, 전부 MoE).
-    MoE 명명 = 총B-A활성B: 추론 비용은 활성 3B, 풀 FT 는 총 30B 비용 → 우리 설계와 비호환.
-  · 1차 본학습은 Qwen2.5-Coder-3B(현 v10 과 동일) 로 데이터 효과 분리. 모델 팔 후보:
-    - Qwen3-4B-Base: drop-in (config OK · 토크나이저 길이 동일 중앙 2667/최대 4130 · 8GB).
-      Base 선택 이유 = chat template 없이 원문 프롬프트 풀 FT → <think>/정렬 편향 불필요.
-      **GPU 프로브 통과** (scripts/model_probe.py, GPU1): 적재 4.02B/8.0GB · seq 4096 B=1
-      AdamW+grad-ckpt 1.07 s/step · 피크 41.7GB · loss 0.815→0.811 (유한·하강).
-      → 96GB 에서 per_device 4 도 여유. 모델 팔 1순위 확정.
-    - Qwen3.5-4B-Base: 현 transformers 5.1.0(2026-02-05) 이 qwen3_5 미인식 → 5.16.1 업그레이드
-      (별도 venv 격리) + linear-attention 커널(fla·causal-conv1d 없음, sm_120 빌드) + VL 래핑
-      코드 수정 필요. 토크나이저 vocab 248k, 길이 +2.5%. → 2순위.
+■ 모델 선택 = **별도 문서** all_log/docs/applicability/model_selection.txt (이 문서는 실험 설계만 다룬다)
 
 ■ retrieval 채택 = **r19** (2026-09-01 결정 · versions/r19.md 결과표 근거):
   TEST 전체 @10 68.2→69.4 · rewrite-in 53.2→55.1 · 비용 +16ms(예산 내) ·
   rw 정밀도 99.4%. SFT 물질화(③)와 전 지점 풀 수집(①+)은 r19 로 진행.
+
+────────────────────────────────────────────────────────
+[8. 검사 목록 — assert · 스모크 · 사후 검사기] (2026-09-01)
+────────────────────────────────────────────────────────
+요구 [B.5] "빡세게 동적 디버깅·assert" 의 이행 목록. 세 층으로 건다:
+  (a) 생성 시점 assert (스크립트 안, 위반 시 그 지점을 버리고 사유를 센다 — 조용한 0 방지용 양성 카운터 동반)
+  (b) 스모크 (소량 실행으로 파이프라인 전체 동작 확인)
+  (c) 사후 검사기 scripts/sft_check.py — 산출 jsonl 전체를 학습 직전에 훑는다. 하나라도 실패하면 학습 착수 금지.
+
+(a) 생성 시점 assert
+  variant_gen.py   · 채택 = 남은 proof 를 끝까지 재실행해 `Check __v_i.` 통과(Qed) 만 · orig≠variant · 좌표 중복 금지
+                   · 정리 수 0 이 아니면 qed+fail 카운터 > 0 (조용한 0 방지) · 이어쓰기 건너뜀 수 보고
+  train_pool.py    · 저장소 존재·.vo 존재 · 프로젝트별 gold 생존률(n≥50, <10% 면 AssertionError: 경로/빌드 오염 감지)
+                   · CHECK↔채널 일치 · 사이드카 goal 존재
+  sft_build_v2.py  · 좌표 범위 · dp 의 gold 스텝 == 풀 gold_text (공백 정규화) · 블록 치환이 정확히 1회 적용
+                   · case B 주입 후 gold 가 그 채널 블록에 정확히 1회 · 주입 선언문 없으면 지점 제외(카운트)
+                   · 5블록·PROOFS·STATE·SCRIPT·ErrorFeedback 헤더 각 1회 · 프롬프트가 "[TACTIC]\n" 로 끝남
+                   · 익명화 왕복: 역매핑(정답) == 원문 gold (한정자 제거분은 base 비교)
+                   · gold 프리미스가 자기 채널 블록 안에 있음(익명/실명 어느 쪽이든) · 길이 초과 지점 제외(카운트)
+                   · 매핑 목록 중복 제거(동명중복 오판 방지) · 동명이인 한정자 유지 · 지점 셔플 후 인접 assert
+  sft_train.py     · EOS 존재 · 프롬프트가 "[TACTIC]\n" 로 끝남 · target ≥ 2 토큰 · 초과 행 제외(카운트)
+                   · 배치마다 학습 토큰 > 0 · loss 유한(콜백) · 스모크에서 loss 하강
+(b) 스모크 (전부 통과, 2026-09-01)
+  variant 12행 독립 재실행 12/12 · v2 40지점 62행 · 미니 학습 6-step · v11 학습기 8-step(Qwen3-4B-Base, 71GB, 20 s/step)
+  · train_pool all 모드 2정리 · 모델 적재 프로브
+(c) 사후 검사기 sft_check.py (C1~C15)
+  C1  정답의 익명 이름(_L/_T/_f/_G#) 전부 프롬프트에 존재      C2  익명화된 실명이 프롬프트·정답에 잔존하지 않음(풀 진술 대조)
+  C3  변형 정답도 C1 + 같은 지점 행들의 익명 lemma 집합 동일   C4  블록 줄 수 ≤ 상한 · 빈 진술 줄 없음
+  C5  섹션 순서·유일성·[TACTIC] 종료                         C6  프롬프트+정답 ≤ hard_seq_len · 정답 비어있지 않음
+  C7  같은 지점 프롬프트 동일 · 원본 행 1 · 인접 행 다른 지점  C8  실명 정답은 stdlib/동명이인/지역가설만 (그 외 "검토")
+  C9  STATE 비어있지 않음 · ErrorFeedback = none               C10 case B 주입 위치 편중 없음(4분위 최빈 < 60%)
+  C11 채널 정확성: form 의 gold 가 그 form 블록에 있음(별칭 반영) C12 토큰 경계: tok(p)+tok(t) == tok(p+t) (마스크 경계 정확)
+  C13 변형 rule 과 정답 머리 일치                              C14 같은 _L# 에 서로 다른 진술 없음(다채널 반복은 정상)
+  C15 Others 에 채널 블록 이름 중복 없음
+  실측(TRAIN 40지점 62행, 2026-09-01 20:5x): **SFT_CHECK_OK** (C8 "검토" 4건은 tactic 안에서 intros 로 새로 만든
+  가설 이름 — 실명이 맞음). 검사기가 잡아 고친 버그 2건:
+    · C14 — 동명이인(맨 이름 같은 서로 다른 lemma)의 한정자 줄 "Lemma Mod.foo :" 를 rango 이름추출이 `Mod` 로
+      읽어 `foo` 를 유일하다고 오판·매핑 → 두 lemma 가 같은 `_L3` (3/62). → 동명 맨이름을 보호집합(_PROTECTED)에
+      넣어 실명 유지(rango 정책과 동일). 처음엔 "다채널 반복"까지 동명으로 세어 익명률이 24→16 으로 떨어졌고,
+      **서로 다른 전체 이름** 기준으로 고쳐 24/31 복구. 같은 lemma 는 채널이 달라도 같은 선언문(출처 캐시).
+    · C11 — 별칭(plus_comm→Nat.add_comm) 미반영은 검사기 쪽 오류 → 별칭 반영.
+  검사기 실행: python3 scripts/sft_check.py all_log/sft2_pairs_train.jsonl 5120 → 로그 all_log/au_research/sft2_check.log

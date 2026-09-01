@@ -35,6 +35,7 @@ NC.RATE = 1.0                                    # 전부 익명화 (stdlib 제�
 from tactic_gen import tactic_data as TD
 from tactic_gen.lm_example import formatter_conf_from_yaml, GeneralFormatter
 from tactic_gen.normalize_names import apply_mapping, apply_inverse, _PREM_DECL
+import tactic_gen.normalize_names as NN
 from data_management.dataset_file import DatasetFile
 import sft_build as SB                            # v1 의 랭커·FORM_CH·BLK·VARIANTS·point_shuffle 재사용
 from transformers import AutoTokenizer
@@ -173,12 +174,15 @@ def build_point(r, stat):
         if len(oth) >= BLK["oth"]: break
     # 블록 → 선언문 줄
     lines = {}; miss = 0
-    base_cnt = collections.Counter(n.split(".")[-1] for c in ("ap", "in", "rw", "rwh") for n in blocks[c])
+    # 동명이인 = 맨 이름이 같은 **서로 다른** 전체 이름 (같은 lemma 의 다채널 반복은 아님)
+    base_cnt = collections.Counter(n.split(".")[-1] for n in {n for c in ("ap", "in", "rw", "rwh") for n in blocks[c]})
+    _decl_cache = {}                                   # 같은 lemma 는 채널이 달라도 같은 선언문(같은 출처)으로
     for c in ("ap", "in", "rw", "rwh"):
         ls = []
         for n in blocks[c]:
             shown = n if base_cnt[n.split(".")[-1]] > 1 and "." in n else None   # 동명이인 → 한정자 유지
-            d = decl_of(n, stmts, rango_texts, shown)
+            if n not in _decl_cache: _decl_cache[n] = decl_of(n, stmts, rango_texts, shown)
+            d = _decl_cache[n]
             if d is None: miss += 1; continue
             ls.append(d)
         lines[c] = ls
@@ -193,7 +197,15 @@ def build_point(r, stat):
     flat = list(dict.fromkeys(flat))
     ex.premises = flat; _OVR["list"] = flat; _OVR["str"] = sec; _OVR["hit"] = 0
     TD._LAST_TRAIN_MAPPING = {}
-    s = COL.collate(TOK, ex)
+    # ★ 동명이인(맨 이름이 같은 서로 다른 lemma)은 rango 정책대로 **실명 유지** — 한정자 붙은 줄("Lemma Mod.foo :")은
+    #   rango 의 이름 추출이 `Mod` 만 보므로 `foo` 가 유일하다고 오판해 매핑하고, 그러면 `Mod.foo` 도 `Mod._L3` 로
+    #   바뀌어 서로 다른 두 lemma 가 같은 `_L3` 를 갖는다(검사기 C14 실측 3/62). 그 이름들을 보호 집합에 넣는다.
+    dup_bases = {b for b, c in base_cnt.items() if c > 1}
+    _saved = set(NN._PROTECTED); NN._PROTECTED |= dup_bases
+    try:
+        s = COL.collate(TOK, ex)
+    finally:
+        NN._PROTECTED.clear(); NN._PROTECTED |= _saved
     assert _OVR["hit"] == 1, f"블록 치환 미적용 (hit={_OVR['hit']})"
     tpl = TD.NEWLINE_RESPONSE_TEMPLATE
     i = s.rfind(tpl); assert i > 0, "[TACTIC] 템플릿 없음"

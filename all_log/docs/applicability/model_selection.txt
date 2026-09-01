@@ -1,0 +1,21 @@
+# 모델 선택 (design_from_requirements.txt 에서 분리 — 2026-09-01)
+# 실험 설계는 design_from_requirements.txt, 모델·환경 선택은 이 문서.
+
+■ **모델 결정 = Qwen3-4B-Base** (2026-09-01 20:3x, 사용자 결정 — 1차 본학습부터 적용):
+  · Qwen3 에 3B 는 없음 → 4B-Base. 프로브 통과(4096 토큰 1.07 s/step · 피크 41.7GB · 8.0GB bf16).
+  · 대가: v10(2.5-Coder-3B-Instruct) 대비 개선의 원인(데이터 vs 모델)을 한 번에 못 가름 — 필요하면
+    2.5-Coder-3B 팔을 같은 데이터로 추가해 분리 (2순위).
+  · 학습 conf: all_log/ft_qwen3_4b_v11_conf.yaml (v10 레시피 유지, model_name·hard_seq_len 5120 만 변경).
+
+■ 모델 후보 검토 (2026-09-01, HF 실측):
+  · Qwen3-Coder 는 소형 dense 없음 (30B-A3B · 480B-A35B · Coder-Next 80B-A3B, 전부 MoE).
+    MoE 명명 = 총B-A활성B: 추론 비용은 활성 3B, 풀 FT 는 총 30B 비용 → 우리 설계와 비호환.
+  · 1차 본학습은 Qwen2.5-Coder-3B(현 v10 과 동일) 로 데이터 효과 분리. 모델 팔 후보:
+    - Qwen3-4B-Base: drop-in (config OK · 토크나이저 길이 동일 중앙 2667/최대 4130 · 8GB).
+      Base 선택 이유 = chat template 없이 원문 프롬프트 풀 FT → <think>/정렬 편향 불필요.
+      **GPU 프로브 통과** (scripts/model_probe.py, GPU1): 적재 4.02B/8.0GB · seq 4096 B=1
+      AdamW+grad-ckpt 1.07 s/step · 피크 41.7GB · loss 0.815→0.811 (유한·하강).
+      → 96GB 에서 per_device 4 도 여유. 모델 팔 1순위 확정.
+    - Qwen3.5-4B-Base: 현 transformers 5.1.0(2026-02-05) 이 qwen3_5 미인식 → 5.16.1 업그레이드
+      (별도 venv 격리) + linear-attention 커널(fla·causal-conv1d 없음, sm_120 빌드) + VL 래핑
+      코드 수정 필요. 토크나이저 vocab 248k, 길이 +2.5%. → 2순위.
