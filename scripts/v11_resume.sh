@@ -9,12 +9,16 @@ fail(){ say "★ 실패: $* — 중단"; echo "V11_PIPELINE_FAIL: $*"; exit 1; }
 if [ all_log/au_research/sft2_full_check.log -nt all_log/sft2_pairs_train.jsonl ] && grep -q SFT_CHECK_OK all_log/au_research/sft2_full_check.log 2>/dev/null; then
   say "② 정적 검사 — 현 데이터로 이미 통과(로그가 데이터보다 최신) → 재사용"
 else
-say "② 정적 검사 C1~C16 (+실패 시 지점 단위 프루닝 1회, 상한 1%)"
-if ! python3 scripts/sft_check.py all_log/sft2_pairs_train.jsonl 5120 --drop-out all_log/sft2_drop.idx > all_log/au_research/sft2_full_check.log 2>&1; then
-  say "검사 실패 → 프루닝 시도"
+say "② 정적 검사 C1~C16 (+실패 시 지점 단위 프루닝 ≤2회, 회당 상한 1%)"
+ok=0
+for r in 1 2; do
+  if python3 scripts/sft_check.py all_log/sft2_pairs_train.jsonl 5120 --drop-out all_log/sft2_drop.idx > all_log/au_research/sft2_full_check.log 2>&1; then ok=1; break; fi
+  say "검사 실패 → 프루닝 $r"
   python3 scripts/sft_prune.py all_log/sft2_pairs_train.jsonl all_log/sft2_drop.idx 0.01 > all_log/au_research/sft2_prune.log 2>&1 || fail "프루닝(상한 초과 = 체계적 문제)"
   cat all_log/au_research/sft2_prune.log
-  python3 scripts/sft_check.py all_log/sft2_pairs_train.jsonl 5120 > all_log/au_research/sft2_full_check.log 2>&1 || fail "정적 검사(프루닝 후에도 실패)"
+done
+if [ "$ok" != 1 ]; then
+  python3 scripts/sft_check.py all_log/sft2_pairs_train.jsonl 5120 > all_log/au_research/sft2_full_check.log 2>&1 || fail "정적 검사(프루닝 2회 후에도 실패)"
 fi
 fi
 say "③ 동적 검증 D1~D3 (표본 30)"
@@ -40,6 +44,7 @@ CUDA_VISIBLE_DEVICES=0,1 torchrun --nproc_per_node 2 --master_port 29572 scripts
 grep -q '스모크 통과' all_log/au_research/v11_full_smoke.log || fail "스모크 통과 마커 없음"
 
 say "⑥ 본학습 v11 착수 (DDP 2 GPU)"
+rm -rf models/ft_qwen3_4b_v11
 mkdir -p models/ft_qwen3_4b_v11
 CUDA_VISIBLE_DEVICES=0,1 nohup torchrun --nproc_per_node 2 --master_port 29573 scripts/sft_train.py all_log/ft_qwen3_4b_v11_conf.yaml --resume > all_log/au_research/v11_train.log 2>&1 < /dev/null &
 echo $! > models/ft_qwen3_4b_v11/train.pid

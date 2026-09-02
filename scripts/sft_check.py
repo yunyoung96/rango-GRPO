@@ -74,7 +74,7 @@ def sections(p):
 
 # 실명 대조용: 풀의 진술문 → 이름 (C2)
 stmt2name = {}
-for pf in (sys.argv[3:] or glob.glob("all_log/r11_pool_train*.jsonl")):
+for pf in (sys.argv[3:] or sorted(glob.glob("all_log/r11_pool_train*.jsonl"))):   # ★ 정렬 — glob 순서 비결정이면 동명 진술의 승자가 실행마다 달라져 C2 가 흔들린다 (프루닝 미수렴 실측)
     try:
         for l in open(pf):
             r = json.loads(l)
