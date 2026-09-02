@@ -8,25 +8,24 @@ fail(){ say "★ 실패: $* — 중단"; echo "V11_PIPELINE_FAIL: $*"; exit 1; }
 say "확장 캠페인(상위 340) 완료 대기"
 until grep -q 'CAMPAIGN_DONE' all_log/au_research/build_campaign_expand.log 2>/dev/null; do sleep 900; done
 BUILT=$(python3 scripts/train_repos.py 2>/dev/null | tr ',' '\n' | grep -c .)
-say "캠페인 종료 · 빌드된 저장소 $BUILT개"
+say "상위 340 배치 종료 · 컴파일된 저장소 $BUILT개"
+# ★ 사용자 2026-09-02: 전체 프로젝트 다 살리기 → 나머지 전 TRAIN 프로젝트 clone·컴파일 (resume=기처리 건너뜀, ~하루)
+say "전체 프로젝트 clone·컴파일 배치 착수 (파일수 상위 전부 ≈ 후보 소진까지)"
+python3 scripts/train_build_campaign.py 3000 1200 > all_log/au_research/build_campaign_all.log 2>&1 || say "전체 배치 비정상 종료 — 그때까지분으로 계속"
+BUILT=$(python3 scripts/train_repos.py 2>/dev/null | tr ',' '\n' | grep -c .)
+say "전체 배치 종료 · 컴파일된 저장소 $BUILT개"
 
 # 진행 중이던 수집(있으면) 종료 대기 — 동시 쓰기 방지
 until ! pgrep -f 'train_pool.py 100000[0]' >/dev/null; do sleep 300; done
 say "전체 우주 재수집 (resume — 새 저장소·새 정리만 추가)"
 bash scripts/collect_all.sh > all_log/au_research/r19_v3_train_all.log 2>&1
 
-# ★ 데이터 충분성: 목표 미달이면 더 공격적으로 컴파일(캠페인 940 + Omega 패치)하고 재수집. 최대 3회.
-#   (사용자 2026-09-02: "부족하면 더 공격적으로 컴파일". 학습은 여전히 자동 착수 X — 보고 후 사용자 판단.)
-TARGET=306000   # rango 1.53M 의 20%
-for GX in 1 2 3; do
-  NPOOL=$(wc -l < all_log/r11_pool_train_all.jsonl)
-  say "데이터 포인트 $NPOOL · rango 대비 $(python3 -c "print(f'{$NPOOL/1530000*100:.1f}%')")"
-  [ "$NPOOL" -ge "$TARGET" ] && { say "목표(20%) 달성 → 변형 증강·보고로"; break; }
-  say "★ 목표 미달 → 공격적 확장 $GX/3: Omega 패치 + 캠페인 940 + 재수집"
-  bash scripts/omega_shim.sh > all_log/au_research/omega_shim_$GX.log 2>&1
-  python3 scripts/train_build_campaign.py 940 1200 > all_log/au_research/campaign_940_$GX.log 2>&1 || say "캠페인 940 비정상 — 계속"
-  bash scripts/collect_all.sh > all_log/au_research/r19_v3_train_all.log 2>&1
-done
+# 전체 프로젝트를 이미 시도했으므로 추가 확장은 Omega 패치 1회만(위험 감수) 후 최종 재수집.
+NPOOL=$(wc -l < all_log/r11_pool_train_all.jsonl)
+say "데이터 포인트 $NPOOL · rango 대비 $(python3 -c "print(f'{$NPOOL/1530000*100:.1f}%')")"
+bash scripts/omega_shim.sh > all_log/au_research/omega_shim_final.log 2>&1
+python3 scripts/train_build_campaign.py 3000 1200 > all_log/au_research/build_campaign_all2.log 2>&1 || true
+bash scripts/collect_all.sh > all_log/au_research/r19_v3b_train_all.log 2>&1
 
 # ★ 신규 저장소 apply/rewrite 변형 증강 (≥120k 일 때). v3 규칙 resume(.done4=신규 정리만) → sft_variants.jsonl.
 NPOOL=$(wc -l < all_log/r11_pool_train_all.jsonl)
