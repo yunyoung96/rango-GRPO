@@ -142,7 +142,11 @@ def ref_form(text, gold):
     return None
 
 
+from train_repos import leaky as _leak_guard
+
+
 def build_point(r, stat):
+    assert not _leak_guard(r["proj"]), f"★누출: 물질화 대상이 VAL/TEST 저장소: {r['proj']}"
     f = r.get("tac"); form_ch = FORM_CH.get(f)
     golds = SB.PR.golds_of(r) if r.get("gold") else []      # 무참조 지점(intros 등)은 gold 없음 — golds_of 는 assert 를 던진다
     stmts = r.get("stmts") or {}

@@ -54,6 +54,9 @@ PATH_SKIP = {"harp-project-Core-Erlang-Formalization": re.compile(r"/Tests/")}
 
 sdb = SentenceDB.load(Path("raw-data/coq-dataset/sentences.db"))
 
+from train_repos import leaky as _leaky
+for _nm in REPOS:
+    assert not _leaky(_nm), f"★누출: VAL/TEST/CUTOFF 저장소를 TRAIN 수집 대상에 넣음: {_nm}"
 REPOS_NAME = {pd: nm for nm, pd in REPOS.items()}
 for nm, pd in REPOS.items():
     assert os.path.isdir(pd), f"저장소 없음: {pd}"
@@ -188,6 +191,7 @@ if __name__ == "__main__":
                 nrec += 1
                 if r["local"]:
                     S[r["proj"]]["지역"] += 1; continue
+                assert not _leaky(r["proj"]), f"★누출: 수집 레코드가 VAL/TEST 저장소: {r['proj']}"
                 S[r["proj"]]["지점"] += 1
                 S[r["proj"]]["생존"] += bool(r["ap"] or r["in"] or r["rw"])
                 fo.write(json.dumps(r, ensure_ascii=False) + "\n")
