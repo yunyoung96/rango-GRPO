@@ -87,8 +87,14 @@ def ctor_variants(step):
     return out
 
 
+#: v2 회차에서 이미 전 정리에 생성·채택 완료된 규칙 — 재생성 금지 (사용자 2026-09-02; 보관 sft_variants_v2rules.jsonl 와 병합)
+OLD_RULES = {"ap→eapply", "eapply→ap", "rw→erw", "rw→rw<-", "rw<-→rw",
+             "ctor→ector", "ector→ctor", "split→ctor", "left→ctor1", "right→ctor2",
+             "applyC→ctor", "applyC→ector"}
+
+
 def variants_of(step, hyps=()):
-    """스텝 텍스트 → [(rule, 변형텍스트)]. 원문 구조(; 이후, in 절)는 유지."""
+    """스텝 텍스트 → [(rule, 변형텍스트)]. 원문 구조(; 이후, in 절)는 유지. v3: 새 규칙만 낸다."""
     t = step
     cv = ctor_variants(t) + misc_variants(t, hyps) + at_variants(t)
     m = HEAD_T.match(t.lstrip("\n"))
@@ -108,6 +114,7 @@ def variants_of(step, hyps=()):
     if h == "rewrite" and arr == "<-":
         out.append(("rw<-→rw", sub("rewrite", "")))
     out = out + [c for c in cv if c not in out]
+    out = [c for c in out if c[0] not in OLD_RULES]
     assert all(v != step for _, v in out), "변형이 원문과 동일"
     return out
 

@@ -11,9 +11,9 @@ until [ "$(grep -l 'VARGEN_DONE' all_log/au_research/vargen_v3_s[0-5].log 2>/dev
   if [ "$(grep -l 'Traceback' all_log/au_research/vargen_v3_s[0-5].log 2>/dev/null | wc -l)" -gt 0 ]; then fail "변형 샤드 오류"; fi
   sleep 300
 done
-cat all_log/sft_variants.jsonl.s[0-5] > all_log/sft_variants.jsonl
-NV=$(wc -l < all_log/sft_variants.jsonl); say "변형 병합 $NV 행"
-[ "$NV" -ge 20000 ] || fail "변형 행 $NV < 20000 (v2 는 27,761 이었다)"
+cat all_log/sft_variants_v2rules.jsonl all_log/sft_variants.jsonl.s[0-5] > all_log/sft_variants.jsonl
+NV=$(wc -l < all_log/sft_variants.jsonl); say "변형 병합 $NV 행 (v2 보관 27,761 + v3 신규)"
+[ "$NV" -ge 28000 ] || fail "변형 행 $NV < 28000 (v2 보관분 포함 이상)"
 
 say "① 재물질화 (8샤드)"
 NS=8; rm -f all_log/sft2_pairs_train.jsonl.part*
