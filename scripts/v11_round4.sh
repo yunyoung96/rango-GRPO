@@ -14,18 +14,17 @@ say "캠페인 종료 · 빌드된 저장소 $BUILT개"
 until ! pgrep -f 'train_pool.py 100000[0]' >/dev/null; do sleep 300; done
 say "전체 우주 재수집 (resume — 새 저장소·새 정리만 추가)"
 bash scripts/collect_all.sh > all_log/au_research/r19_v3_train_all.log 2>&1
-TARGET=306000   # 데이터 충분성 게이트 (rango 1.53M 의 20%) — 사용자: 부족하면 위험감수하고 더 컴파일
-for GX in 1 2; do
-  NPOOL=$(wc -l < all_log/r11_pool_train_all.jsonl)
-  say "데이터 포인트 $NPOOL · rango 대비 $(python3 -c "print(f'{$NPOOL/1530000*100:.1f}%')")"
-  [ "$NPOOL" -ge "$TARGET" ] && { say "목표(20%) 달성 — 물질화로"; break; }
-  say "목표 미달 → 2차 확장 $GX: Omega 패치 + 캠페인 940 + 재수집"
-  bash scripts/omega_shim.sh > all_log/au_research/omega_shim_$GX.log 2>&1
-  python3 scripts/train_build_campaign.py 940 1200 > all_log/au_research/campaign_940_$GX.log 2>&1 || say "캠페인 940 비정상 — 계속"
-  bash scripts/collect_all.sh > all_log/au_research/r19_v3_train_all.log 2>&1
-done
-NPOOL=$(wc -l < all_log/r11_pool_train_all.jsonl); say "최종 데이터 포인트 $NPOOL"
-[ "$NPOOL" -ge 100000 ] || fail "데이터 포인트 $NPOOL < 100k"
+# ★ 데이터 양 보고 후 정지 (사용자 2026-09-02: "학습 전에 데이터 양 보고 판단"). 물질화·학습은 승인 대기.
+NPOOL=$(wc -l < all_log/r11_pool_train_all.jsonl)
+python3 - <<PYIN > all_log/au_research/DATA_REPORT.md 2>&1
+import json, collections
+rows=[json.loads(l) for l in open("all_log/r11_pool_train_all.jsonl")]
+np=len(rows); pj=collections.Counter(r["proj"] for r in rows); ext=sum(1 for r in rows if r.get("gold"))
+print(f"# 데이터 양 보고 (재수집 종료)\n\n- 데이터 포인트(수집 지점): {np:,}\n- 그중 외부참조: {ext:,} · 무참조: {np-ext:,}\n- 저장소 수: {len(pj)}\n- rango(≈1.53M) 대비: {np/1530000*100:.1f}% (물질화·변형 전 원지점 기준)\n- 변형 포함 물질화 예상: ≈{int(np*1.4):,} 데이터 포인트 (≈{np*1.4/1530000*100:.1f}%)\n\n상위 저장소: {pj.most_common(10)}")
+PYIN
+say "★ 데이터 양 보고 준비 완료 → all_log/au_research/DATA_REPORT.md (데이터 포인트 $NPOOL). 물질화·학습은 사용자 판단 대기."
+echo "DATA_READY_FOR_REVIEW"
+exit 0
 
 say "물질화 (8샤드)"
 NS=8; rm -f all_log/sft2_pairs_train.jsonl.part*
