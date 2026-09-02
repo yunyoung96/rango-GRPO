@@ -25,7 +25,8 @@ while read d; do
   say "== $d (vo=$vo0)"
   # ① 기대 루트 추출 → 소스 디렉토리 매핑 재빌드
   roots=$(timeout 60 make -k 2>&1 | grep -o 'bound to logical path [A-Za-z][A-Za-z0-9_]*' | awk '{print $NF}' | sort -u | head -2)
-  if [ -n "$roots" ]; then
+  if [ -n "$roots" ] && [ "$vo0" -lt 20 ]; then    # 이미 20+ 빌드된 저장소는 건드리지 않는다 (파괴 방지)
+    tar czf /tmp/scan_vo_snap.tgz $(find . -name '*.vo' -not -path './_build/*') 2>/dev/null
     for f in Makefile Makefile.conf .Makefile.d _CoqProject; do [ -f $f ] && mv -f $f $f.scanbak; done
     find . \( -name '*.vo' -o -name '*.vos' -o -name '*.vok' -o -name '*.glob' -o -name '*.aux' \) -not -path './_build/*' -delete
     { for r0 in $roots; do
@@ -36,6 +37,7 @@ while read d; do
     coq_makefile -f _CoqProject -o Makefile 2>/dev/null && timeout 1500 make -j2 -k > scan_build.log 2>&1
   fi
   vo1=$(find . -name '*.vo' -not -path './_build/*' | wc -l)
+  if [ "$vo1" -lt "$vo0" ]; then say "   $d: 재빌드가 나빠짐 ($vo0→$vo1) — 스냅샷 복원"; tar xzf /tmp/scan_vo_snap.tgz 2>/dev/null; vo1=$vo0; fi
   # ② dune 경로
   if [ -f dune-project ] && [ "$vo1" -lt 20 ]; then
     find . \( -name '*.glob' -o -name '*.vo' -o -name '*.vok' -o -name '*.vos' -o -name '*.aux' \) -not -path './_build/*' -delete
