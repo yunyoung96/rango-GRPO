@@ -80,6 +80,11 @@ class Guard(TrainerCallback):
 
 
 NAME_RE = re.compile(r"\b(?:e?apply|e?rewrite|exact|refine)\s+(?:<-\s*)?(?:\(\s*)?([A-Za-z_][\w'.]*)")
+try:                                    # stdlib 정확 일치는 "기억 사용 정상" — 지표를 두 갈래로 찍는다 (2026-09-02 결정)
+    sys.path.insert(0, "src")
+    from tactic_gen.normalize_names import is_stdlib_name as _is_std
+except Exception:
+    _is_std = lambda n: False
 
 
 class Milestone(TrainerCallback):
@@ -112,15 +117,19 @@ class Sampler(TrainerCallback):
                 gold = self.tok.decode(t, skip_special_tokens=True).strip()
                 prompt = self.tok.decode(p, skip_special_tokens=True)
                 ok_em = " ".join(gen.split()) == " ".join(gold.split()); em += ok_em
-                names = NAME_RE.findall(gen); in_p = all(re.search(r"(?<![\w'])" + re.escape(n.rstrip(".").split(".")[-1]) + r"(?![\w'])", prompt) for n in names) if names else None
+                names = [n.rstrip(".") for n in NAME_RE.findall(gen)]
+                def _inp(ns): return all(re.search(r"(?<![\w'])" + re.escape(n.split(".")[-1]) + r"(?![\w'])", prompt) for n in ns) if ns else None
+                in_p = _inp(names)                                   # 전체 이름 기준
+                in_p2 = _inp([n for n in names if not (_is_std(n) or _is_std(n.split(".")[-1]))])   # stdlib 정확일치 제외
                 inp += bool(in_p) if names else 0
                 st = prompt[prompt.rfind("[STATE]"):prompt.rfind("[SCRIPT]")][:400]
-                recs.append({"step": step, "em": ok_em, "names_in_prompt": in_p, "gen": gen, "gold": gold, "state": st})
+                recs.append({"step": step, "em": ok_em, "names_in_prompt": in_p, "names_in_prompt_exstd": in_p2, "gen": gen, "gold": gold, "state": st})
         model.train()
         with open(self.path, "a") as f:
             for r in recs: f.write(json.dumps(r, ensure_ascii=False) + "\n")
         n_named = sum(1 for r in recs if r["names_in_prompt"] is not None)
-        print(f"  [sample] step {step}: EM {em}/{len(recs)} · 프리미스 이름 프롬프트 안 {inp}/{n_named} · 예) gold={recs[0]['gold'][:50]!r} gen={recs[0]['gen'][:50]!r}", flush=True)
+        n2 = sum(1 for r in recs if r["names_in_prompt_exstd"] is not None); i2 = sum(bool(r["names_in_prompt_exstd"]) for r in recs if r["names_in_prompt_exstd"] is not None)
+        print(f"  [sample] step {step}: EM {em}/{len(recs)} · 이름∈프롬프트 {inp}/{n_named} (stdlib제외 {i2}/{n2}) · 예) gold={recs[0]['gold'][:50]!r} gen={recs[0]['gen'][:50]!r}", flush=True)
     def on_step_end(self, args, state, control, model=None, **kw):
         if state.is_world_process_zero and self.every and state.global_step % self.every == 0:
             try: self._run(model, state.global_step)
