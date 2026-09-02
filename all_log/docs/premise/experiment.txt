@@ -2510,3 +2510,9 @@ ext-lib=TEST, coqeal=VAL)가 빌드·수집까지 진행됐었다(rango TRAIN dp
 조치: scripts/train_repos.py(coqstoq repos 디렉토리 기준 제외, 단일 출처)를 collect_all·vargen 이 사용, 캠페인 EXCL 추가,
 기수집 풀 0행(이미 정리됨)·변형 1,019행 제거, sft_check C16 상설 검사. 덤: math-classes 는 세션 6분 상한 연쇄(타입클래스
 필터 비용)로 수확 0 이었음 — 제외로 해결.
+[2026-09-02 12:28 KST] ★ v11 본학습 착수 (12:20, DDP 2×RTX PRO 6000, Qwen3-4B-Base)
+- 데이터 78,153행/64,838지점 (수집 70,290→누출·병리·결함·검사 프루닝 후), steps 7,181 (3 epoch·유효배치 32).
+- 관문: C1~C16 통과(프루닝: C11 29지점 — gold 미가시 행 = 환각 교사 행 제거, C2 중복선언 97지점),
+  D1 28/28·D3 10/10 (D2 는 검토 강등), 전량 DDP 스모크 loss 2.39→0.98. 예상 ~40h (20s/step).
+- 감시: loss/발산 guard · 500step 샘플 생성(프롬프트·출력 jsonl 보존, stdlib 2갈래 지표) · 10분 watchdog(자동재개) ·
+  5000step milestone → DPO 라운드(lemma 참조 · (x-5000,x] 소비 예제 · 균등 5k 표본 · stdlib 정확일치 예외).
