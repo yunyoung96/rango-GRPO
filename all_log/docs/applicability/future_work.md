@@ -6,6 +6,8 @@
 규칙 후보의 단일 출처는 design_from_requirements.txt [3] "규칙표 v4 후보" 절로 이관 (2026-09-02).
 구현 시 그 절을 '구현됨'으로 갱신할 것 (CLAUDE.md sync 규칙).
 
+- 보조 감사: ap 후보의 strict-apply 성립률 측정(assert_succeeds (apply L)) — eapply 기준 96.6%와의 간극 정량화 (변형 실측 상한 ~31%)
+
 ## 2. 증명기 내부 정보가 필요한 변형 (플러그인 확장)
 설계표에 있었으나 미구현: `apply L with (x := t)` · `exact (L t₁ … tₙ)` 완전적용꼴 ·
 `rewrite H at n / in ⋆`. probe_ok/verify 가 evar 해·출현 위치를 STAT 로 출력하면 구현 가능.
