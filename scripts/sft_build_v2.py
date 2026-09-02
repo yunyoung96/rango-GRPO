@@ -214,7 +214,11 @@ def build_point(r, stat):
     # ★ 같은 lemma 가 여러 채널 블록에 실리면(적용 가능성이 겹침) rango 의 premise_names 가
     #   "동명 중복"으로 보고 익명화에서 뺀다 → 실명 누출. 매핑용 목록은 중복 제거한다.
     flat = list(dict.fromkeys(flat))
-    ex.premises = flat; _OVR["list"] = flat; _OVR["str"] = sec; _OVR["hit"] = 0
+    # ★★ 한정자 선언줄("Lemma BinNat.N.foo : …")은 매핑 입력에서 **제외** — rango 의 이름 추출이 첫 조각(BinNat,
+    #   모듈명!)을 lemma 로 오인해 `BinNat→_L0` 매핑을 만들고, 프롬프트의 `BinNat.N.x` 가 `_L0.N.x` 로 망가진다
+    #   (2026-09-02 잔존 assert 가 1.2만 지점에서 적발 — 1회차 데이터에도 있던 오염). 표시용 flat 은 그대로.
+    _map_prem = [d for d in flat if not re.match(r"^\s*\w+\s+[A-Za-z_][\w']*\.", d)]
+    ex.premises = _map_prem; _OVR["list"] = _map_prem; _OVR["str"] = sec; _OVR["hit"] = 0
     TD._LAST_TRAIN_MAPPING = {}
     # ★ 동명이인(맨 이름이 같은 서로 다른 lemma)은 rango 정책대로 **실명 유지** — 한정자 붙은 줄("Lemma Mod.foo :")은
     #   rango 의 이름 추출이 `Mod` 만 보므로 `foo` 가 유일하다고 오판해 매핑하고, 그러면 `Mod.foo` 도 `Mod._L3` 로
@@ -231,10 +235,16 @@ def build_point(r, stat):
     prompt, target = s[:i] + ERR_SLOT + tpl, s[i + len(tpl):]
     mapping = dict(getattr(TD, "_LAST_TRAIN_MAPPING", {}) or {})
     prompt, target = strip_qual(prompt), strip_qual(target)
-    # ★ 익명화 일관성 (사용자 2026-09-02): 매핑에 든 실명은 프롬프트·정답 어디에도 남으면 안 된다
-    #   (같은 이름이 실명·익명으로 공존하면 조회 가능성 원칙이 깨진다)
+    # ★ 모듈-이름 충돌 복원: lemma 이름이 모듈 한정자로도 쓰이면(`Z.add` 의 Z) 전역 치환이 `_L2.add` 를 만든다
+    #   → 한정자 위치(뒤에 `.식별자`)의 익명 이름만 실명으로 되돌린다. 단독 사용(`apply _L2`)은 그대로.
+    _rev = {v: k for k, v in mapping.items()}
+    _fixq = lambda s_: re.sub(r"(?<![\w'])(_[LTfG]\d+)(?=\.[A-Za-z_])", lambda m: _rev.get(m.group(1), m.group(1)), s_)
+    prompt, target = _fixq(prompt), _fixq(target)
+    # ★ 익명화 일관성 (사용자 2026-09-02): 매핑에 든 실명은 프롬프트·정답에 **단독으로** 남으면 안 된다
+    #   (한정자 위치 `real.x` 는 모듈 사용이라 허용 — 위 복원의 결과)
+    assert not re.search(r"(?<![\w'])_[LTfG]\d+\.[A-Za-z_]", prompt + "\n" + target), "익명 이름 뒤 한정자 오염 잔존"
     for _real, _anon in mapping.items():
-        assert not re.search(r"(?<![\w'])" + re.escape(_real) + r"(?![\w'])", prompt + "\n" + target), \
+        assert not re.search(r"(?<![\w'])" + re.escape(_real) + r"(?![\w'.])", prompt + "\n" + target), \
             f"익명화 잔존: {_real}→{_anon}"
     # ── assert 묶음 ──
     for c in ("ap", "in", "rw", "rwh", "oth"):
