@@ -37,7 +37,10 @@ ORDER = ["PremisesForApply", "PremisesForApplyIn", "PremisesForRewrite", "Premis
 BLK = {"PremisesForApply": 10, "PremisesForApplyIn": 10, "PremisesForRewrite": 10, "PremisesForRewriteIn": 20, "Others": 10}
 FORM_BLK = {"apply": "PremisesForApply", "exact": "PremisesForApply", "eexact": "PremisesForApply",
             "apply-in": "PremisesForApplyIn", "rewrite": "PremisesForRewrite", "rewrite-in": "PremisesForRewriteIn"}
-RULE_HEAD = {"ap→eapply": "eapply", "eapply→ap": "apply", "rw→erw": "erewrite", "rw→rw<-": "rewrite <-", "rw<-→rw": "rewrite"}
+RULE_HEAD = {"ap→eapply": "eapply", "eapply→ap": "apply", "rw→erw": "erewrite", "rw→rw<-": "rewrite <-", "rw<-→rw": "rewrite",
+             "exact→apply": "apply", "apply→exact": "exact", "refl→exact": "exact eq_refl", "assum→exact": "exact",
+             "destruct→case": "case", "case→destruct": "destruct", "induction→elim": "elim", "elim→induction": "induction",
+             "exists→eexists": "eexists", "intros→chain": "intro", "ap→with": "apply", "ap→with2": "apply", "ap→exact(": "exact ("}
 ALIAS = {}
 try:
     ALIAS = json.load(open("all_log/r11_alias_map.json"))

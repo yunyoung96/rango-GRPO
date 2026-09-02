@@ -99,6 +99,15 @@
 
 ────────────────────────────────────────────────────────
 [3. gold tactic 변형] — "판별트리 기반 뚜렷한 규칙" + Qed 직접 검증
+  ※ 규칙표 v3 (2026-09-02, 사용자 지시 "제대로 + evar/패턴 학습 강화"): 기존 12규칙에 더해
+  · 구문 8종: exact↔apply · 꼬리 ;auto→;eauto · reflexivity→exact eq_refl · now t→t; easy ·
+    assumption→exact H(가설 ≤3 후보) · destruct↔case·induction↔elim · exists t→eexists · intros→intro 체인
+  · rewrite … at 1|2 (+in 절 두 어순 — 문법 틀린 쪽은 Qed 기각으로 실측 확인)
+  · **apply/eapply 의 evar 명시화**: 정리당 1회 재생 + 대상 스텝 뒤 Show Proof·Check 프로브 →
+    적용 노드 인자 추출·바인더 이름 정렬 → `apply L with (x := t)`(뒤쪽 바인더 우선, ≤2절) ·
+    `exact (L t₁…tₙ)`(전체 인자). 채택은 동일하게 Qed 재실행. 6샤드 병렬(.s{i}, .done3 전 정리 재방문).
+  · 물질화 조인 = 계열 다양성 우선 ≤3 (with/exact > at > constructor > 구문 > 머리교체).
+  · 1회차 학습(12:20 착수분)은 90 step 미만에서 중단·폐기(run1 로그만 보관), v3 데이터로 재착수.
 ────────────────────────────────────────────────────────
 
 핵심: **변형은 문법 규칙표로 만들고, 채택은 실행이 판정한다.**
