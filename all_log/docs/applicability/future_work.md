@@ -42,3 +42,8 @@
 - 잔여 실패의 진짜 원인: dune 기반(Nijn·category-fun) · 라이브러리 자기복사(snu-sf-paco=paco 원본) ·
   버전 드리프트(Omega 등). **다음 지렛대 = dune 빌드 지원**(dune build 후 _build 산출을 트리로 복사) — 중간 난이도.
 - 이번 rango식 회차에는 보충 수집 미적용(수확 미미). coq-paco 는 유지(무해).
+
+## 8. 구제 스캔 1순회 결과 (2026-09-02 밤)
+비파괴 스캔 22저장소: 순증 casper 0→6(dune)뿐. 나머지 21개는 버전 드리프트·화이트리스트 밖 의존으로 불가.
+결론: 저비용 구제는 소진. **재스캔은 새 능력(dune 커버리지·opam 추가) 생길 때만** — busy-loop 은 학습 CPU 낭비라 금지.
+순증분(Nijn·category-fun·casper·synthetic 복원)은 RESCUE_REPOS_READY → 보충 수집으로 편입.
