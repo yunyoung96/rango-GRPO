@@ -223,12 +223,24 @@ def build_point(r, stat):
     # ★ 동명이인(맨 이름이 같은 서로 다른 lemma)은 rango 정책대로 **실명 유지** — 한정자 붙은 줄("Lemma Mod.foo :")은
     #   rango 의 이름 추출이 `Mod` 만 보므로 `foo` 가 유일하다고 오판해 매핑하고, 그러면 `Mod.foo` 도 `Mod._L3` 로
     #   바뀌어 서로 다른 두 lemma 가 같은 `_L3` 를 갖는다(검사기 C14 실측 3/62). 그 이름들을 보호 집합에 넣는다.
+    # ★★ 잔존-재시도 (2026-09-02 밤, 데이터 회수): 매핑된 실명이 프롬프트에 남는 이름충돌(Float·goto 류)은 지점을
+    #   버리지 말고 **그 이름만 실명 보호**로 다시 물질화한다 (rango 동명 정책과 동일한 처리 — ~7% 지점 회수).
     dup_bases = {b for b, c in base_cnt.items() if c > 1}
-    _saved = set(NN._PROTECTED); NN._PROTECTED |= dup_bases
-    try:
-        s = COL.collate(TOK, ex)
-    finally:
-        NN._PROTECTED.clear(); NN._PROTECTED |= _saved
+    extra_protect = set()
+    for _try in range(4):
+        _OVR["hit"] = 0                                   # 재시도마다 리셋 — 누적되면 아래 hit==1 assert 가 오탐
+        _saved = set(NN._PROTECTED); NN._PROTECTED |= dup_bases | extra_protect
+        try:
+            s = COL.collate(TOK, ex)
+        finally:
+            NN._PROTECTED.clear(); NN._PROTECTED |= _saved
+        _map = dict(getattr(TD, "_LAST_TRAIN_MAPPING", {}) or {})
+        _txt = strip_qual(s)
+        _bad = [r_ for r_ in _map if re.search(r"(?<![\w'])" + re.escape(r_) + r"(?![\w'.])", _txt)]
+        if not _bad: break
+        extra_protect |= set(_bad[:4]); stat["잔존재시도"] += 1
+    else:
+        stat["잔존재시도포기"] += 1
     assert _OVR["hit"] == 1, f"블록 치환 미적용 (hit={_OVR['hit']})"
     tpl = TD.NEWLINE_RESPONSE_TEMPLATE
     i = s.rfind(tpl); assert i > 0, "[TACTIC] 템플릿 없음"
