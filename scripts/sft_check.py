@@ -190,5 +190,11 @@ print("■ 결과:", {k: v for k, v in sorted(C.items())})
 for code, lst in fails.items():
     print(f"  {code}: {len(lst)}건  예) {lst[:3]}")
 hard_fail = [c for c in fails if c != "C8?"]
+if "--drop-out" in sys.argv:
+    # 잔여 실패 행의 인덱스를 기록 — 상위 단계가 **지점 단위**로 제거한다 (C11 류는 환각을 가르치는 행)
+    of = sys.argv[sys.argv.index("--drop-out") + 1]
+    bad_rows = sorted({i for c in hard_fail for i, _ in fails[c] if isinstance(i, int) and i >= 0})
+    open(of, "w").write("\n".join(map(str, bad_rows)) + ("\n" if bad_rows else ""))
+    print(f"드롭 후보 {len(bad_rows)}행 → {of}")
 assert not hard_fail, f"검사 실패: {hard_fail}"
 print("SFT_CHECK_OK")
