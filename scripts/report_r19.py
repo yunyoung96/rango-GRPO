@@ -122,7 +122,7 @@ for sp in ("TRAIN", "VAL", "TEST"):
     rows, _ = PR.load_merge(SPLITS[sp])
     nexcl = sum(1 for r in rows if r.get("tac") in PROMPT_COVERED)
     print(f"{sp} {len(rows)}행 (unfold 제외 {nexcl})…", flush=True)
-    for mode, lab in (("mix", "MIX17(최종)"), ("tfidf", "TFIDF(rango식)")):
+    for mode, lab in (("mix", "MIX17(최종 · applicability O)"), ("tfidf", "TFIDF(rango식 · applicability O — 필터 통과 풀 위 tf-idf)")):
         out.append(f"\n## {sp} · {lab}\n"
                    f"\n(프롬프트-해결형 unfold {nexcl}지점 제외 — "
                    f"그외 = 외부참조 필요분만)\n\n"
@@ -131,9 +131,9 @@ for sp in ("TRAIN", "VAL", "TEST"):
 #   (scratchpad raw_rango.py, 2026-09-01)이라 상수로 박는다. ③행의 r19 수치만 위 표에서 갱신할 것.
 RAW_FOOT = open("all_log/docs/applicability/results/r19.md").read().split("## 쌩 rango 기준선")[-1] if False else None
 FOOT = """
-## 쌩 rango 기준선 (필터× · built-in× — 기존 rango 그대로 tf-idf)
+## 쌩 rango 기준선 (applicability X · built-in× — 기존 rango 그대로 tf-idf)
 
-주의: 위 표의 "TFIDF(rango식)"은 **applicability 필터 통과 풀 위에서** tf-idf 를 돌린 것.
+주의: 위 표의 "TFIDF(rango식 · applicability O — 필터 통과 풀 위 tf-idf)"은 **applicability 필터 통과 풀 위에서** tf-idf 를 돌린 것.
 아래는 필터 없이 원 풀 그대로 tf-idf 만 한 진짜 기준선 (측정 2026-09-02 — 필터와 무관해 회차 간 불변).
 
 | 쌩 rango | 지점 | 풀포함 | @10 | @20 | @50 |
