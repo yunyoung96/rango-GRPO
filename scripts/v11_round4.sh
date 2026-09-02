@@ -14,13 +14,41 @@ say "캠페인 종료 · 빌드된 저장소 $BUILT개"
 until ! pgrep -f 'train_pool.py 100000[0]' >/dev/null; do sleep 300; done
 say "전체 우주 재수집 (resume — 새 저장소·새 정리만 추가)"
 bash scripts/collect_all.sh > all_log/au_research/r19_v3_train_all.log 2>&1
-# ★ 데이터 양 보고 후 정지 (사용자 2026-09-02: "학습 전에 데이터 양 보고 판단"). 물질화·학습은 승인 대기.
+
+# ★ 데이터 충분성: 목표 미달이면 더 공격적으로 컴파일(캠페인 940 + Omega 패치)하고 재수집. 최대 3회.
+#   (사용자 2026-09-02: "부족하면 더 공격적으로 컴파일". 학습은 여전히 자동 착수 X — 보고 후 사용자 판단.)
+TARGET=306000   # rango 1.53M 의 20%
+for GX in 1 2 3; do
+  NPOOL=$(wc -l < all_log/r11_pool_train_all.jsonl)
+  say "데이터 포인트 $NPOOL · rango 대비 $(python3 -c "print(f'{$NPOOL/1530000*100:.1f}%')")"
+  [ "$NPOOL" -ge "$TARGET" ] && { say "목표(20%) 달성 → 변형 증강·보고로"; break; }
+  say "★ 목표 미달 → 공격적 확장 $GX/3: Omega 패치 + 캠페인 940 + 재수집"
+  bash scripts/omega_shim.sh > all_log/au_research/omega_shim_$GX.log 2>&1
+  python3 scripts/train_build_campaign.py 940 1200 > all_log/au_research/campaign_940_$GX.log 2>&1 || say "캠페인 940 비정상 — 계속"
+  bash scripts/collect_all.sh > all_log/au_research/r19_v3_train_all.log 2>&1
+done
+
+# ★ 신규 저장소 apply/rewrite 변형 증강 (≥120k 일 때). v3 규칙 resume(.done4=신규 정리만) → sft_variants.jsonl.
+NPOOL=$(wc -l < all_log/r11_pool_train_all.jsonl)
+if [ "$NPOOL" -ge 120000 ]; then
+  say "데이터 충분($NPOOL≥120k) → 신규 저장소 변형 증강 (apply/rewrite 등, resume)"
+  REPOS=$(python3 scripts/train_repos.py 2>/dev/null)
+  NB=6; for i in $(seq 0 $((NB-1))); do
+    python3 scripts/variant_gen.py 1000000 "$REPOS" --shard $i/$NB > all_log/au_research/vargen_v4_s$i.log 2>&1 &
+  done
+  wait
+  say "변형 증강 종료 · 채택 변형 총 $(wc -l < all_log/sft_variants.jsonl)"
+else
+  say "데이터 부족($NPOOL<120k) → 변형 증강 생략, 사용자 판단 대기"
+fi
 NPOOL=$(wc -l < all_log/r11_pool_train_all.jsonl)
 python3 - <<PYIN > all_log/au_research/DATA_REPORT.md 2>&1
 import json, collections
 rows=[json.loads(l) for l in open("all_log/r11_pool_train_all.jsonl")]
 np=len(rows); pj=collections.Counter(r["proj"] for r in rows); ext=sum(1 for r in rows if r.get("gold"))
-print(f"# 데이터 양 보고 (재수집 종료)\n\n- 데이터 포인트(수집 지점): {np:,}\n- 그중 외부참조: {ext:,} · 무참조: {np-ext:,}\n- 저장소 수: {len(pj)}\n- rango(≈1.53M) 대비: {np/1530000*100:.1f}% (물질화·변형 전 원지점 기준)\n- 변형 포함 물질화 예상: ≈{int(np*1.4):,} 데이터 포인트 (≈{np*1.4/1530000*100:.1f}%)\n\n상위 저장소: {pj.most_common(10)}")
+import os
+nvar=sum(1 for _ in open("all_log/sft_variants.jsonl")) if os.path.exists("all_log/sft_variants.jsonl") else 0
+print(f"# 데이터 양 보고 (재수집+변형증강 종료)\n\n- 데이터 포인트(수집 지점): {np:,}\n- 그중 외부참조: {ext:,} · 무참조: {np-ext:,}\n- 저장소 수: {len(pj)}\n- 채택 변형(저장소): {nvar:,}\n- rango(≈1.53M) 대비: {np/1530000*100:.1f}% (원지점) · 변형 포함 예상 ≈{(np+min(nvar,np))/1530000*100:.1f}%\n\n상위 저장소: {pj.most_common(10)}")
 PYIN
 say "★ 데이터 양 보고 준비 완료 → all_log/au_research/DATA_REPORT.md (데이터 포인트 $NPOOL). 물질화·학습은 사용자 판단 대기."
 echo "DATA_READY_FOR_REVIEW"
