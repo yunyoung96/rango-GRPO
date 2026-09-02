@@ -9,6 +9,8 @@
 - 코드에 assert 를 많이 넣고(조용한 0 방지 — 판별 분기엔 양성 카운터), 합성 재현으로 동적 테스트를 하고, 장기 실행은 주기 모니터링을 붙인다.
 - 알고리즘 설명은 `all_log/docs/applicability/versions/` 밑에 버전별로 정리한다.
 
+- 보고·문서는 추상 용어 대신 풀어서 쓴다(축약 자체용어 금지; 새 용어는 첫 등장 시 한 줄 정의). requirements §6.
+
 ## 환경
 - opam/OCaml 버전 절대 변경 금지. 본학습은 다른 서버 — 여기선 스모크만.
 - `all_log/docs/premise/experiment.txt` 는 append-only.
