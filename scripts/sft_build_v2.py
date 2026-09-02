@@ -231,6 +231,11 @@ def build_point(r, stat):
     prompt, target = s[:i] + ERR_SLOT + tpl, s[i + len(tpl):]
     mapping = dict(getattr(TD, "_LAST_TRAIN_MAPPING", {}) or {})
     prompt, target = strip_qual(prompt), strip_qual(target)
+    # ★ 익명화 일관성 (사용자 2026-09-02): 매핑에 든 실명은 프롬프트·정답 어디에도 남으면 안 된다
+    #   (같은 이름이 실명·익명으로 공존하면 조회 가능성 원칙이 깨진다)
+    for _real, _anon in mapping.items():
+        assert not re.search(r"(?<![\w'])" + re.escape(_real) + r"(?![\w'])", prompt + "\n" + target), \
+            f"익명화 잔존: {_real}→{_anon}"
     # ── assert 묶음 ──
     for c in ("ap", "in", "rw", "rwh", "oth"):
         assert prompt.count(f"[{BLOCK_NAME[c]}]") == 1, f"블록 헤더 {c} 개수 이상"

@@ -19,6 +19,8 @@
   C13 변형 행의 rule 과 정답 머리 일치 (ap→eapply ⇒ eapply …, rw→rw<- ⇒ rewrite <- …)
   C14 익명 이름 충돌 없음: 프롬프트 안에서 같은 `_L#` 로 시작하는 선언 줄이 2개 이상이면 실패
   C15 [Others] 에 채널 블록과 같은 이름 없음 (중복 배제)
+  C17 프롬프트·정답에 쓰인 익명 타입/함수(_T#/_f#)는 [TYPES]/[DEFINITIONS]/[LTAC]/[NOTATION] 정의측에
+      반드시 등장한다 (조회 불가능한 익명 이름 금지 — 실측 위반 0%에서 fatal 로 도입, 2026-09-02)
 
 사용: python3 scripts/sft_check.py <pairs.jsonl> [hard_seq_len=5120] [풀 jsonl...(실명 대조용)]
 """
@@ -151,6 +153,11 @@ for i, r in enumerate(rows):
         pos = [j for j, l in enumerate(body) if (m := DECL.match(l)) and m.group(1).split(".")[-1] in gb]
         if not pos: fail("C11", i, f"{r['form']} gold {sorted(gb)[:2]} 가 {h} 에 없음")
         elif case.startswith("B") and "+var" not in case and body: inj_pos.append(pos[0] / max(len(body), 1))
+    # C17 익명 타입/함수의 정의측 존재
+    defs_txt = "\n".join("\n".join(S.get(h_, [])) for h_ in ("TYPES", "DEFINITIONS", "LTAC", "NOTATION"))
+    for u_ in set(re.findall(r"(?<![\w'])(_[Tf]\d+)(?![\w'])", p + "\n" + t)):
+        if not re.search(r"(?<![\w'])" + re.escape(u_) + r"(?![\w'])", defs_txt):
+            fail("C17", i, f"{u_} 정의측 부재")
     # C8 실명 정답 분류
     for nm in re.findall(r"\b(?:e?apply|e?rewrite|exact)\s+(?:<-\s*)?(?:\(\s*)?([A-Za-z_][\w'.]*)", t):
         b = nm.rstrip(".").split(".")[-1]

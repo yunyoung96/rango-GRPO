@@ -406,7 +406,10 @@
   C9  STATE 비어있지 않음 · ErrorFeedback = none               C10 case B 주입 위치 편중 없음(4분위 최빈 < 60%)
   C11 채널 정확성: form 의 gold 가 그 form 블록에 있음(별칭 반영) C12 토큰 경계: tok(p)+tok(t) == tok(p+t) (마스크 경계 정확)
   C13 변형 rule 과 정답 머리 일치                              C14 같은 _L# 에 서로 다른 진술 없음(다채널 반복은 정상)
-  C15 Others 에 채널 블록 이름 중복 없음
+  C15 Others 에 채널 블록 이름 중복 없음                       C17 익명 _T#/_f# 는 정의측([TYPES]/[DEFINITIONS] 등)에
+                                                              반드시 존재 (실측 0% 위반에서 fatal 도입)
+  (생성측 추가 2026-09-02: sft_build_v2 가 매핑된 실명이 프롬프트·정답에 잔존하면 그 지점을 assert 로 기각 —
+   실명·익명 공존 금지. 타입 익명화는 전역 일괄이라 STATE 70%에서 _T/_f 등장 실측.)
   실측(TRAIN 40지점 62행, 2026-09-01 20:5x): **SFT_CHECK_OK** (C8 "검토" 4건은 tactic 안에서 intros 로 새로 만든
   가설 이름 — 실명이 맞음). 검사기가 잡아 고친 버그 2건:
     · C14 — 동명이인(맨 이름 같은 서로 다른 lemma)의 한정자 줄 "Lemma Mod.foo :" 를 rango 이름추출이 `Mod` 로
