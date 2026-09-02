@@ -47,8 +47,8 @@ OUT = ("all_log/r11_pool_train_onlyin.jsonl" if ONLY_IN
        else "all_log/r11_pool_train.jsonl")
 JOBS = int(sys.argv[4]) if len(sys.argv) > 4 and sys.argv[4].isdigit() else 2   # coqtop 워커 수 (12코어 공유 서버: 4 권장)
 RESUME = "resume" in sys.argv[5:]   # 기존 출력의 (proj,thm,thmi) 는 건너뛰고 이어쓴다
-MAX_PT = 8 if ALL_PT else 3     # all 모드: 외부참조 지점 정리당 ≤8 (-in 우선·균등) — Kami 류 거대 증명(정리당 40+)이 수집을 잠식(실측 10정리/분)
-OTH_PER_THM = 4      # all 모드: 정리당 무참조 지점 상한 (균등 표본)
+MAX_PT = 10**9 if ALL_PT else 3   # all 모드 무상한 (rango 식 '모든 데이터' — 사용자 2026-09-02 저녁 결정)
+OTH_PER_THM = 10**9  # all 모드 무상한 (무참조 스텝 전부)
 #: 병리적 경로 스킵 — 자동생성 테스트 정리가 워커를 6분 상한으로 잠식 (실측: Core-Erlang Tests/ 30분에 38회 강제종료·수확 5행)
 PATH_SKIP = {"harp-project-Core-Erlang-Formalization": re.compile(r"/Tests/")}
 
