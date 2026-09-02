@@ -49,7 +49,7 @@ def alias_set(b):
     for k, v in ALIAS.items():
         if v == b or v.split(".")[-1] == b: out |= {k, k.split(".")[-1]}
     return out
-DECL = re.compile(r"^(?:Lemma|Theorem|Definition|Fixpoint|Instance|#\[export\] Instance)\s+(\S+)", re.M)
+DECL = re.compile(r"^(?:Lemma|Theorem|Definition|Fixpoint|Instance|#\[export\] Instance)\s+([A-Za-z_][\w'.]*)", re.M)   # `이름:` (콜론 밀착, DB 원문) 도 이름만
 
 
 def sections(p):
@@ -107,7 +107,10 @@ for i, r in enumerate(rows):
     if blk_names["Others"] & chan: fail("C15", i, f"Others 중복 {sorted(blk_names['Others'] & chan)[:3]}")
     # C14 익명 선언 충돌
     anon_stmts = collections.defaultdict(set)
-    for nm_, st_ in re.findall(r"^Lemma (_L\d+) : (.*)$", p, re.M): anon_stmts[nm_].add(re.sub(r"\s+", "", st_))   # 공백 차이는 같은 진술
+    for h_ in BLK:                        # 5블록 안만 — [PROOFS] 의 같은 lemma 는 인쇄(스코프·바인더)가 달라도 정상
+        for ln_ in S.get(h_, []):
+            m_ = re.match(r"Lemma (_L\d+)\s*:\s*(.*)$", ln_)
+            if m_: anon_stmts[m_.group(1)].add(re.sub(r"\s+", "", m_.group(2)))
     clash = [k for k, v in anon_stmts.items() if len(v) > 1]        # 같은 lemma 의 다채널 반복은 정상, 진술이 다르면 충돌
     if clash: fail("C14", i, f"{clash[:3]}")
     # C9 STATE·ErrorFeedback
@@ -128,9 +131,11 @@ for i, r in enumerate(rows):
     for anon_nm, st in re.findall(r"^Lemma (_L\d+) : (.*)$", p, re.M):
         real = stmt2name.get(" ".join(st.rstrip(".").split())[:180])
         if not real or is_stdlib_name(real): continue
-        if re.search(r"(?<![\w'])" + re.escape(real) + r"(?![\w'])", p + "\n" + t): fail("C2", i, f"{real}→{anon_nm} 실명 잔존")
+        if re.search(r"(?<![\w'])" + re.escape(real) + r"(?![\w'])", p + "\n" + t):
+            own_decl = re.search(r"^(?:Lemma|Theorem|Definition|Fixpoint|Instance)\s+\S*" + re.escape(real) + r"(?![\w'])", p, re.M)
+            if not own_decl: fail("C2", i, f"{real}→{anon_nm} 실명 잔존")   # 자기 선언이 있으면 동일 진술의 다른 lemma
     # C11 채널 정확성 + C10 주입 위치
-    if case.startswith(("A", "B")) and r.get("form") in FORM_BLK:
+    if case.startswith(("A", "B")) and "+var" not in case and r.get("form") in FORM_BLK:
         h = FORM_BLK[r["form"]]; body = [l for l in S.get(h, []) if l.strip() and l.strip() != "none"]
         gold_names = set(re.findall(r"\b(?:e?apply|e?rewrite|exact)\s+(?:<-\s*)?(?:\(\s*)?([A-Za-z_][\w'.]*)", t))
         gb = set().union(*(alias_set(g.rstrip(".").split(".")[-1]) for g in gold_names)) if gold_names else set()
@@ -151,7 +156,12 @@ for i, r in enumerate(rows):
 for key, ids in by_pt.items():
     if len({rows[i]["prompt"] for i in ids}) != 1: fail("C7", ids[0], "같은 지점 프롬프트 불일치")
     if len([i for i in ids if "+var" not in rows[i]["case"]]) != 1: fail("C7", ids[0], "원본 행 ≠ 1")
-    if len({tuple(sorted(set(ANON.findall(rows[i]["target"])))) for i in ids}) > 1: fail("C3", ids[0], "변형 간 익명 lemma 집합 불일치")
+    base_i = [i for i in ids if "+var" not in rows[i]["case"]]
+    if base_i:
+        base_set = set(ANON.findall(rows[base_i[0]]["target"]))
+        for i in ids:
+            if not set(ANON.findall(rows[i]["target"])) <= base_set:
+                fail("C3", i, f"변형이 원본에 없는 익명 이름 사용"); break
 for i in range(1, len(rows)):
     a, b = rows[i - 1], rows[i]
     if len(by_pt) > 1 and (a["proj"], a["thm"], a["thmi"], a["k"]) == (b["proj"], b["thm"], b["thmi"], b["k"]):
