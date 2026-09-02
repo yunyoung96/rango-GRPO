@@ -131,7 +131,9 @@ for i, r in enumerate(rows):
     # C2 실명 누출
     blocks_txt = "\n".join("\n".join(S.get(h_, [])) for h_ in BLK)
     for anon_nm, st in re.findall(r"^" + _KW + r"\s+(_L\d+)\s*:\s*(.*)$", blocks_txt, re.M):
-        real = stmt2name.get(" ".join(st.rstrip(".").split())[:180])
+        st_n = " ".join(st.rstrip(".").split())
+        if len(st_n) >= 170: continue        # 진술 절단(180자) 근처 — 다른 lemma 의 잘린 진술과 충돌 (오탐원)
+        real = stmt2name.get(st_n[:180])
         if not real or is_stdlib_name(real): continue
         if re.search(r"(?<![\w'])" + re.escape(real) + r"(?![\w'])", p + "\n" + t):
             dup_decl = re.search(r"^" + _KW + r"\s+\S*(?<![\w'])" + re.escape(real) + r"(?![\w'])\s*:", blocks_txt, re.M)
@@ -141,6 +143,7 @@ for i, r in enumerate(rows):
     if case.startswith(("A", "B")) and "+var" not in case and r.get("form") in FORM_BLK:
         h = FORM_BLK[r["form"]]; body = [l for l in S.get(h, []) if l.strip() and l.strip() != "none"]
         gold_names = set(re.findall(r"\b(?:e?apply|e?rewrite|exact)\s+(?:<-\s*)?(?:\(\s*)?([A-Za-z_][\w'.]*)", t))
+        gold_names |= {g for g in (r.get("gold") or [])}          # `rewrite X, Y` 쉼표 목록은 풀 gold 필드가 정확하다
         gb = set().union(*(alias_set(g.rstrip(".").split(".")[-1]) for g in gold_names)) if gold_names else set()
         pos = [j for j, l in enumerate(body) if (m := DECL.match(l)) and m.group(1).split(".")[-1] in gb]
         if not pos: fail("C11", i, f"{r['form']} gold {sorted(gb)[:2]} 가 {h} 에 없음")
