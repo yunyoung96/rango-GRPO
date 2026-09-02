@@ -335,7 +335,8 @@
      loss 감시 콜백) + all_log/ft_qwen3_4b_v11_conf.yaml. 스모크(GPU1, B 4×4, seq 5120, 8 step):
      loss 1.93→0.61 ✓ · **피크 71.0GB** · **≈20 s/step**(유효배치 16) → 30k step ≈ 7일/1GPU,
      2GPU DDP(유효 32)면 15k step ≈ 3.5일. steps 는 ①+ 수집 후 행 수로 확정.
-  ☑ **본학습 v11 착수** (2026-09-02 12:20 KST, 이 서버 GPU 2장 DDP — pid 기록 models/ft_qwen3_4b_v11/train.pid):
+  ☑ **본학습 v11 재착수 — 규칙표 v3 데이터** (2026-09-02 18:26 KST, 82,636행 · 7,593 step · 관문 전부 통과;
+     1차 착수 12:20 분은 90 step 미만에서 중단·폐기) — 원 기록: (2026-09-02 12:20 KST, 이 서버 GPU 2장 DDP — pid 기록 models/ft_qwen3_4b_v11/train.pid):
      데이터 78,153행(76,590 train)·steps 7,181(3 epoch, 유효배치 32)·warmup 215·seq 5120·lr 1e-4 cosine.
      관문 전부 통과: 정적 C1~C16(프루닝 2회: C11 지점 29·C2 중복선언 지점 97) · 동적 D1 28/28·D3 10/10
      (D2 3건 검토 강등 — 방법론 한계) · DDP 스모크 loss 2.39→0.98. 감시: guard/발산·Sampler 500step
