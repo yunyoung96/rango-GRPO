@@ -144,7 +144,8 @@ def ref_form(text, gold):
 
 def build_point(r, stat):
     f = r.get("tac"); form_ch = FORM_CH.get(f)
-    golds = SB.PR.golds_of(r); stmts = r.get("stmts") or {}
+    golds = SB.PR.golds_of(r) if r.get("gold") else []      # 무참조 지점(intros 등)은 gold 없음 — golds_of 는 assert 를 던진다
+    stmts = r.get("stmts") or {}
     if golds and form_ch is None:              # 복합 스텝: 참조 하위 tactic 의 형태로 채널을 잡는다
         rf = ref_form(r.get("gold_text") or "", golds[0])
         if rf and FORM_CH.get(rf): f = rf; form_ch = FORM_CH[rf]; stat["복합스텝→참조형"] += 1
