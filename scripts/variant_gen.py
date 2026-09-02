@@ -37,7 +37,7 @@ SHARD = None
 if "--shard" in sys.argv:
     _a, _b = sys.argv[sys.argv.index("--shard") + 1].split("/"); SHARD = (int(_a), int(_b))
     OUT = OUT + f".s{SHARD[0]}"
-DONE = OUT + ".done3"   # 규칙표 v3 — 전 정리 재방문  # (규칙표 v2: constructor 계열 추가 → 새 사이드카) 처리 완료 정리 (proj\tthm\tthmi) — 이어쓰기(resume)용, 전부기각 정리도 기록
+DONE = OUT + ".done4"  # v3.1 — with 프로브 수정 후 전 정리 재방문 (신규 규칙 중복은 물질화 dedupe)  # (규칙표 v2: constructor 계열 추가 → 새 사이드카) 처리 완료 정리 (proj\tthm\tthmi) — 이어쓰기(resume)용, 전부기각 정리도 기록
 sdb = SentenceDB.load(Path("raw-data/coq-dataset/sentences.db"))
 
 DECL = re.compile(r"^(\s*(?:Local\s+|Global\s+)?(?:Theorem|Lemma|Fact|Remark|"
@@ -207,11 +207,14 @@ def _render(node):
 def extract_args(term_txt, base):
     """Show Proof 항에서 base 가 머리인 최대 적용 노드의 인자 목록."""
     best = None
+    KW = {":", "->", "=>", "fun", "forall", "let", "in", "match", "with"}
+    def _is_app(node):
+        return (node and isinstance(node[0], str) and (node[0] == base or node[0].endswith("." + base))
+                and len(node) >= 2 and not (isinstance(node[1], str) and node[1] in KW))   # `(L : T)` 캐스트 제외
     def walk(node):
         nonlocal best
         if isinstance(node, str): return
-        if node and isinstance(node[0], str) and (node[0] == base or node[0].endswith("." + base)):
-            if best is None or len(node) > len(best): best = node
+        if _is_app(node) and (best is None or len(node) > len(best)): best = node
         for x in node: walk(x)
     tree = _paren_tree(term_txt)
     walk(tree)
@@ -219,10 +222,12 @@ def extract_args(term_txt, base):
     for i, x in enumerate(tree):
         if isinstance(x, str) and (x == base or x.endswith("." + base)):
             cand = [x] + tree[i + 1:]
-            if best is None or len(cand) > len(best): best = cand
+            if _is_app(cand) and (best is None or len(cand) > len(best)): best = cand
             break
     if not best: return []
-    return [_render(a) for a in best[1:]]
+    args = [_render(a) for a in best[1:]]
+    assert all(a not in KW for a in args), f"인자에 키워드 잔존: {args[:4]}"
+    return args
 
 
 def binder_names(type_txt):
@@ -258,6 +263,8 @@ def with_candidates_for(term_txt, check_txt, head_tac, name, in_h, tail):
              if not _HOLE.match(a) and a != "_" and len(a) <= 35 and b != a]
     out = []
     inc = f" in {in_h}" if in_h else ""
+    assert all(re.fullmatch(r"[A-Za-z_][\w']*", b) for b, _ in pairs), f"바인더 이름 이상: {pairs[:3]}"
+    for _, a in pairs: assert a.count("(") == a.count(")"), f"인자 괄호 불균형: {a!r}"
     if pairs:
         b, a = pairs[-1]                                  # 뒤쪽 바인더가 eapply 가 남기는 자리에 가깝다
         out.append(("ap→with", f"apply {name} with ({b} := {a}){inc}{tail}"))
@@ -267,6 +274,8 @@ def with_candidates_for(term_txt, check_txt, head_tac, name, in_h, tail):
     if args and not in_h and all(not _HOLE.match(a) and a != "_" for a in args) \
             and sum(map(len, args)) <= 90:                      # 완전적용 = 추출된 **전체** 인자 (바인더 수로 자르면 증명 인자가 빠진다)
         out.append(("ap→exact(", f"exact ({name} " + " ".join(args) + f"){tail}"))
+    for r_, v_ in out:
+        assert v_.strip() and ("with (" in v_ or v_.lstrip().startswith("exact (")), (r_, v_)
     return out
 
 
@@ -302,7 +311,7 @@ def with_probe(pdir, path, head, stmt, steps):
         if not mm: continue
         seg = mm.group(1)
         base = m.group(3).split(".")[-1]
-        cm = re.search(rf"(?m)^{re.escape(base)}\s*$|(?m)^{re.escape(base)}\b", seg)
+        cm = re.search(rf"(?m)^{re.escape(base)}\b", seg)   # Check 출력 시작줄 (플래그는 맨 앞 한 번 — 중간 (?m) 은 re.error)
         term_txt, check_txt = (seg[:cm.start()], seg[cm.start():]) if cm else (seg, "")
         st = steps[k].lstrip("\n"); tail = st[_WP_T.match(st).end():] or "."
         cands = with_candidates_for(term_txt, check_txt, m.group(2), m.group(3), m.group(4), tail)
@@ -389,8 +398,8 @@ if __name__ == "__main__":
                 steps = [s.step.text for s in proof.steps]
                 try:
                     wp = with_probe(pdir, path, head, tt, steps)
-                except Exception:
-                    wp = {}
+                except Exception as e:
+                    stat[f"프로브예외:{type(e).__name__}"] += 1; wp = {}   # 조용한 삼킴 금지 — 통계로 노출
                 pts = []
                 for k, st in enumerate(steps):
                     hyps_k = []
@@ -399,6 +408,7 @@ if __name__ == "__main__":
                             hyps_k += [x.strip() for x in str(hstr).split(":")[0].split(",") if x.strip()]
                     except Exception: pass
                     vs = wp.get(k, []) + variants_of(st or "", hyps_k)
+                    for r_, _ in vs[:4]: stat[f"cand:{r_}"] += 1
                     if vs: pts.append((k, vs[:4]))
                 if not pts: continue
                 pts = pts[:6]
@@ -410,6 +420,7 @@ if __name__ == "__main__":
                 fd.write(f"{proj}\t{rel}\t{pi}\n"); fd.flush()
                 for k, rule, var, ok in res:
                     stat["qed" if ok else "fail"] += 1
+                    if ok: stat[f"adopt:{rule}"] += 1
                     if ok:
                         nw += 1
                         fo.write(json.dumps({"proj": proj, "thm": rel, "thmi": pi,
@@ -423,4 +434,12 @@ if __name__ == "__main__":
     fo.close(); fd.close()
     print(f"\n■ 변형 생성: 정리 {done_thm} (건너뜀 {skipped}) · 채택 {nw} · {dict(stat)}")
     assert done_thm == skipped or stat.get("qed", 0) + stat.get("fail", 0) > 0
+    # ★ 조용한 0 방지 (CLAUDE.md): 후보를 충분히 냈는데 채택 0 인 계열은 십중팔구 생성기 결함이다
+    _wc = sum(stat.get(f"cand:{r}", 0) for r in ("ap→with", "ap→with2", "ap→exact("))
+    _wa = sum(stat.get(f"adopt:{r}", 0) for r in ("ap→with", "ap→with2", "ap→exact("))
+    assert _wc < 300 or _wa > 0, f"with 계열 후보 {_wc} 인데 채택 0 — 프로브/문법 결함 의심"
+    _ac = sum(v for k_, v in stat.items() if k_.startswith("cand:rw→at"))
+    _aa = sum(v for k_, v in stat.items() if k_.startswith("adopt:rw→at"))
+    assert _ac < 300 or _aa > 0, f"at 계열 후보 {_ac} 인데 채택 0"
+    if stat.get("프로브예외:", 0):  pass
     print("VARGEN_DONE")
