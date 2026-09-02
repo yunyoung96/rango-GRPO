@@ -79,3 +79,4 @@ all_log/gold_prefix/
 all_log/*.err
 logs/
 scripts/_tmp/
+!all_log/docs/**
