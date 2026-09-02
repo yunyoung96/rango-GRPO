@@ -14,7 +14,17 @@ say "캠페인 종료 · 빌드된 저장소 $BUILT개"
 until ! pgrep -f 'train_pool.py 100000[0]' >/dev/null; do sleep 300; done
 say "전체 우주 재수집 (resume — 새 저장소·새 정리만 추가)"
 bash scripts/collect_all.sh > all_log/au_research/r19_v3_train_all.log 2>&1
-NPOOL=$(wc -l < all_log/r11_pool_train_all.jsonl); say "수집 종료 · 데이터 포인트 $NPOOL"
+TARGET=306000   # 데이터 충분성 게이트 (rango 1.53M 의 20%) — 사용자: 부족하면 위험감수하고 더 컴파일
+for GX in 1 2; do
+  NPOOL=$(wc -l < all_log/r11_pool_train_all.jsonl)
+  say "데이터 포인트 $NPOOL · rango 대비 $(python3 -c "print(f'{$NPOOL/1530000*100:.1f}%')")"
+  [ "$NPOOL" -ge "$TARGET" ] && { say "목표(20%) 달성 — 물질화로"; break; }
+  say "목표 미달 → 2차 확장 $GX: Omega 패치 + 캠페인 940 + 재수집"
+  bash scripts/omega_shim.sh > all_log/au_research/omega_shim_$GX.log 2>&1
+  python3 scripts/train_build_campaign.py 940 1200 > all_log/au_research/campaign_940_$GX.log 2>&1 || say "캠페인 940 비정상 — 계속"
+  bash scripts/collect_all.sh > all_log/au_research/r19_v3_train_all.log 2>&1
+done
+NPOOL=$(wc -l < all_log/r11_pool_train_all.jsonl); say "최종 데이터 포인트 $NPOOL"
 [ "$NPOOL" -ge 100000 ] || fail "데이터 포인트 $NPOOL < 100k"
 
 say "물질화 (8샤드)"
