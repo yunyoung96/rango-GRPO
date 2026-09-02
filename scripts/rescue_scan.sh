@@ -10,7 +10,7 @@ R=/app/coq-modeling/tmp/tr
 
 python3 - <<'PY' > /tmp/rescue_targets.txt
 import json, os
-skip={"snu-sf-paco","DonaldKellett-iron-lambda"}   # 판정 완료(자기복사·드리프트)
+skip={"snu-sf-paco","DonaldKellett-iron-lambda","uds-psl-coq-synthetic-incompleteness"}   # 판정완료+복원중
 for l in open("all_log/train_build_campaign.jsonl"):
     r=json.loads(l)
     if r["proj"] in skip: continue
@@ -23,6 +23,7 @@ while read d; do
   cd $R/$d || continue
   vo0=$(find . -name '*.vo' -not -path './_build/*' | wc -l)
   say "== $d (vo=$vo0)"
+  if [ "$vo0" -ge 20 ] && [ ! -f dune-project ]; then say "   $d: 이미 vo≥20 — 건너뜀(파괴/경쟁 방지)"; cd /app/coq-modeling; continue; fi
   # ① 기대 루트 추출 → 소스 디렉토리 매핑 재빌드
   roots=$(timeout 60 make -k 2>&1 | grep -o 'bound to logical path [A-Za-z][A-Za-z0-9_]*' | awk '{print $NF}' | sort -u | head -2)
   if [ -n "$roots" ] && [ "$vo0" -lt 20 ]; then    # 이미 20+ 빌드된 저장소는 건드리지 않는다 (파괴 방지)
