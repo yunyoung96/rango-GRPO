@@ -34,3 +34,4 @@
   Coq 3단 라벨(실패 ≺ 적용성공·gold 미사용 ≺ gold 사용) → DPO → 가중치 덮어쓰고 스케줄 재개.
 - 2.5-Coder-3B 팔(같은 데이터)로 모델/데이터 효과 분리 (model_selection.txt).
 - Qwen3.5-4B-Base 팔: 별도 venv(transformers 5.16+) + linear-attention 커널 빌드 필요 (2순위).
+- decl_of DB 폴백: 한정자 모듈 일치 강제(Fin.case0 오해결 실측) 후 v11.1 재물질화
