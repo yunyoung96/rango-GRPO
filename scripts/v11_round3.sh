@@ -8,6 +8,11 @@ fail(){ say "★ 실패: $* — 중단"; echo "V11_PIPELINE_FAIL: $*"; exit 1; }
 
 say "무상한 수집(r19_v2) 종료 대기"
 until grep -q 'COLLECT_ALL_DONE' all_log/au_research/r19_v2_train_all.log 2>/dev/null; do sleep 600; done
+if [ -f all_log/RESCUE_REPOS_READY ]; then
+  say "구조된 저장소 보충 수집 (resume — 새 정리만)"
+  bash scripts/collect_all.sh > all_log/au_research/r19_v2b_train_all.log 2>&1
+  grep -q 'COLLECT_ALL_DONE' all_log/au_research/r19_v2b_train_all.log || say "보충 수집 비정상 종료 — 기존 풀로 계속"
+fi
 NPOOL=$(wc -l < all_log/r11_pool_train_all.jsonl); say "수집 종료 · 풀 행 $NPOOL"
 [ "$NPOOL" -ge 100000 ] || fail "풀 행 $NPOOL < 100k (무상한인데 너무 적다 — 수집 점검)"
 
