@@ -33,7 +33,11 @@ REPOS = dict(kv.split("=", 1) for kv in
              (sys.argv[2] if len(sys.argv) > 2 else
               f"coq-community-coq-art={_SCR}/coq-community-coq-art").split(","))
 OUT = "all_log/sft_variants.jsonl"
-DONE = OUT + ".done2"  # (규칙표 v2: constructor 계열 추가 → 새 사이드카) 처리 완료 정리 (proj\tthm\tthmi) — 이어쓰기(resume)용, 전부기각 정리도 기록
+SHARD = None
+if "--shard" in sys.argv:
+    _a, _b = sys.argv[sys.argv.index("--shard") + 1].split("/"); SHARD = (int(_a), int(_b))
+    OUT = OUT + f".s{SHARD[0]}"
+DONE = OUT + ".done3"   # 규칙표 v3 — 전 정리 재방문  # (규칙표 v2: constructor 계열 추가 → 새 사이드카) 처리 완료 정리 (proj\tthm\tthmi) — 이어쓰기(resume)용, 전부기각 정리도 기록
 sdb = SentenceDB.load(Path("raw-data/coq-dataset/sentences.db"))
 
 DECL = re.compile(r"^(\s*(?:Local\s+|Global\s+)?(?:Theorem|Lemma|Fact|Remark|"
@@ -83,10 +87,10 @@ def ctor_variants(step):
     return out
 
 
-def variants_of(step):
+def variants_of(step, hyps=()):
     """스텝 텍스트 → [(rule, 변형텍스트)]. 원문 구조(; 이후, in 절)는 유지."""
     t = step
-    cv = ctor_variants(t)
+    cv = ctor_variants(t) + misc_variants(t, hyps) + at_variants(t)
     m = HEAD_T.match(t.lstrip("\n"))
     if not m: return cv
     lead_ws = t[:len(t) - len(t.lstrip("\n"))]
@@ -106,6 +110,197 @@ def variants_of(step):
     out = out + [c for c in cv if c not in out]
     assert all(v != step for _, v in out), "변형이 원문과 동일"
     return out
+
+
+
+# ═══ 규칙표 v3 (2026-09-02 사용자 지시: "한번 하는김에 제대로") ═══════════════════
+#  구문 8종 + rewrite … at n + apply …/eapply … 의 with/exact 명시화(Show Proof 프로브).
+#  채택 판정은 전부 기존과 동일: 그 스텝을 갈아끼우고 남은 proof 를 Qed 까지 재실행.
+
+_TAIL_AUTO = re.compile(r"(;\s*)auto(\s*\.\s*)$")
+_REFL = re.compile(r"^(\s*)reflexivity(\s*)([.;].*)$", re.S)
+_NOW = re.compile(r"^(\s*)now\s+(.+?)\s*\.\s*$", re.S)
+_ASSUM = re.compile(r"^(\s*)assumption\s*\.\s*$")
+_DCASE = re.compile(r"^(\s*)(destruct|case|induction|elim)\s+([A-Za-z_][\w']*)\s*([.;].*)$", re.S)
+_EXISTS = re.compile(r"^(\s*)exists\s+([^;.]+?)\s*([.;].*)$", re.S)
+_INTROS = re.compile(r"^(\s*)intros((?:\s+[A-Za-z_][\w']*)+)\s*\.\s*$")
+_EXACT1 = re.compile(r"^(\s*)exact\s+([A-Za-z_][\w'.]*)\s*([.;].*)$", re.S)
+_APPLY1 = re.compile(r"^(\s*)apply\s+([A-Za-z_][\w'.]*)\s*([.;].*)$", re.S)
+_RW_AT = re.compile(r"^(\s*)((?:now\s+|try\s+)?e?rewrite)\s+(<-\s*)?([A-Za-z_][\w'.]*)"
+                    r"(\s+in\s+[A-Za-z_][\w']*)?\s*(?=[;.])")
+
+
+def misc_variants(step, hyps=()):
+    """구문 8종. hyps = 그 지점 STATE 의 가설 이름들 (assumption→exact H 용)."""
+    t = step; out = []
+    m = _EXACT1.match(t)
+    if m: out.append(("exact→apply", f"{m.group(1)}apply {m.group(2)}{m.group(3)}"))
+    m = _APPLY1.match(t)
+    if m: out.append(("apply→exact", f"{m.group(1)}exact {m.group(2)}{m.group(3)}"))
+    m = _TAIL_AUTO.search(t)
+    if m: out.append(("auto→eauto", _TAIL_AUTO.sub(lambda mm: mm.group(1) + "eauto" + mm.group(2), t)))
+    m = _REFL.match(t)
+    if m: out.append(("refl→exact", f"{m.group(1)}exact eq_refl{m.group(2)}{m.group(3)}"))
+    m = _NOW.match(t)
+    if m: out.append(("now→easy", f"{m.group(1)}{m.group(2)}; easy."))
+    m = _ASSUM.match(t)
+    if m:
+        for h in list(hyps)[-3:][::-1]:
+            out.append(("assum→exact", f"{m.group(1)}exact {h}."))
+    m = _DCASE.match(t)
+    if m:
+        swap = {"destruct": "case", "case": "destruct", "induction": "elim", "elim": "induction"}[m.group(2)]
+        out.append((f"{m.group(2)}→{swap}", f"{m.group(1)}{swap} {m.group(3)}{m.group(4)}"))
+    m = _EXISTS.match(t)
+    if m: out.append(("exists→eexists", f"{m.group(1)}eexists{m.group(3)}"))
+    m = _INTROS.match(t)
+    if m:
+        names = m.group(2).split()
+        if 2 <= len(names) <= 5:
+            out.append(("intros→chain", m.group(1) + " ".join(f"intro {n};" for n in names).rstrip(";") + "."))
+    return out
+
+
+def at_variants(step):
+    """rewrite/erewrite … at 1|2 — 출현 지정 (in 절은 두 어순 다 시도, 문법 틀린 쪽은 Qed 가 거름)."""
+    m = _RW_AT.match(step)
+    if not m: return []
+    pre = step[:m.end(4)]; inc = m.group(5) or ""; rest = step[m.end(5) if m.group(5) else m.end(4):]
+    out = []
+    for n in ("1", "2"):
+        if inc:
+            out.append((f"rw→at{n}", f"{pre}{inc} at {n}{rest}"))
+            out.append((f"rw→at{n}b", f"{pre} at {n}{inc}{rest}"))
+        else:
+            out.append((f"rw→at{n}", f"{pre} at {n}{rest}"))
+    return out
+
+
+# ── with/exact 명시화 프로브 — 정리당 1회 재생하며 대상 스텝 뒤에서 Show Proof·Check ──
+_WP_T = re.compile(r"^(\s*)(e?apply)\s+([A-Za-z_][\w'.]*)\s*(?:in\s+([A-Za-z_][\w']*)\s*)?(?=[;.])")
+_HOLE = re.compile(r"^\?[\w']+$")
+
+
+def _paren_tree(txt):
+    """괄호 트리 파싱: 문자열 → 중첩 리스트(원자=str)."""
+    toks = re.findall(r"[()]|[^\s()]+", txt)
+    stack = [[]]
+    for tk in toks:
+        if tk == "(": stack.append([])
+        elif tk == ")":
+            if len(stack) > 1: c = stack.pop(); stack[-1].append(c)
+        else: stack[-1].append(tk)
+    return stack[0]
+
+
+def _render(node):
+    return node if isinstance(node, str) else "(" + " ".join(_render(x) for x in node) + ")"
+
+
+def extract_args(term_txt, base):
+    """Show Proof 항에서 base 가 머리인 최대 적용 노드의 인자 목록."""
+    best = None
+    def walk(node):
+        nonlocal best
+        if isinstance(node, str): return
+        if node and isinstance(node[0], str) and (node[0] == base or node[0].endswith("." + base)):
+            if best is None or len(node) > len(best): best = node
+        for x in node: walk(x)
+    tree = _paren_tree(term_txt)
+    walk(tree)
+    # 최상위(괄호 없는) 적용도 본다: [.. base a1 a2 ..]
+    for i, x in enumerate(tree):
+        if isinstance(x, str) and (x == base or x.endswith("." + base)):
+            cand = [x] + tree[i + 1:]
+            if best is None or len(cand) > len(best): best = cand
+            break
+    if not best: return []
+    return [_render(a) for a in best[1:]]
+
+
+def binder_names(type_txt):
+    """`forall (a b : A) (c : B), …` / `forall a b : A, …` → 선행 명시적 바인더 이름들(순서)."""
+    t = " ".join(type_txt.split())
+    names = []
+    while True:
+        m = re.match(r"\s*forall\s+(.*)$", t)
+        if not m: break
+        rest = m.group(1); i = 0; depth = 0
+        # 콤마(depth 0)까지가 바인더 구간
+        for i, ch in enumerate(rest):
+            if ch == "(": depth += 1
+            elif ch == ")": depth -= 1
+            elif ch == "," and depth == 0: break
+        seg, t = rest[:i], rest[i + 1:]
+        for g in re.findall(r"\(([^():]+):[^()]*\)|([A-Za-z_][\w']*(?:\s+[A-Za-z_][\w']*)*)\s*:", seg + " "):
+            blob = (g[0] or g[1]).strip()
+            for nm in blob.split():
+                if re.fullmatch(r"[A-Za-z_][\w']*", nm): names.append(nm)
+        if not seg.strip(): break
+    return names
+
+
+def with_candidates_for(term_txt, check_txt, head_tac, name, in_h, tail):
+    """프로브 산출(항, Check 타입) → with/exact 변형 후보."""
+    base = name.split(".")[-1]
+    args = extract_args(term_txt, base)
+    if not args: return []
+    m = re.search(re.escape(base) + r"\s*\n?\s*:\s*(.*)", check_txt, re.S)
+    binders = binder_names(m.group(1)) if m else []
+    pairs = [(b, a) for b, a in zip(binders, args)
+             if not _HOLE.match(a) and a != "_" and len(a) <= 35 and b != a]
+    out = []
+    inc = f" in {in_h}" if in_h else ""
+    if pairs:
+        b, a = pairs[-1]                                  # 뒤쪽 바인더가 eapply 가 남기는 자리에 가깝다
+        out.append(("ap→with", f"apply {name} with ({b} := {a}){inc}{tail}"))
+        if len(pairs) >= 2:
+            (b1, a1), (b2, a2) = pairs[-2], pairs[-1]
+            out.append(("ap→with2", f"apply {name} with ({b1} := {a1}) ({b2} := {a2}){inc}{tail}"))
+    if args and not in_h and all(not _HOLE.match(a) and a != "_" for a in args) \
+            and sum(map(len, args)) <= 90:                      # 완전적용 = 추출된 **전체** 인자 (바인더 수로 자르면 증명 인자가 빠진다)
+        out.append(("ap→exact(", f"exact ({name} " + " ".join(args) + f"){tail}"))
+    return out
+
+
+def with_probe(pdir, path, head, stmt, steps):
+    """정리 1회 재생 + 대상 스텝 뒤 Show Proof/Check → {k: [(rule, variant)]}."""
+    targets = {}
+    for k, st in enumerate(steps):
+        m = _WP_T.match((st or "").lstrip("\n"))
+        if m and "with" not in (st or ""): targets[k] = m
+    if not targets or len(steps) > 60: return {}
+    body = ["Require Import Applic.", head, "Abort All.", rename_stmt(stmt, "__wp"),
+            "Set Printing Depth 100000."]
+    for k, st in enumerate(steps):
+        body.append(st)
+        if k in targets:
+            body += [f'idtac "@@WP{k}".', "Show Proof.", f"Check {targets[k].group(3)}.", f'idtac "@@WE{k}".']
+    env = dict(os.environ)
+    env["OCAMLPATH"] = os.path.join(R.PLUG, "findlib") + ":" + env.get("OCAMLPATH", "")
+    with tempfile.NamedTemporaryFile("w", suffix=".v", dir=os.path.dirname(path), delete=False) as f:
+        f.write("\n".join(body) + "\n"); tmp = f.name
+    try:
+        out = R._coqtop(["coqtop", "-q"] + R.proj_args(pdir), stdin=open(tmp), env=env, timeout=900)
+    except Exception:
+        return {}
+    finally:
+        for e in (".v", ".vo", ".vok", ".vos", ".glob"):
+            try: os.unlink(os.path.splitext(tmp)[0] + e)
+            except OSError: pass
+    o = out if isinstance(out, str) else out[0]
+    res = {}
+    for k, m in targets.items():
+        mm = re.search(rf"@@WP{k}\n(.*?)@@WE{k}", o, re.S)
+        if not mm: continue
+        seg = mm.group(1)
+        base = m.group(3).split(".")[-1]
+        cm = re.search(rf"(?m)^{re.escape(base)}\s*$|(?m)^{re.escape(base)}\b", seg)
+        term_txt, check_txt = (seg[:cm.start()], seg[cm.start():]) if cm else (seg, "")
+        st = steps[k].lstrip("\n"); tail = st[_WP_T.match(st).end():] or "."
+        cands = with_candidates_for(term_txt, check_txt, m.group(2), m.group(3), m.group(4), tail)
+        if cands: res[k] = cands
+    return res
 
 
 def rename_stmt(stmt, newname):
@@ -159,8 +354,11 @@ if __name__ == "__main__":
     fo = open(OUT, "a"); fd = open(DONE, "a")
     done_thm = 0; skipped = 0
     print(f"■ 이어쓰기: 기처리 정리 {len(done_keys)}", flush=True)
+    _fidx = -1
     for proj, pdir in REPOS.items():
         for dpf in TP.dp_files(proj):
+            _fidx += 1
+            if SHARD and _fidx % SHARD[1] != SHARD[0]: continue
             if done_thm >= N_THM: break
             try: dp = DatasetFile.load(Path(dpf), sdb)
             except Exception: continue
@@ -182,12 +380,21 @@ if __name__ == "__main__":
                 if (proj, rel, pi) in done_keys:
                     done_thm += 1; skipped += 1; continue
                 steps = [s.step.text for s in proof.steps]
+                try:
+                    wp = with_probe(pdir, path, head, tt, steps)
+                except Exception:
+                    wp = {}
                 pts = []
                 for k, st in enumerate(steps):
-                    vs = variants_of(st or "")
-                    if vs: pts.append((k, vs[:3]))
+                    hyps_k = []
+                    try:
+                        for hstr in (proof.steps[k].goals[0].hyps or []):
+                            hyps_k += [x.strip() for x in str(hstr).split(":")[0].split(",") if x.strip()]
+                    except Exception: pass
+                    vs = wp.get(k, []) + variants_of(st or "", hyps_k)
+                    if vs: pts.append((k, vs[:4]))
                 if not pts: continue
-                pts = pts[:4]
+                pts = pts[:6]
                 try:
                     res = run_theorem(pdir, path, head, tt, steps, pts)
                 except Exception as e:

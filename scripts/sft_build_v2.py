@@ -255,7 +255,24 @@ def build_point(r, stat):
     rows = [{"prompt": prompt, "target": target, "case": case, "form": f,
              "proj": PROJ_ALIAS.get(r["proj"], r["proj"]), "thm": r["thm"], "thmi": thmi, "k": k,
              "gold": golds, "gold_decl": gold_decl, "gold_text": r.get("gold_text")}]
-    for v in SB.VARIANTS.get((PROJ_ALIAS.get(r["proj"], r["proj"]), r["thm"], thmi, k), [])[:2]:
+    # ★ 변형 조인 — 계열 다양성 우선 (사용자 2026-09-02 "다양한 패턴 소화"): 서로 다른 계열에서 최대 3개,
+    #   우선순위 = with/exact 명시화(evar 학습) > at(출현) > constructor > 구문 > 머리교체.
+    def _fam(rule):
+        if rule.startswith(("ap→with", "ap→exact(")): return 0
+        if "at" in rule and rule.startswith("rw→at"): return 1
+        if "ctor" in rule or rule.startswith(("split", "left", "right", "ector")): return 2
+        if rule.startswith(("ap→eapply", "eapply→ap", "rw→", "rw<-")): return 4
+        return 3
+    _vars = SB.VARIANTS.get((PROJ_ALIAS.get(r["proj"], r["proj"]), r["thm"], thmi, k), [])
+    _vars = sorted(_vars, key=lambda v: _fam(v["rule"]))
+    picked = []; fams = set()
+    for v in _vars:                                     # 1바퀴: 계열당 1개
+        if _fam(v["rule"]) not in fams: picked.append(v); fams.add(_fam(v["rule"]))
+        if len(picked) >= 3: break
+    for v in _vars:                                     # 2바퀴: 남는 슬롯 채움
+        if len(picked) >= 3: break
+        if v not in picked: picked.append(v)
+    for v in picked:
         vt = strip_qual(apply_mapping(v["variant"], mapping) if mapping else v["variant"])
         rows.append({**rows[0], "target": vt, "case": case + "+var", "rule": v["rule"]})
     return rows
