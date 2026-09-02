@@ -93,7 +93,11 @@ assert _BAD.search('*** Error: File "coq/systemF/subst.v",characters 266-266: Sy
 assert _BAD.search("*** Warning: in file coq/a.v, library term is required").group(2) == "coq/a.v"
 
 
+from train_repos import leaky as _leaky_repo   # coqstoq VAL/TEST/CUTOFF·병리 저장소 단일 출처 (시간 낭비 방지)
+
+
 def excluded(p):
+    if _leaky_repo(p): return True
     if p in KEEP: return False
     return p in EXCL or bool(EXCL_RE.search(p))
 
