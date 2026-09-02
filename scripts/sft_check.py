@@ -49,7 +49,8 @@ def alias_set(b):
     for k, v in ALIAS.items():
         if v == b or v.split(".")[-1] == b: out |= {k, k.split(".")[-1]}
     return out
-DECL = re.compile(r"^(?:Lemma|Theorem|Definition|Fixpoint|Instance|#\[export\] Instance)\s+([A-Za-z_][\w'.]*)", re.M)   # `이름:` (콜론 밀착, DB 원문) 도 이름만
+_KW = r"(?:#\[[^\]]*\]\s+)?(?:Local\s+|Global\s+|Program\s+)?(?:Lemma|Theorem|Definition|Fixpoint|CoFixpoint|Instance|Axiom|Parameter|Hypothesis|Corollary|Remark|Fact|Proposition|Let)"
+DECL = re.compile(r"^" + _KW + r"\s+([A-Za-z_][\w'.]*)", re.M)   # `이름:` (콜론 밀착, DB 원문) 도 이름만; Axiom 류 포함 (실측 오탐 83건)
 
 
 def sections(p):
@@ -109,7 +110,7 @@ for i, r in enumerate(rows):
     anon_stmts = collections.defaultdict(set)
     for h_ in BLK:                        # 5블록 안만 — [PROOFS] 의 같은 lemma 는 인쇄(스코프·바인더)가 달라도 정상
         for ln_ in S.get(h_, []):
-            m_ = re.match(r"Lemma (_L\d+)\s*:\s*(.*)$", ln_)
+            m_ = re.match(_KW + r"\s+(_L\d+)\s*:\s*(.*)$", ln_)
             if m_: anon_stmts[m_.group(1)].add(re.sub(r"\s+", "", m_.group(2)))
     clash = [k for k, v in anon_stmts.items() if len(v) > 1]        # 같은 lemma 의 다채널 반복은 정상, 진술이 다르면 충돌
     if clash: fail("C14", i, f"{clash[:3]}")
@@ -128,12 +129,14 @@ for i, r in enumerate(rows):
         if not re.search(r"(?<![\w'])" + re.escape(nm) + r"(?![\w'])", p):
             fail("C3" if "+var" in case else "C1", i, f"{nm} 프롬프트에 없음")
     # C2 실명 누출
-    for anon_nm, st in re.findall(r"^Lemma (_L\d+) : (.*)$", p, re.M):
+    blocks_txt = "\n".join("\n".join(S.get(h_, [])) for h_ in BLK)
+    for anon_nm, st in re.findall(r"^" + _KW + r"\s+(_L\d+)\s*:\s*(.*)$", blocks_txt, re.M):
         real = stmt2name.get(" ".join(st.rstrip(".").split())[:180])
         if not real or is_stdlib_name(real): continue
         if re.search(r"(?<![\w'])" + re.escape(real) + r"(?![\w'])", p + "\n" + t):
-            own_decl = re.search(r"^(?:Lemma|Theorem|Definition|Fixpoint|Instance)\s+\S*" + re.escape(real) + r"(?![\w'])", p, re.M)
-            if not own_decl: fail("C2", i, f"{real}→{anon_nm} 실명 잔존")   # 자기 선언이 있으면 동일 진술의 다른 lemma
+            dup_decl = re.search(r"^" + _KW + r"\s+\S*(?<![\w'])" + re.escape(real) + r"(?![\w'])\s*:", blocks_txt, re.M)
+            if dup_decl: fail("C2", i, f"{real}→{anon_nm} 블록 내 실명·익명 중복 선언")
+            else: C["C2 검토(블록 밖 실명 등장 — 동일 진술 딴 lemma 또는 PROOFS 본문)"] += 1
     # C11 채널 정확성 + C10 주입 위치
     if case.startswith(("A", "B")) and "+var" not in case and r.get("form") in FORM_BLK:
         h = FORM_BLK[r["form"]]; body = [l for l in S.get(h, []) if l.strip() and l.strip() != "none"]
