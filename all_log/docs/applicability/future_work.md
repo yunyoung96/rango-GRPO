@@ -2,17 +2,9 @@
 
 기록일 2026-09-02. 지금 구현은 건드리지 않고, 다음에 캘 것들만 정리한다.
 
-## 1. 변형(variant) 규칙 확장 — 순수 구문 + Qed 판정 층
-현재 12규칙(apply↔eapply · rewrite 방향/erewrite · constructor 계열, 채택 27,761행) 외 후보, 가치순:
-  1) `exact L` ↔ `apply L`
-  2) 꼬리 전술 교환 `…; auto` → `…; eauto` (⊇ 관계라 채택률 높을 것 — 대량)
-  3) `reflexivity` ↔ `exact eq_refl` / `apply eq_refl`
-  4) `now t` ↔ `t; easy` (정의상 동치)
-  5) `assumption` → `exact H` (STATE 가설 ≤3개 후보 — 이름 선택 학습)
-  6) `destruct x` ↔ `case x` · `induction x` ↔ `elim x` (패턴 없는 꼴만)
-  7) `exists t` → `eexists` (증인 지연 — 대부분 기각돼도 되는 곳이 가치 큼)
-  8) `intros a b c` ↔ `intro a; intro b; intro c`
-전부 이어쓰기(vargen .done2) 증분 배치로 추가 가능 — v11.1 데이터 회차나 DPO 다양성 소스.
+## 1. 변형(variant) 규칙 확장
+규칙 후보의 단일 출처는 design_from_requirements.txt [3] "규칙표 v4 후보" 절로 이관 (2026-09-02).
+구현 시 그 절을 '구현됨'으로 갱신할 것 (CLAUDE.md sync 규칙).
 
 ## 2. 증명기 내부 정보가 필요한 변형 (플러그인 확장)
 설계표에 있었으나 미구현: `apply L with (x := t)` · `exact (L t₁ … tₙ)` 완전적용꼴 ·

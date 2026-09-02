@@ -108,6 +108,13 @@
     `exact (L t₁…tₙ)`(전체 인자). 채택은 동일하게 Qed 재실행. 6샤드 병렬(.s{i}, .done3 전 정리 재방문).
   · 물질화 조인 = 계열 다양성 우선 ≤3 (with/exact > at > constructor > 구문 > 머리교체).
   · 1회차 학습(12:20 착수분)은 90 step 미만에서 중단·폐기(run1 로그만 보관), v3 데이터로 재착수.
+  ※ 규칙표 v4 후보 (2026-09-02 논의 — **미구현**, v11.1 회차/첫 DPO 라운드 타이밍에 편입 권고):
+    구문 6종: omega→lia · trivial→auto(+꼬리) · simpl↔cbn · inversion H; clear H↔inversion_clear H ·
+    rewrite A,B↔분해 체인 · destruct as []↔as ()
+    상태 기반 2종: intros(무명)→intros <k+1 상태 diff 의 실제 이름들> (가설 이름 제어 — apply-in 시너지) ·
+    subst→subst x y
+    구조 2종: 연속 선형 스텝 병합 t1.·t2.→t1; t2. (m≤2) · t;[t1|t2]↔불릿 (후순위)
+    선정 근거·비용은 future_work.md §1 에서 이관 — 목록의 단일 출처는 이 절.
 ────────────────────────────────────────────────────────
 
 핵심: **변형은 문법 규칙표로 만들고, 채택은 실행이 판정한다.**
